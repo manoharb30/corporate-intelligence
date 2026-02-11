@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     # SEC EDGAR
     SEC_EDGAR_USER_AGENT: str = "CompanyName admin@company.com"
 
+    # Server
+    PORT: int = 8000
+
     # CORS
     CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:5173"]
 
