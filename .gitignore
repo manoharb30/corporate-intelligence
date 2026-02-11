@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+backend/venv/
+
+# Environment variables
+.env
+backend/.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node
+frontend/node_modules/
+
+# Logs
+backend/logs/
+*.log
+
+# Database / cache
+backend/review_queue.db
+backend/data/
+*.db
+*.sqlite3
+
+# Test caches
+.pytest_cache/
+backend/.pytest_cache/
+.coverage
+htmlcov/
+
+# Claude Code
+.claude/
+
+# Build output
+frontend/dist/
+
+# Large data files
+backend/sp500_ciks.json
+backend/sp500_to_ingest.json
