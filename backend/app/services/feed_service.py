@@ -260,7 +260,7 @@ class FeedService:
         """Get database node/relationship counts for the overview page."""
         query = """
             CALL {
-                MATCH (c:Company) RETURN 'companies' as label, count(c) as cnt
+                MATCH (c:Company) WHERE c.cik IS NOT NULL RETURN 'companies' as label, count(c) as cnt
                 UNION ALL
                 MATCH (e:Event) RETURN 'events' as label, count(e) as cnt
                 UNION ALL

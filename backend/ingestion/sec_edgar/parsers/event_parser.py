@@ -134,7 +134,7 @@ ITEM_DEFINITIONS = {
 }
 
 # Items we care about for M&A signals
-MA_SIGNAL_ITEMS = ["1.01", "2.01", "5.01", "5.02", "5.03"]
+MA_SIGNAL_ITEMS = ["1.01", "2.01", "3.03", "5.01", "5.02", "5.03"]
 
 
 @dataclass
@@ -349,34 +349,13 @@ class EventParser:
         return event
 
     def _extract_persons(self, text: str) -> list[str]:
-        """Extract person names from text."""
-        persons = set()
+        """Extract person names from text.
 
-        # Find Mr./Ms./Mrs. patterns
-        for match in self.PERSON_PATTERN.finditer(text):
-            name = match.group(1).strip()
-            if len(name) > 3:
-                persons.add(name)
-
-        # Also look for names near executive titles
-        for title_match in self.TITLE_PATTERN.finditer(text):
-            # Look for a name before or after the title
-            start = max(0, title_match.start() - 50)
-            end = min(len(text), title_match.end() + 50)
-            context = text[start:end]
-
-            # Look for capitalized names
-            name_pattern = re.compile(r'([A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+)')
-            for name_match in name_pattern.finditer(context):
-                name = name_match.group(1).strip()
-                # Filter out common false positives
-                if len(name) > 5 and not any(word in name.lower() for word in [
-                    'item', 'section', 'form', 'exhibit', 'pursuant', 'company',
-                    'corporation', 'securities', 'exchange', 'commission'
-                ]):
-                    persons.add(name)
-
-        return list(persons)[:10]  # Limit to 10 persons
+        Regex-based extraction is disabled due to high false-positive rate
+        (e.g. 'Material Definitive', 'Effective Da'). Person extraction is
+        handled by LLM analysis in llm_analysis_service.py instead.
+        """
+        return []
 
     def get_ma_signal_summary(self, result: Filing8KResult) -> Optional[str]:
         """Generate a summary of M&A signals in a filing."""
