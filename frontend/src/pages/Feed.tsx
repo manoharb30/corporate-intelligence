@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { feedApi, profileApi, SignalItem, ProfileSearchResult, MarketScanStatus } from '../services/api'
-import { useNavigate } from 'react-router-dom'
+import { feedApi, profileApi, SignalItem, ProfileSearchResult, MarketScanStatus, TopInsiderActivity } from '../services/api'
+import { useNavigate, Link } from 'react-router-dom'
 import SignalCard from '../components/SignalCard'
 
 type SignalLevel = 'all' | 'critical' | 'high' | 'medium' | 'low'
@@ -18,6 +18,9 @@ export default function Feed() {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<ProfileSearchResult[]>([])
   const [searching, setSearching] = useState(false)
+
+  // Insider activity state
+  const [insiderActivity, setInsiderActivity] = useState<TopInsiderActivity[]>([])
 
   // Market scan state
   const [scanStatus, setScanStatus] = useState<MarketScanStatus | null>(null)
@@ -77,10 +80,16 @@ export default function Feed() {
   const loadFeed = async () => {
     setLoading(true)
     try {
-      const response = await feedApi.getFeed(days, 100, 'low')
-      setSignals(response.data.signals)
-      setByLevel(response.data.by_level)
-      if (response.data.by_combined) setByCombined(response.data.by_combined)
+      const [feedRes, insiderRes] = await Promise.allSettled([
+        feedApi.getFeed(days, 100, 'low'),
+        feedApi.getTopInsiderActivity(30, 10),
+      ])
+      if (feedRes.status === 'fulfilled') {
+        setSignals(feedRes.value.data.signals)
+        setByLevel(feedRes.value.data.by_level)
+        if (feedRes.value.data.by_combined) setByCombined(feedRes.value.data.by_combined)
+      }
+      if (insiderRes.status === 'fulfilled') setInsiderActivity(insiderRes.value.data)
     } catch (error) {
       console.error('Failed to load feed:', error)
     } finally {
@@ -237,6 +246,40 @@ export default function Feed() {
           {filteredSignals.map((signal, idx) => (
             <SignalCard key={`${signal.accession_number}-${idx}`} signal={signal} />
           ))}
+        </div>
+      )}
+
+      {/* Top Insider Activity */}
+      {insiderActivity.length > 0 && (
+        <div className="mt-8 bg-white rounded-lg border border-gray-200 shadow-sm p-5">
+          <h2 className="text-lg font-semibold text-gray-900 mb-3">Top Insider Activity (30d)</h2>
+          <div className="space-y-2">
+            {insiderActivity.map((item, idx) => (
+              <Link
+                key={idx}
+                to={`/company/${item.cik}`}
+                className="flex items-center justify-between p-2.5 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-gray-900 truncate">{item.company_name}</span>
+                    {item.ticker && <span className="text-xs text-gray-500">({item.ticker})</span>}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-0.5">
+                    {item.trade_count} trades by {item.unique_insiders} insider{item.unique_insiders !== 1 ? 's' : ''}
+                  </div>
+                </div>
+                <span className={`px-2 py-0.5 rounded text-xs font-medium shrink-0 ${
+                  item.net_direction === 'buying' ? 'text-green-700 bg-green-50 border border-green-200' :
+                  item.net_direction === 'selling' ? 'text-red-700 bg-red-50 border border-red-200' :
+                  'text-gray-600 bg-gray-100 border border-gray-200'
+                }`}>
+                  {item.net_direction === 'buying' ? 'Net Buy' :
+                   item.net_direction === 'selling' ? 'Net Sell' : 'Mixed'}
+                </span>
+              </Link>
+            ))}
+          </div>
         </div>
       )}
     </div>

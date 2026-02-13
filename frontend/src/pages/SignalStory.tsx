@@ -6,6 +6,12 @@ import InsiderTimeline from '../components/InsiderTimeline'
 import VerdictCard from '../components/VerdictCard'
 import MiniGraph from '../components/MiniGraph'
 
+function formatValue(val: number): string {
+  if (val >= 1e6) return `$${(val / 1e6).toFixed(1)}M`
+  if (val >= 1e3) return `$${Math.round(val / 1e3)}K`
+  return ''
+}
+
 const levelBadge: Record<string, string> = {
   critical: 'bg-purple-600 text-white animate-pulse',
   high_bearish: 'bg-red-700 text-white',
@@ -244,9 +250,9 @@ export default function SignalStory() {
                   }`}>
                     {insiderCtx.net_direction.toUpperCase()}
                     {insiderCtx.net_direction === 'buying' && insiderCtx.total_buy_value > 0 &&
-                      ` ($${(insiderCtx.total_buy_value / 1e6).toFixed(1)}M)`}
+                      formatValue(insiderCtx.total_buy_value) && ` (${formatValue(insiderCtx.total_buy_value)})`}
                     {insiderCtx.net_direction === 'selling' && insiderCtx.total_sell_value > 0 &&
-                      ` ($${(insiderCtx.total_sell_value / 1e6).toFixed(1)}M)`}
+                      formatValue(insiderCtx.total_sell_value) && ` (${formatValue(insiderCtx.total_sell_value)})`}
                   </span></>
                 )}
               </p>

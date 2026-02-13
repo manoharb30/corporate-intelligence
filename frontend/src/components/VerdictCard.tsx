@@ -33,6 +33,12 @@ const levelLabel: Record<string, string> = {
   low: 'LOW',
 }
 
+function formatValue(val: number): string {
+  if (val >= 1e6) return `$${(val / 1e6).toFixed(1)}M`
+  if (val >= 1e3) return `$${Math.round(val / 1e3)}K`
+  return ''
+}
+
 function generateVerdict(props: VerdictCardProps): string {
   const { combinedSignalLevel, signalSummary, insiderContext, itemNumbers } = props
   const level = combinedSignalLevel || props.signalLevel
@@ -56,11 +62,13 @@ function generateVerdict(props: VerdictCardProps): string {
     const count = insiderContext.trade_count
 
     if (dir === 'buying') {
-      parts.push(`+ ${count} insider trades net BUYING ($${(buyVal / 1e6).toFixed(1)}M)`)
+      const valStr = formatValue(buyVal)
+      parts.push(`+ ${count} insider trade${count !== 1 ? 's' : ''} net BUYING${valStr ? ` (${valStr})` : ''}`)
     } else if (dir === 'selling') {
-      parts.push(`+ ${count} insider trades net SELLING ($${(sellVal / 1e6).toFixed(1)}M)`)
+      const valStr = formatValue(sellVal)
+      parts.push(`+ ${count} insider trade${count !== 1 ? 's' : ''} net SELLING${valStr ? ` (${valStr})` : ''}`)
     } else if (dir === 'mixed') {
-      parts.push(`+ ${count} insider trades (mixed)`)
+      parts.push(`+ ${count} insider trade${count !== 1 ? 's' : ''} (mixed)`)
     }
 
     if (insiderContext.cluster_activity) {

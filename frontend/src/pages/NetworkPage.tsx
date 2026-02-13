@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import ForceGraph2D from 'react-force-graph-2d'
-import { companiesApi, graphApi, profileApi, connectionsApi, CompanyIntelligence, PersonSummary, ProfileSearchResult, ConnectionClaim } from '../services/api'
+import { Link } from 'react-router-dom'
+import { companiesApi, graphApi, profileApi, connectionsApi, insightsApi, CompanyIntelligence, PersonSummary, ProfileSearchResult, ConnectionClaim, InsightItem } from '../services/api'
 
 type Mode = 'entity' | 'connections' | 'interlocks'
 
@@ -47,6 +48,9 @@ export default function NetworkPage() {
   const [selectedInfo, setSelectedInfo] = useState<string | null>(null)
   const graphRef = useRef<any>()
 
+  // Network insights state
+  const [insights, setInsights] = useState<InsightItem[]>([])
+
   // Connection finder state
   const [entityA, setEntityA] = useState('')
   const [entityB, setEntityB] = useState('')
@@ -55,6 +59,24 @@ export default function NetworkPage() {
   // Intelligence state
   const [selectedCompany, setSelectedCompany] = useState<CompanyIntelligence | null>(null)
   const [selectedPerson, setSelectedPerson] = useState<PersonSummary | null>(null)
+
+  useEffect(() => {
+    insightsApi.getSummary()
+      .then(res => {
+        const data = res.data as any
+        setInsights(data.insights || data.top_insights || [])
+      })
+      .catch(() => {})
+  }, [])
+
+  const getInsightCategoryColor = (category: string) => {
+    switch (category.toLowerCase()) {
+      case 'board_interlock': return 'bg-purple-100 text-purple-800'
+      case 'hub_company': return 'bg-blue-100 text-blue-800'
+      case 'bridge_person': return 'bg-green-100 text-green-800'
+      default: return 'bg-gray-100 text-gray-800'
+    }
+  }
 
   const handleSearch = async () => {
     if (query.length < 2) return
@@ -376,6 +398,39 @@ export default function NetworkPage() {
                     </div>
                   ))}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Network Alerts */}
+          {insights.length > 0 && !selectedCompany && !connectionResult && (
+            <div className="mb-4">
+              <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2">Network Alerts</h4>
+              <div className="space-y-2">
+                {insights.slice(0, 6).map((insight, idx) => (
+                  <div key={idx} className="p-2.5 rounded-lg bg-gray-50">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${getInsightCategoryColor(insight.category)}`}>
+                        {insight.category.replace(/_/g, ' ')}
+                      </span>
+                    </div>
+                    <p className="text-sm font-medium text-gray-900">{insight.headline}</p>
+                    <p className="text-xs text-gray-600 mt-0.5">{insight.description}</p>
+                    {insight.entities?.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {insight.entities.slice(0, 3).map((entity, eidx) =>
+                          entity.cik ? (
+                            <Link key={eidx} to={`/company/${entity.cik}`} className="text-xs text-primary-600 hover:underline">
+                              {entity.name}
+                            </Link>
+                          ) : (
+                            <span key={eidx} className="text-xs text-gray-500">{entity.name}</span>
+                          )
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
           )}
