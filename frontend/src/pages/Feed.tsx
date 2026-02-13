@@ -1,10 +1,12 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { Link } from 'react-router-dom'
 import { feedApi, profileApi, SignalItem, ProfileSearchResult, MarketScanStatus } from '../services/api'
+import { useNavigate } from 'react-router-dom'
+import SignalCard from '../components/SignalCard'
 
 type SignalLevel = 'all' | 'critical' | 'high' | 'medium' | 'low'
 
 export default function Feed() {
+  const navigate = useNavigate()
   const [signals, setSignals] = useState<SignalItem[]>([])
   const [loading, setLoading] = useState(true)
   const [filterLevel, setFilterLevel] = useState<SignalLevel>('all')
@@ -28,27 +30,19 @@ export default function Feed() {
 
   useEffect(() => {
     if (searchQuery.length >= 2) {
-      const timer = setTimeout(() => {
-        searchCompanies(searchQuery)
-      }, 300)
+      const timer = setTimeout(() => searchCompanies(searchQuery), 300)
       return () => clearTimeout(timer)
     } else {
       setSearchResults([])
     }
   }, [searchQuery])
 
-  // Cleanup polling on unmount
   useEffect(() => {
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current)
-    }
+    return () => { if (pollRef.current) clearInterval(pollRef.current) }
   }, [])
 
   const stopPolling = useCallback(() => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current)
-      pollRef.current = null
-    }
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
   }, [])
 
   const startPolling = useCallback(() => {
@@ -58,20 +52,15 @@ export default function Feed() {
         const res = await feedApi.marketScanStatus()
         const status = res.data
         setScanStatus(status)
-
         if (status.status === 'completed') {
           stopPolling()
-          setScanBanner(
-            `Market Scan Complete - ${status.companies_scanned} companies scanned, ${status.events_stored} events found`
-          )
+          setScanBanner(`Scan Complete - ${status.companies_scanned} companies, ${status.events_stored} events`)
           loadFeed()
         } else if (status.status === 'error') {
           stopPolling()
-          setScanBanner(`Market Scan Error: ${status.message}`)
+          setScanBanner(`Scan Error: ${status.message}`)
         }
-      } catch {
-        stopPolling()
-      }
+      } catch { stopPolling() }
     }, 3000)
   }, [stopPolling])
 
@@ -79,24 +68,10 @@ export default function Feed() {
     try {
       setScanBanner(null)
       const res = await feedApi.marketScan(3)
-      if (res.data.status === 'already_running') {
-        // Already running, just start polling
-        startPolling()
-        return
-      }
-      setScanStatus({
-        status: 'in_progress',
-        companies_discovered: 0,
-        companies_scanned: 0,
-        events_stored: 0,
-        errors_count: 0,
-        message: 'Starting market scan...',
-      })
+      if (res.data.status === 'already_running') { startPolling(); return }
+      setScanStatus({ status: 'in_progress', companies_discovered: 0, companies_scanned: 0, events_stored: 0, errors_count: 0, message: 'Starting...' })
       startPolling()
-    } catch (error) {
-      console.error('Failed to start market scan:', error)
-      setScanBanner('Failed to start market scan')
-    }
+    } catch { setScanBanner('Failed to start scan') }
   }
 
   const loadFeed = async () => {
@@ -118,9 +93,7 @@ export default function Feed() {
     try {
       const response = await profileApi.searchCompanies(query, 10)
       setSearchResults(response.data.results)
-    } catch (error) {
-      console.error('Search failed:', error)
-    } finally {
+    } catch { /* ignore */ } finally {
       setSearching(false)
     }
   }
@@ -131,53 +104,21 @@ export default function Feed() {
     ? signals.filter(s => s.combined_signal_level === 'critical')
     : signals.filter(s => s.signal_level === filterLevel || s.combined_signal_level === filterLevel)
 
-  const getCombinedColor = (level: string) => {
-    switch (level) {
-      case 'critical':
-        return 'bg-purple-100 text-purple-900 border-purple-300'
-      case 'high_bearish':
-        return 'bg-red-100 text-red-900 border-red-300'
-      case 'high':
-        return 'bg-red-100 text-red-800 border-red-200'
-      case 'medium':
-        return 'bg-yellow-100 text-yellow-800 border-yellow-200'
-      default:
-        return 'bg-blue-100 text-blue-800 border-blue-200'
-    }
-  }
-
-  const getCombinedBadge = (level: string) => {
-    switch (level) {
-      case 'critical':
-        return 'bg-purple-600 animate-pulse'
-      case 'high_bearish':
-        return 'bg-red-700'
-      case 'high':
-        return 'bg-red-500'
-      case 'medium':
-        return 'bg-yellow-500'
-      default:
-        return 'bg-blue-500'
-    }
-  }
-
-  const getCombinedLabel = (level: string) => {
-    switch (level) {
-      case 'critical': return 'CRITICAL'
-      case 'high_bearish': return 'HIGH BEARISH'
-      default: return level.toUpperCase()
-    }
-  }
+  const filterPills: { key: SignalLevel; label: string; count: number; color: string; activeColor: string }[] = [
+    { key: 'all', label: 'All', count: signals.length, color: 'bg-gray-100 text-gray-700', activeColor: 'bg-primary-600 text-white' },
+    { key: 'critical', label: 'Critical', count: byCombined.critical, color: 'bg-purple-50 text-purple-700', activeColor: 'bg-purple-600 text-white' },
+    { key: 'high', label: 'High', count: byLevel.high, color: 'bg-red-50 text-red-700', activeColor: 'bg-red-500 text-white' },
+    { key: 'medium', label: 'Medium', count: byLevel.medium, color: 'bg-yellow-50 text-yellow-700', activeColor: 'bg-yellow-500 text-white' },
+    { key: 'low', label: 'Low', count: byLevel.low, color: 'bg-blue-50 text-blue-700', activeColor: 'bg-blue-500 text-white' },
+  ]
 
   return (
     <div>
       {/* Header */}
-      <div className="mb-6 flex items-start justify-between">
+      <div className="flex items-center justify-between mb-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Signal Feed</h1>
-          <p className="mt-1 text-sm text-gray-600">
-            M&A signals detected from SEC 8-K filings
-          </p>
+          <h1 className="text-2xl font-bold text-gray-900">Signals</h1>
+          <p className="text-sm text-gray-600">M&A signals from SEC 8-K filings</p>
         </div>
         <button
           onClick={handleMarketScan}
@@ -191,305 +132,113 @@ export default function Feed() {
         </button>
       </div>
 
-      {/* Market Scan Progress */}
+      {/* Scan Progress */}
       {scanStatus?.status === 'in_progress' && (
-        <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-blue-800">{scanStatus.message}</span>
-            <span className="text-sm text-blue-600">
-              {scanStatus.companies_discovered > 0
-                ? `${scanStatus.companies_scanned}/${scanStatus.companies_discovered}`
-                : 'Discovering...'}
+        <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="flex items-center justify-between text-sm">
+            <span className="font-medium text-blue-800">{scanStatus.message}</span>
+            <span className="text-blue-600">
+              {scanStatus.companies_discovered > 0 ? `${scanStatus.companies_scanned}/${scanStatus.companies_discovered}` : 'Discovering...'}
             </span>
           </div>
           {scanStatus.companies_discovered > 0 && (
-            <div className="w-full bg-blue-200 rounded-full h-2">
-              <div
-                className="bg-blue-600 h-2 rounded-full transition-all duration-500"
-                style={{ width: `${(scanStatus.companies_scanned / scanStatus.companies_discovered) * 100}%` }}
-              ></div>
+            <div className="w-full bg-blue-200 rounded-full h-1.5 mt-2">
+              <div className="bg-blue-600 h-1.5 rounded-full transition-all" style={{ width: `${(scanStatus.companies_scanned / scanStatus.companies_discovered) * 100}%` }}></div>
             </div>
           )}
         </div>
       )}
 
-      {/* Scan Result Banner */}
       {scanBanner && (
-        <div className={`mb-6 p-4 rounded-lg flex items-center justify-between ${
-          scanBanner.includes('Error') || scanBanner.includes('Failed')
-            ? 'bg-red-50 border border-red-200 text-red-800'
-            : 'bg-green-50 border border-green-200 text-green-800'
+        <div className={`mb-4 p-3 rounded-lg flex items-center justify-between text-sm ${
+          scanBanner.includes('Error') || scanBanner.includes('Failed') ? 'bg-red-50 border border-red-200 text-red-800' : 'bg-green-50 border border-green-200 text-green-800'
         }`}>
-          <span className="text-sm font-medium">{scanBanner}</span>
-          <button
-            onClick={() => setScanBanner(null)}
-            className="text-sm opacity-60 hover:opacity-100 ml-4"
-          >
-            Dismiss
-          </button>
+          <span className="font-medium">{scanBanner}</span>
+          <button onClick={() => setScanBanner(null)} className="opacity-60 hover:opacity-100 ml-4">Dismiss</button>
         </div>
       )}
 
-      {/* Search Bar */}
-      <div className="mb-6 relative">
-        <input
-          type="text"
-          placeholder="Search companies by name or ticker..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-        />
-        {searchResults.length > 0 && (
-          <div className="absolute z-10 w-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 max-h-80 overflow-y-auto">
-            {searchResults.map((result) => (
-              <Link
-                key={result.cik}
-                to={`/company/${result.cik}`}
-                onClick={() => {
-                  setSearchQuery('')
-                  setSearchResults([])
-                }}
-                className="block px-4 py-3 hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+      {/* Sticky filter bar */}
+      <div className="sticky top-0 z-10 bg-gray-50 -mx-4 px-4 py-3 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 border-b border-gray-200 mb-4">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          {/* Signal level pills */}
+          <div className="flex gap-2">
+            {filterPills.map(pill => (
+              <button
+                key={pill.key}
+                onClick={() => setFilterLevel(pill.key)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                  filterLevel === pill.key ? pill.activeColor : pill.color + ' hover:opacity-80'
+                }`}
               >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="font-medium text-gray-900">{result.name}</span>
-                    {result.ticker && (
-                      <span className="ml-2 text-sm text-gray-500">({result.ticker})</span>
-                    )}
-                  </div>
-                  <span className="text-sm text-gray-400">
-                    {result.signal_count} signals
-                  </span>
-                </div>
-              </Link>
+                {pill.label} ({pill.count})
+              </button>
             ))}
           </div>
-        )}
-        {searching && (
-          <div className="absolute right-3 top-3">
-            <div className="animate-spin h-5 w-5 border-2 border-primary-500 border-t-transparent rounded-full"></div>
+
+          <div className="flex items-center gap-3">
+            {/* Time range */}
+            <div className="flex gap-1">
+              {[7, 30, 60, 90].map(d => (
+                <button
+                  key={d}
+                  onClick={() => setDays(d)}
+                  className={`px-2.5 py-1 rounded text-xs font-medium ${
+                    days === d ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  {d}d
+                </button>
+              ))}
+            </div>
+
+            {/* Search */}
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Search..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="w-48 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+              />
+              {searching && (
+                <div className="absolute right-2 top-2">
+                  <div className="animate-spin h-3 w-3 border-2 border-primary-500 border-t-transparent rounded-full"></div>
+                </div>
+              )}
+              {searchResults.length > 0 && (
+                <div className="absolute top-full right-0 mt-1 w-72 bg-white rounded-lg shadow-xl border border-gray-200 z-50 max-h-64 overflow-y-auto">
+                  {searchResults.map(r => (
+                    <button
+                      key={r.cik}
+                      onClick={() => { navigate(`/company/${r.cik}`); setSearchQuery(''); setSearchResults([]) }}
+                      className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm border-b border-gray-100 last:border-0"
+                    >
+                      <span className="font-medium text-gray-900">{r.name}</span>
+                      {r.ticker && <span className="text-gray-500 ml-1">({r.ticker})</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-        )}
-      </div>
-
-      {/* Stats Summary */}
-      <div className="grid grid-cols-5 gap-4 mb-6">
-        <button
-          onClick={() => setFilterLevel('all')}
-          className={`p-4 rounded-lg border-2 transition-colors ${
-            filterLevel === 'all' ? 'border-primary-500 bg-primary-50' : 'border-gray-200 hover:border-gray-300'
-          }`}
-        >
-          <div className="text-2xl font-bold text-gray-900">{signals.length}</div>
-          <div className="text-sm text-gray-600">Total Signals</div>
-        </button>
-        <button
-          onClick={() => setFilterLevel('critical')}
-          className={`p-4 rounded-lg border-2 transition-colors ${
-            filterLevel === 'critical' ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-gray-300'
-          }`}
-        >
-          <div className="text-2xl font-bold text-purple-600">{byCombined.critical}</div>
-          <div className="text-sm text-gray-600">Critical</div>
-        </button>
-        <button
-          onClick={() => setFilterLevel('high')}
-          className={`p-4 rounded-lg border-2 transition-colors ${
-            filterLevel === 'high' ? 'border-red-500 bg-red-50' : 'border-gray-200 hover:border-gray-300'
-          }`}
-        >
-          <div className="text-2xl font-bold text-red-600">{byLevel.high}</div>
-          <div className="text-sm text-gray-600">High Priority</div>
-        </button>
-        <button
-          onClick={() => setFilterLevel('medium')}
-          className={`p-4 rounded-lg border-2 transition-colors ${
-            filterLevel === 'medium' ? 'border-yellow-500 bg-yellow-50' : 'border-gray-200 hover:border-gray-300'
-          }`}
-        >
-          <div className="text-2xl font-bold text-yellow-600">{byLevel.medium}</div>
-          <div className="text-sm text-gray-600">Medium Priority</div>
-        </button>
-        <button
-          onClick={() => setFilterLevel('low')}
-          className={`p-4 rounded-lg border-2 transition-colors ${
-            filterLevel === 'low' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
-          }`}
-        >
-          <div className="text-2xl font-bold text-blue-600">{byLevel.low}</div>
-          <div className="text-sm text-gray-600">Low Priority</div>
-        </button>
-      </div>
-
-      {/* Time Range Filter */}
-      <div className="mb-6 flex items-center gap-4">
-        <span className="text-sm text-gray-600">Time range:</span>
-        <div className="flex gap-2">
-          {[7, 30, 60, 90].map((d) => (
-            <button
-              key={d}
-              onClick={() => setDays(d)}
-              className={`px-3 py-1 rounded-md text-sm ${
-                days === d
-                  ? 'bg-primary-600 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              {d} days
-            </button>
-          ))}
         </div>
       </div>
 
-      {/* Signal List */}
+      {/* Signal list */}
       {loading ? (
         <div className="flex items-center justify-center py-12">
           <div className="animate-spin h-8 w-8 border-4 border-primary-500 border-t-transparent rounded-full"></div>
         </div>
       ) : filteredSignals.length === 0 ? (
-        <div className="text-center py-12 text-gray-500">
-          No signals found for the selected filters
-        </div>
+        <div className="text-center py-12 text-gray-500">No signals found for the selected filters</div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {filteredSignals.map((signal, idx) => (
-            <div
-              key={`${signal.accession_number}-${idx}`}
-              className={`p-5 rounded-lg border-2 ${getCombinedColor(signal.combined_signal_level)}`}
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-2">
-                    <span className={`px-2 py-0.5 rounded text-xs font-semibold uppercase text-white ${getCombinedBadge(signal.combined_signal_level)}`}>
-                      {getCombinedLabel(signal.combined_signal_level)}
-                    </span>
-                    <Link
-                      to={`/company/${signal.cik}`}
-                      className="text-lg font-semibold text-gray-900 hover:text-primary-600"
-                    >
-                      {signal.company_name}
-                    </Link>
-                    {signal.ticker && (
-                      <span className="text-sm text-gray-500">({signal.ticker})</span>
-                    )}
-                  </div>
-
-                  <Link
-                    to={`/event/${encodeURIComponent(signal.accession_number)}`}
-                    className="block text-gray-700 font-medium mb-2 hover:text-primary-600"
-                  >
-                    {signal.signal_summary} &rarr;
-                  </Link>
-
-                  <div className="flex flex-wrap gap-2 mb-2">
-                    {signal.items.map((item) => (
-                      <span
-                        key={item}
-                        className="px-2 py-1 bg-white/50 rounded text-xs font-mono"
-                      >
-                        Item {item}
-                      </span>
-                    ))}
-                  </div>
-
-                  {/* Insider Context */}
-                  {signal.insider_context && signal.insider_context.trade_count > 0 && (
-                    <div className="mt-2 p-2 rounded bg-white/60 border border-amber-200">
-                      {/* Person-level matches — most compelling evidence */}
-                      {signal.insider_context.person_matches && signal.insider_context.person_matches.length > 0 && (
-                        <div className="mb-2 p-2 rounded bg-yellow-50 border border-yellow-300">
-                          <div className="text-xs font-semibold text-yellow-900 mb-1">Person in Filing + Insider Trade Match</div>
-                          {signal.insider_context.person_matches.map((match, midx) => (
-                            <div key={midx} className="text-xs text-yellow-800 font-medium">
-                              {match}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      <div className="flex items-center gap-2 text-sm">
-                        <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
-                          signal.insider_context.net_direction === 'buying' ? 'bg-green-100 text-green-800' :
-                          signal.insider_context.net_direction === 'selling' ? 'bg-red-100 text-red-800' :
-                          'bg-gray-100 text-gray-800'
-                        }`}>
-                          {signal.insider_context.net_direction === 'buying' ? 'Insider Buying' :
-                           signal.insider_context.net_direction === 'selling' ? 'Insider Selling' :
-                           'Insider Activity'}
-                        </span>
-                        <span className="text-gray-600 text-xs">
-                          {signal.insider_context.trade_count} trade{signal.insider_context.trade_count !== 1 ? 's' : ''} within 60 days
-                        </span>
-                        {signal.insider_context.cluster_activity && (
-                          <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800">
-                            Cluster
-                          </span>
-                        )}
-                      </div>
-                      {signal.insider_context.notable_trades.length > 0 && (
-                        <div className="mt-1 text-xs text-amber-800 italic">
-                          {signal.insider_context.notable_trades[0]}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {signal.persons_mentioned.length > 0 && (
-                    <div className="text-sm text-gray-600 mt-2">
-                      <span className="font-medium">Persons mentioned:</span>{' '}
-                      {signal.persons_mentioned.slice(0, 3).join(', ')}
-                      {signal.persons_mentioned.length > 3 && (
-                        <span className="text-gray-400"> +{signal.persons_mentioned.length - 3} more</span>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                <div className="text-right ml-4">
-                  <div className="text-sm font-medium text-gray-900">
-                    {signal.filing_date}
-                  </div>
-                  <a
-                    href={`https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${signal.cik}&type=8-K`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-primary-600 hover:underline"
-                  >
-                    View Filing
-                  </a>
-                </div>
-              </div>
-            </div>
+            <SignalCard key={`${signal.accession_number}-${idx}`} signal={signal} />
           ))}
         </div>
       )}
-
-      {/* Legend */}
-      <div className="mt-8 p-4 bg-gray-50 rounded-lg">
-        <h3 className="text-sm font-semibold text-gray-700 mb-2">Signal Level Guide</h3>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
-          <div>
-            <span className="inline-block w-3 h-3 rounded bg-purple-600 mr-2"></span>
-            <span className="font-medium">CRITICAL:</span>
-            <span className="text-gray-600 ml-1">HIGH signal + insider buying confirms deal intent</span>
-          </div>
-          <div>
-            <span className="inline-block w-3 h-3 rounded bg-red-500 mr-2"></span>
-            <span className="font-medium">HIGH:</span>
-            <span className="text-gray-600 ml-1">Material Agreement + Governance/Exec changes</span>
-          </div>
-          <div>
-            <span className="inline-block w-3 h-3 rounded bg-yellow-500 mr-2"></span>
-            <span className="font-medium">MEDIUM:</span>
-            <span className="text-gray-600 ml-1">Material Agreement alone, multiple exec changes</span>
-          </div>
-          <div>
-            <span className="inline-block w-3 h-3 rounded bg-blue-500 mr-2"></span>
-            <span className="font-medium">LOW:</span>
-            <span className="text-gray-600 ml-1">Single executive or governance change</span>
-          </div>
-        </div>
-      </div>
     </div>
   )
 }

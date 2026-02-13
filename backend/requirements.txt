@@ -25,6 +25,9 @@ sec-edgar-downloader>=5.0.0
 # Anthropic Claude API
 anthropic>=0.18.0
 
+# Stock price data
+yfinance>=0.2.0
+
 # Development
 pytest>=7.4.0
 pytest-asyncio>=0.23.0

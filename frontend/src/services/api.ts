@@ -386,6 +386,40 @@ export interface MarketScanStatus {
   message: string
 }
 
+// Stock Price types
+export interface StockPriceData {
+  date: string
+  open: number
+  high: number
+  low: number
+  close: number
+  volume: number
+}
+
+export interface StockPriceResponse {
+  ticker: string
+  period: string
+  count: number
+  prices: StockPriceData[]
+}
+
+export interface TopInsiderActivity {
+  cik: string
+  company_name: string
+  ticker: string | null
+  trade_count: number
+  unique_insiders: number
+  total_buy_value: number
+  total_sell_value: number
+  net_direction: 'buying' | 'selling' | 'mixed'
+}
+
+// Stock Price API
+export const stockPriceApi = {
+  getPrice: (ticker: string, period = '1y') =>
+    api.get<StockPriceResponse>(`/stock-price/${ticker}`, { params: { period } }),
+}
+
 // Feed API
 export const feedApi = {
   getFeed: (days = 30, limit = 50, minLevel = 'low') =>
@@ -406,6 +440,9 @@ export const feedApi = {
 
   marketScanStatus: () =>
     api.get<MarketScanStatus>('/feed/market-scan/status'),
+
+  getTopInsiderActivity: (days = 30, limit = 10) =>
+    api.get<TopInsiderActivity[]>('/feed/top-insider-activity', { params: { days, limit } }),
 }
 
 // Insider Trades API
@@ -522,6 +559,8 @@ export interface EventDetailResponse {
     name: string
     ticker: string | null
   }
+  combined_signal_level?: string
+  insider_context?: InsiderContextData | null
 }
 
 // Event Detail API

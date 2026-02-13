@@ -171,6 +171,17 @@ class MarketScanResult:
 class FeedService:
     """Service for generating and ranking signal feeds."""
 
+    # Keywords that indicate an IPO/SPAC/offering filing, NOT an M&A signal
+    IPO_KEYWORDS = [
+        "underwriting agreement",
+        "initial public offering",
+        "ipo",
+        "prospectus supplement",
+        "public offering price",
+        "shares of common stock registered",
+        "business combination agreement",  # SPAC merger
+    ]
+
     # Item name mapping
     ITEM_NAMES = {
         "1.01": "Material Agreement",
@@ -186,12 +197,19 @@ class FeedService:
     }
 
     @staticmethod
-    def classify_signal_level(items: list[str]) -> tuple[str, str]:
+    def is_ipo_filing(raw_texts: list[str]) -> bool:
+        """Check if raw_text content indicates an IPO/SPAC/offering filing."""
+        combined = " ".join(t.lower() for t in raw_texts if t)
+        return any(kw in combined for kw in FeedService.IPO_KEYWORDS)
+
+    @staticmethod
+    def classify_signal_level(items: list[str], raw_texts: list[str] | None = None) -> tuple[str, str]:
         """
         Classify signal level based on PREDICTIVE value for M&A detection.
 
         Key insight: 2.01 (Acquisition Complete) means deal is DONE - too late.
         The predictive signal is 1.01 (Material Agreement) BEFORE 2.01 appears.
+        IPO/SPAC/offering filings are downgraded since they are not M&A signals.
 
         Returns: (level, summary)
         """
@@ -207,8 +225,13 @@ class FeedService:
         # This is the PREDICTIVE signal - deal announced but not closed
         if has_material_agreement and not deal_closed:
             if has_exec_changes or has_governance_changes:
+                # Check for IPO/offering false positive
+                if raw_texts and FeedService.is_ipo_filing(raw_texts):
+                    return "low", "IPO/Offering Filing - Not M&A"
                 return "high", "Deal in Progress - Material Agreement + Leadership Changes"
-            # Material agreement alone is still notable
+            # Material agreement alone - also check for IPO/offering
+            if raw_texts and FeedService.is_ipo_filing(raw_texts):
+                return "low", "IPO/Offering Filing - Not M&A"
             return "medium", "Material Agreement Filed - Potential Deal"
 
         # MEDIUM: Multiple exec/governance changes together (potential integration)
@@ -470,7 +493,8 @@ class FeedService:
                    e.item_name as item_name,
                    e.signal_type as signal_type,
                    e.persons_mentioned as persons_mentioned,
-                   e.accession_number as accession_number
+                   e.accession_number as accession_number,
+                   e.raw_text as raw_text
             ORDER BY e.filing_date DESC
         """
 
@@ -492,12 +516,15 @@ class FeedService:
                     "item_names": [],
                     "persons_mentioned": [],
                     "accession_number": r["accession_number"],
+                    "raw_texts": [],
                 }
             grouped[key]["items"].append(r["item_number"])
             if r["item_name"]:
                 grouped[key]["item_names"].append(r["item_name"])
             if r["persons_mentioned"]:
                 grouped[key]["persons_mentioned"].extend(r["persons_mentioned"])
+            if r.get("raw_text"):
+                grouped[key]["raw_texts"].append(r["raw_text"])
 
         # Convert to SignalItems with classification
         signals = []
@@ -505,7 +532,7 @@ class FeedService:
         min_level_order = level_order.get(min_level, 2)
 
         for data in grouped.values():
-            level, summary = FeedService.classify_signal_level(data["items"])
+            level, summary = FeedService.classify_signal_level(data["items"], data.get("raw_texts"))
 
             # Filter by minimum level
             if level_order.get(level, 2) > min_level_order:
@@ -577,6 +604,53 @@ class FeedService:
             "item_counts": item_counts,
             "total_events": sum(item_counts.values()),
         }
+
+    @staticmethod
+    async def get_top_insider_activity(days: int = 30, limit: int = 10) -> list[dict]:
+        """
+        Get companies with the most insider trading activity.
+
+        Returns top companies by trade count with net buy/sell values.
+        """
+        since_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+
+        query = """
+            MATCH (c:Company)-[:INSIDER_TRADE_OF]->(t:InsiderTransaction)<-[:TRADED_BY]-(p:Person)
+            WHERE t.transaction_date >= $since_date
+            WITH c, t, p,
+                 CASE WHEN t.transaction_code = 'P' THEN t.total_value ELSE 0 END as buy_val,
+                 CASE WHEN t.transaction_code = 'S' THEN t.total_value ELSE 0 END as sell_val
+            WITH c.cik as cik, c.name as company_name, c.tickers as tickers,
+                 count(t) as trade_count,
+                 count(DISTINCT p) as unique_insiders,
+                 sum(buy_val) as total_buy_value,
+                 sum(sell_val) as total_sell_value
+            ORDER BY trade_count DESC
+            LIMIT $limit
+            RETURN cik, company_name, tickers, trade_count, unique_insiders,
+                   total_buy_value, total_sell_value
+        """
+
+        results = await Neo4jClient.execute_query(query, {
+            "since_date": since_date,
+            "limit": limit,
+        })
+
+        return [
+            {
+                "cik": r["cik"],
+                "company_name": r["company_name"],
+                "ticker": r["tickers"][0] if r.get("tickers") else None,
+                "trade_count": r["trade_count"],
+                "unique_insiders": r["unique_insiders"],
+                "total_buy_value": r["total_buy_value"] or 0,
+                "total_sell_value": r["total_sell_value"] or 0,
+                "net_direction": "buying" if (r["total_buy_value"] or 0) > (r["total_sell_value"] or 0) * 1.5
+                    else "selling" if (r["total_sell_value"] or 0) > (r["total_buy_value"] or 0) * 1.5
+                    else "mixed",
+            }
+            for r in results
+        ]
 
     @staticmethod
     async def scan_and_store_company(

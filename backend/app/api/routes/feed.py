@@ -63,6 +63,20 @@ async def get_feed(
     }
 
 
+@router.get("/top-insider-activity")
+async def get_top_insider_activity(
+    days: int = Query(30, ge=1, le=365, description="Look back this many days"),
+    limit: int = Query(10, ge=1, le=50, description="Maximum companies to return"),
+):
+    """
+    Get companies with the most insider trading activity.
+
+    Example:
+        GET /feed/top-insider-activity?days=30&limit=10
+    """
+    return await FeedService.get_top_insider_activity(days=days, limit=limit)
+
+
 @router.get("/summary")
 async def get_feed_summary():
     """

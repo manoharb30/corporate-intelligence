@@ -195,22 +195,6 @@ class EventParser:
         re.IGNORECASE
     )
 
-    # Pattern for extracting person names (Mr./Ms./Mrs. followed by name)
-    PERSON_PATTERN = re.compile(
-        r'(?:Mr\.|Ms\.|Mrs\.|Dr\.)\s+([A-Z][a-z]+(?:\s+[A-Z]\.?)?\s+[A-Z][a-z]+)',
-        re.IGNORECASE
-    )
-
-    # Pattern for common executive titles
-    TITLE_PATTERN = re.compile(
-        r'(Chief\s+(?:Executive|Financial|Operating|Technology|Legal|Marketing|People|Human\s+Resources)\s+Officer|'
-        r'CEO|CFO|COO|CTO|CLO|CMO|CPO|CHRO|'
-        r'President|Chairman|Vice\s+Chairman|'
-        r'Executive\s+Vice\s+President|Senior\s+Vice\s+President|'
-        r'General\s+Counsel|Secretary|Treasurer)',
-        re.IGNORECASE
-    )
-
     def __init__(self):
         pass
 

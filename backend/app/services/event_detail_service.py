@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from app.db.neo4j_client import Neo4jClient
-from app.services.feed_service import FeedService
+from app.services.feed_service import FeedService, SignalItem
 from app.services.llm_analysis_service import LLMAnalysisService
 from app.services.party_linker_service import PartyLinkerService
 
@@ -66,9 +66,10 @@ class EventDetailService:
             if r["persons_mentioned"]:
                 all_persons.extend(r["persons_mentioned"])
 
-        # Classify signal level from all items
+        # Classify signal level from all items (with IPO detection)
         item_numbers = [r["item_number"] for r in results]
-        signal_level, signal_summary = FeedService.classify_signal_level(item_numbers)
+        raw_texts = [i["raw_text"] for i in items if i.get("raw_text")]
+        signal_level, signal_summary = FeedService.classify_signal_level(item_numbers, raw_texts)
 
         event = {
             "accession_number": accession_number,
@@ -107,6 +108,31 @@ class EventDetailService:
             cik, accession_number, counterparty_ciks
         )
 
+        # Compute combined signal level with insider context
+        combined_signal_level = signal_level
+        insider_context_data = None
+        try:
+            dummy_signal = SignalItem(
+                company_name=company_name,
+                cik=cik,
+                ticker=ticker,
+                filing_date=first["filing_date"],
+                signal_level=signal_level,
+                signal_summary=signal_summary,
+                items=item_numbers,
+                item_names=[],
+                persons_mentioned=list(set(all_persons)),
+                accession_number=accession_number,
+            )
+            contexts = await FeedService.get_insider_context_batch([dummy_signal])
+            key = f"{cik}|{first['filing_date']}|{accession_number}"
+            ctx = contexts.get(key)
+            if ctx:
+                insider_context_data = ctx.to_dict()
+                combined_signal_level = FeedService.compute_combined_signal(signal_level, ctx)
+        except Exception as e:
+            logger.warning(f"Failed to compute insider context for event detail: {e}")
+
         return {
             "event": event,
             "analysis": analysis,
@@ -117,6 +143,8 @@ class EventDetailService:
                 "name": company_name,
                 "ticker": ticker,
             },
+            "combined_signal_level": combined_signal_level,
+            "insider_context": insider_context_data,
         }
 
     @staticmethod
@@ -136,7 +164,8 @@ class EventDetailService:
                    e.filing_date as date,
                    e.item_number as item_number,
                    e.item_name as item_name,
-                   e.signal_type as signal_type
+                   e.signal_type as signal_type,
+                   e.raw_text as raw_text
             ORDER BY e.filing_date DESC
         """
 
@@ -152,6 +181,7 @@ class EventDetailService:
                     "type": "event",
                     "accession_number": acc,
                     "items": [],
+                    "raw_texts": [],
                     "is_current": acc == current_accession,
                 }
             item_name = e["item_name"] or FeedService.ITEM_NAMES.get(e["item_number"], "")
@@ -159,14 +189,16 @@ class EventDetailService:
                 "item_number": e["item_number"],
                 "item_name": item_name,
             })
+            if e.get("raw_text"):
+                event_groups[acc]["raw_texts"].append(e["raw_text"])
 
         # Build descriptions for event groups
         timeline_entries = []
         for acc, group in event_groups.items():
             item_labels = [f"Item {i['item_number']}: {i['item_name']}" for i in group["items"]]
-            # Classify the signal level for this group
+            # Classify the signal level for this group (with IPO detection)
             item_numbers = [i["item_number"] for i in group["items"]]
-            level, summary = FeedService.classify_signal_level(item_numbers)
+            level, summary = FeedService.classify_signal_level(item_numbers, group.get("raw_texts"))
 
             timeline_entries.append({
                 "date": group["date"],
