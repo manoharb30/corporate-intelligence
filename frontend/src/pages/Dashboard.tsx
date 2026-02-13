@@ -193,6 +193,12 @@ export default function Dashboard() {
               <span className="font-semibold text-green-400">6 months</span>
             </div>
           </div>
+          <Link
+            to="/signal/0001104659-23-102594"
+            className="inline-block mt-4 px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg text-sm font-medium transition-colors"
+          >
+            See the full signal story &rarr;
+          </Link>
         </div>
       </section>
 
