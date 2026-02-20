@@ -6,6 +6,7 @@ from typing import Optional
 
 from app.db.neo4j_client import Neo4jClient
 from app.services.llm_analysis_service import LLMAnalysisService
+from app.services.feed_service import pick_ticker
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +68,7 @@ class PartyLinkerService:
             return {
                 "cik": best["cik"],
                 "name": best["name"],
-                "ticker": best["tickers"][0] if best.get("tickers") else None,
+                "ticker": pick_ticker(best.get("tickers")),
             }
 
         return None
@@ -248,7 +249,7 @@ class PartyLinkerService:
             deals.append({
                 "cik": row["cik"],
                 "name": row["name"],
-                "ticker": row["tickers"][0] if row.get("tickers") else None,
+                "ticker": pick_ticker(row.get("tickers")),
                 "agreement_type": row["agreement_type"],
                 "filing_date": row["filing_date"],
                 "accession_number": row["accession_number"],

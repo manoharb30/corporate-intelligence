@@ -25,6 +25,7 @@ const badgeLabel: Record<string, string> = {
 export default function SignalCard({ signal, compact = false }: SignalCardProps) {
   const level = signal.combined_signal_level || signal.signal_level
   const insiderDir = signal.insider_context?.net_direction
+  const isCluster = signal.signal_type === 'insider_cluster'
 
   return (
     <Link
@@ -37,7 +38,12 @@ export default function SignalCard({ signal, compact = false }: SignalCardProps)
             <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${badgeClass[level] || badgeClass.low}`}>
               {badgeLabel[level] || level}
             </span>
-            {insiderDir && insiderDir !== 'none' && (
+            {isCluster && (
+              <span className="px-2 py-0.5 rounded text-xs font-bold bg-emerald-600 text-white">
+                INSIDER CLUSTER
+              </span>
+            )}
+            {insiderDir && insiderDir !== 'none' && !isCluster && (
               <span className={`px-2 py-0.5 rounded text-xs font-medium border ${
                 insiderDir === 'buying' ? 'text-green-700 bg-green-50 border-green-200' :
                 insiderDir === 'selling' ? 'text-red-700 bg-red-50 border-red-200' :
@@ -62,11 +68,17 @@ export default function SignalCard({ signal, compact = false }: SignalCardProps)
           <p className="text-xs text-gray-400 font-mono">{signal.filing_date}</p>
           {!compact && (
             <div className="flex flex-wrap gap-1 mt-1 justify-end">
-              {signal.items.slice(0, 3).map(item => (
-                <span key={item} className="px-1.5 py-0.5 bg-gray-100 rounded text-xs font-mono text-gray-600">
-                  {item}
+              {isCluster && signal.cluster_detail ? (
+                <span className="px-1.5 py-0.5 bg-emerald-50 border border-emerald-200 rounded text-xs text-emerald-700 font-medium">
+                  {signal.cluster_detail.num_buyers} insiders buying
                 </span>
-              ))}
+              ) : (
+                signal.items.slice(0, 3).map(item => (
+                  <span key={item} className="px-1.5 py-0.5 bg-gray-100 rounded text-xs font-mono text-gray-600">
+                    {item}
+                  </span>
+                ))
+              )}
             </div>
           )}
         </div>

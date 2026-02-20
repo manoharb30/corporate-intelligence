@@ -325,10 +325,10 @@ export default function GraphExplorer() {
               <p className="text-xs text-gray-500 mt-1">ID: {selectedNode.id}</p>
               {selectedNode.type === 'Company' && (
                 <Link
-                  to={`/company/${selectedNode.id}`}
+                  to={`/signals?cik=${selectedNode.id}`}
                   className="mt-2 block text-xs text-primary-600 hover:underline"
                 >
-                  View Company Profile
+                  View Company Signals
                 </Link>
               )}
               <button

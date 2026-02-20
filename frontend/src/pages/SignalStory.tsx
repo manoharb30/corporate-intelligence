@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { eventDetailApi, EventDetailResponse } from '../services/api'
+import { eventDetailApi, EventDetailResponse, ClusterBuyerDetail } from '../services/api'
+import DecisionCard from '../components/DecisionCard'
 import PriceChart, { ChartMarker } from '../components/PriceChart'
 import InsiderTimeline from '../components/InsiderTimeline'
-import VerdictCard from '../components/VerdictCard'
 import MiniGraph from '../components/MiniGraph'
 
 function formatValue(val: number): string {
@@ -35,6 +35,7 @@ export default function SignalStory() {
   const [error, setError] = useState<string | null>(null)
   const [expandTerms, setExpandTerms] = useState(false)
   const [expandWatch, setExpandWatch] = useState(false)
+  const [expandCompanyContext, setExpandCompanyContext] = useState(false)
   const [highlightDate, setHighlightDate] = useState<string | null>(null)
 
   useEffect(() => {
@@ -52,7 +53,7 @@ export default function SignalStory() {
     return (
       <div className="flex flex-col items-center justify-center py-20">
         <div className="animate-spin h-10 w-10 border-4 border-primary-500 border-t-transparent rounded-full mb-4"></div>
-        <p className="text-gray-600">Analyzing filing...</p>
+        <p className="text-gray-600">Analyzing signal...</p>
         <p className="text-sm text-gray-400 mt-1">First-time analysis may take a moment</p>
       </div>
     )
@@ -71,6 +72,7 @@ export default function SignalStory() {
   const { event, analysis, timeline, deals, company } = data
   const combinedLevel = data.combined_signal_level || event.signal_level
   const insiderCtx = data.insider_context
+  const isCluster = data.signal_type === 'insider_cluster'
 
   // Build chart markers from timeline
   const chartMarkers: ChartMarker[] = []
@@ -94,23 +96,26 @@ export default function SignalStory() {
       })
     }
     if (entry.type === 'trade' && entry.date && entry.notable) {
+      const isBullish = entry.trade_type === 'buy' || entry.trade_type === 'exercise_hold'
+      const isBearish = entry.trade_type === 'sell' || entry.trade_type === 'disposition'
       chartMarkers.push({
         date: entry.date,
-        label: entry.trade_type === 'buy' ? 'B' : 'S',
-        color: entry.trade_type === 'buy' ? '#10b981' : '#ef4444',
-        shape: entry.trade_type === 'buy' ? 'arrowUp' : 'arrowDown',
-        position: entry.trade_type === 'buy' ? 'belowBar' : 'aboveBar',
+        label: isBullish ? 'B' : isBearish ? 'S' : 'T',
+        color: isBullish ? '#10b981' : isBearish ? '#ef4444' : '#f59e0b',
+        shape: isBullish ? 'arrowUp' : isBearish ? 'arrowDown' : 'circle',
+        position: isBullish ? 'belowBar' : 'aboveBar',
       })
     }
   })
 
   // Insider summary stats
   const tradeEntries = timeline.filter(e => e.type === 'trade')
-  const buyTrades = tradeEntries.filter(e => e.trade_type === 'buy')
+  const buyTrades = tradeEntries.filter(e => e.trade_type === 'buy' || e.trade_type === 'exercise_hold')
   const sellTrades = tradeEntries.filter(e => e.trade_type === 'sell')
+  const exerciseSellTrades = tradeEntries.filter(e => e.trade_type === 'exercise_sell')
 
-  // SEC EDGAR link
-  const edgarUrl = accessionNumber
+  // SEC EDGAR link (not applicable for cluster signals)
+  const edgarUrl = accessionNumber && !isCluster
     ? `https://www.sec.gov/Archives/edgar/data/${company.cik}/${accessionNumber.replace(/-/g, '')}/${accessionNumber}-index.htm`
     : null
 
@@ -121,6 +126,9 @@ export default function SignalStory() {
         &larr; Back to Signals
       </Link>
 
+      {/* ===== Decision Card ===== */}
+      {data.decision_card && <DecisionCard card={data.decision_card} />}
+
       {/* ===== Chapter 1: The Filing ===== */}
       <section className="mb-8">
         <div className="flex items-start gap-3 mb-3">
@@ -129,107 +137,270 @@ export default function SignalStory() {
           </span>
           <div>
             <div className="flex items-center gap-2">
-              <Link to={`/company/${company.cik}`} className="text-2xl font-bold text-gray-900 hover:text-primary-600">
+              <button
+                onClick={() => setExpandCompanyContext(!expandCompanyContext)}
+                className="text-2xl font-bold text-gray-900 hover:text-primary-600 text-left"
+                title="About this company"
+              >
                 {company.name}
-              </Link>
+              </button>
               {company.ticker && <span className="text-lg text-gray-500">({company.ticker})</span>}
             </div>
             <div className="flex items-center gap-3 mt-1 text-sm text-gray-600">
-              <span>Filed: {event.filing_date}</span>
+              <span>{isCluster ? `Cluster detected: ${event.filing_date}` : `Filed: ${event.filing_date}`}</span>
               <span className="text-gray-300">|</span>
               <span>{event.signal_summary}</span>
             </div>
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-2 mb-4">
-          {event.items.map((item) => (
-            <span key={item.item_number} className="px-2.5 py-1 bg-gray-100 border border-gray-200 rounded text-xs font-mono">
-              Item {item.item_number}: {item.item_name}
-            </span>
-          ))}
-        </div>
+        {/* Company Context (expandable via company name click) */}
+        {expandCompanyContext && (
+          <div className="mb-4 bg-white rounded-lg border border-gray-200 shadow-sm p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-gray-800">About {company.name}</h3>
+              <button onClick={() => setExpandCompanyContext(false)} className="text-gray-400 hover:text-gray-600 text-sm">Close</button>
+            </div>
 
-        {/* Analysis Card */}
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold text-gray-900">The Filing</h2>
-            <span className="px-3 py-1 bg-indigo-100 text-indigo-800 rounded-full text-sm font-medium">
-              {analysis.agreement_type}
-            </span>
+            {data.company_context ? (
+              <>
+                {/* Industry & State */}
+                <div className="flex flex-wrap gap-4 text-sm text-gray-600">
+                  {data.company_context.sic_description && (
+                    <div><span className="font-medium text-gray-800">Industry:</span> {data.company_context.sic_description}</div>
+                  )}
+                  {data.company_context.state_of_incorporation && (
+                    <div><span className="font-medium text-gray-800">Incorporated:</span> {data.company_context.state_of_incorporation}</div>
+                  )}
+                  {data.company_context.subsidiaries_count > 0 && (
+                    <div><span className="font-medium text-gray-800">Subsidiaries:</span> {data.company_context.subsidiaries_count}</div>
+                  )}
+                </div>
+
+                {/* Officers */}
+                {data.company_context.officers.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Officers</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
+                      {data.company_context.officers.map((officer, idx) => (
+                        <div key={idx} className="text-sm text-gray-700">
+                          <span className="font-medium">{officer.name}</span>
+                          {officer.title && <span className="text-gray-500 ml-1">- {officer.title}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Directors */}
+                {data.company_context.directors.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Directors</h4>
+                    <div className="space-y-1">
+                      {data.company_context.directors.map((director, idx) => (
+                        <div key={idx} className="text-sm text-gray-700">
+                          <span className="font-medium">{director.name}</span>
+                          {director.other_boards.length > 0 && (
+                            <span className="text-xs text-purple-600 ml-2">
+                              Also on: {director.other_boards.join(', ')}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Board Connections */}
+                {data.company_context.board_connections.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Board Connections</h4>
+                    <div className="space-y-1.5">
+                      {data.company_context.board_connections.map((conn, idx) => (
+                        <div key={idx} className="flex items-center gap-2 text-sm">
+                          <Link to={`/signals?cik=${conn.cik}`} className="font-medium text-primary-600 hover:underline">
+                            {conn.company_name}
+                          </Link>
+                          <span className="text-xs text-gray-500">
+                            via {conn.shared_directors.join(', ')}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {data.company_context.officers.length === 0 && data.company_context.directors.length === 0 && (
+                  <p className="text-xs text-gray-400">Officer and director data not yet available for this company.</p>
+                )}
+              </>
+            ) : (
+              <div className="flex flex-wrap gap-4 text-sm text-gray-600">
+                {company.ticker && <div><span className="font-medium text-gray-800">Ticker:</span> {company.ticker}</div>}
+                <div><span className="font-medium text-gray-800">CIK:</span> {company.cik}</div>
+                <p className="text-xs text-gray-400 w-full mt-1">Restart backend to load full company details.</p>
+              </div>
+            )}
+
+            {/* View all signals link */}
+            <Link
+              to={`/signals?cik=${company.cik}`}
+              className="inline-block text-sm text-primary-600 hover:underline font-medium"
+            >
+              View all signals for {company.name} &rarr;
+            </Link>
           </div>
+        )}
 
-          <p className="text-gray-700 leading-relaxed mb-4">{analysis.summary}</p>
+        {!isCluster && (
+          <div className="flex flex-wrap gap-2 mb-4">
+            {event.items.map((item) => (
+              <span key={item.item_number} className="px-2.5 py-1 bg-gray-100 border border-gray-200 rounded text-xs font-mono">
+                Item {item.item_number}: {item.item_name}
+              </span>
+            ))}
+          </div>
+        )}
 
-          {/* Parties */}
-          {analysis.parties_involved.length > 0 && (
+        {isCluster && data.cluster_detail ? (
+          /* ===== Cluster Chapter: The Insider Cluster ===== */
+          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-semibold text-gray-900">The Insider Cluster</h2>
+              <span className="px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full text-sm font-medium">
+                {data.cluster_detail.num_buyers} Insiders Buying
+              </span>
+            </div>
+
+            <p className="text-gray-700 leading-relaxed mb-4">{analysis.summary}</p>
+
+            {/* Buyer Cards */}
             <div className="mb-4">
-              <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-2">Parties Involved</h3>
-              <div className="flex flex-wrap gap-2">
-                {analysis.parties_involved.map((party, idx) => (
-                  <span key={idx} className="px-3 py-1.5 bg-gray-100 rounded-lg text-sm text-gray-800 font-medium" title={party.source_quote}>
-                    {party.name}
-                  </span>
+              <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-2">Buyers</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {data.cluster_detail.buyers.map((buyer: ClusterBuyerDetail, idx: number) => (
+                  <div key={idx} className="flex items-start gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
+                    <div className="shrink-0 w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center text-sm font-bold">
+                      {buyer.name.charAt(0)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-gray-900 text-sm">{buyer.name}</p>
+                      {buyer.title && <p className="text-xs text-gray-500">{buyer.title}</p>}
+                      <div className="flex items-center gap-3 mt-1 text-xs">
+                        <span className="text-emerald-700 font-medium">${buyer.total_value.toLocaleString()}</span>
+                        <span className="text-gray-400">{buyer.trade_count} trade{buyer.trade_count !== 1 ? 's' : ''}</span>
+                      </div>
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
-          )}
 
-          {/* Key Terms (expandable) */}
-          {analysis.key_terms.length > 0 && (
-            <div className="mb-4">
-              <button
-                onClick={() => setExpandTerms(!expandTerms)}
-                className="text-sm font-semibold text-gray-600 uppercase tracking-wide hover:text-primary-600 flex items-center gap-1"
-              >
-                Key Terms
-                <span className="text-xs">{expandTerms ? '\u25B2' : '\u25BC'}</span>
-              </button>
-              {expandTerms && (
-                <div className="mt-2 space-y-2">
-                  {analysis.key_terms.map((item, idx) => (
-                    <div key={idx} className="border-l-2 border-gray-200 pl-3">
-                      <p className="text-sm text-gray-800 font-medium">{item.term}</p>
-                      {item.source_quote && (
-                        <p className="text-xs text-gray-400 italic mt-0.5">"{item.source_quote}"</p>
-                      )}
-                    </div>
+            {/* Window info */}
+            <p className="text-xs text-gray-500">
+              Cluster window: {data.cluster_detail.window_start} to {data.cluster_detail.window_end}
+            </p>
+
+            {/* What to Watch */}
+            {analysis.forward_looking && analysis.forward_looking !== 'N/A' && (
+              <div className="mt-4">
+                <button
+                  onClick={() => setExpandWatch(!expandWatch)}
+                  className="text-sm font-semibold text-gray-600 uppercase tracking-wide hover:text-primary-600 flex items-center gap-1"
+                >
+                  What to Watch
+                  <span className="text-xs">{expandWatch ? '\u25B2' : '\u25BC'}</span>
+                </button>
+                {expandWatch && (
+                  <p className="mt-2 text-sm text-gray-700 bg-amber-50 border border-amber-200 rounded p-3">
+                    {analysis.forward_looking}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        ) : (
+          /* ===== Filing Chapter: The Filing ===== */
+          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-semibold text-gray-900">The Filing</h2>
+              <span className="px-3 py-1 bg-indigo-100 text-indigo-800 rounded-full text-sm font-medium">
+                {analysis.agreement_type}
+              </span>
+            </div>
+
+            <p className="text-gray-700 leading-relaxed mb-4">{analysis.summary}</p>
+
+            {/* Parties */}
+            {analysis.parties_involved.length > 0 && (
+              <div className="mb-4">
+                <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-2">Parties Involved</h3>
+                <div className="flex flex-wrap gap-2">
+                  {analysis.parties_involved.map((party, idx) => (
+                    <span key={idx} className="px-3 py-1.5 bg-gray-100 rounded-lg text-sm text-gray-800 font-medium" title={party.source_quote}>
+                      {party.name}
+                    </span>
                   ))}
                 </div>
-              )}
-            </div>
-          )}
+              </div>
+            )}
 
-          {/* What to Watch (expandable) */}
-          {analysis.forward_looking && analysis.forward_looking !== 'N/A' && (
-            <div className="mb-4">
-              <button
-                onClick={() => setExpandWatch(!expandWatch)}
-                className="text-sm font-semibold text-gray-600 uppercase tracking-wide hover:text-primary-600 flex items-center gap-1"
+            {/* Key Terms (expandable) */}
+            {analysis.key_terms.length > 0 && (
+              <div className="mb-4">
+                <button
+                  onClick={() => setExpandTerms(!expandTerms)}
+                  className="text-sm font-semibold text-gray-600 uppercase tracking-wide hover:text-primary-600 flex items-center gap-1"
+                >
+                  Key Terms
+                  <span className="text-xs">{expandTerms ? '\u25B2' : '\u25BC'}</span>
+                </button>
+                {expandTerms && (
+                  <div className="mt-2 space-y-2">
+                    {analysis.key_terms.map((item, idx) => (
+                      <div key={idx} className="border-l-2 border-gray-200 pl-3">
+                        <p className="text-sm text-gray-800 font-medium">{item.term}</p>
+                        {item.source_quote && (
+                          <p className="text-xs text-gray-400 italic mt-0.5">"{item.source_quote}"</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* What to Watch (expandable) */}
+            {analysis.forward_looking && analysis.forward_looking !== 'N/A' && (
+              <div className="mb-4">
+                <button
+                  onClick={() => setExpandWatch(!expandWatch)}
+                  className="text-sm font-semibold text-gray-600 uppercase tracking-wide hover:text-primary-600 flex items-center gap-1"
+                >
+                  What to Watch
+                  <span className="text-xs">{expandWatch ? '\u25B2' : '\u25BC'}</span>
+                </button>
+                {expandWatch && (
+                  <p className="mt-2 text-sm text-gray-700 bg-amber-50 border border-amber-200 rounded p-3">
+                    {analysis.forward_looking}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* SEC link */}
+            {edgarUrl && (
+              <a
+                href={edgarUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-primary-600 hover:underline"
               >
-                What to Watch
-                <span className="text-xs">{expandWatch ? '\u25B2' : '\u25BC'}</span>
-              </button>
-              {expandWatch && (
-                <p className="mt-2 text-sm text-gray-700 bg-amber-50 border border-amber-200 rounded p-3">
-                  {analysis.forward_looking}
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* SEC link */}
-          {edgarUrl && (
-            <a
-              href={edgarUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm text-primary-600 hover:underline"
-            >
-              View on SEC EDGAR &rarr;
-            </a>
-          )}
-        </div>
+                View on SEC EDGAR &rarr;
+              </a>
+            )}
+          </div>
+        )}
       </section>
 
       {/* ===== Chapter 2: The Insider Evidence ===== */}
@@ -243,6 +414,7 @@ export default function SignalStory() {
                 {tradeEntries.length} trade{tradeEntries.length !== 1 ? 's' : ''} in timeline.
                 {buyTrades.length > 0 && ` ${buyTrades.length} buy${buyTrades.length !== 1 ? 's' : ''}.`}
                 {sellTrades.length > 0 && ` ${sellTrades.length} sell${sellTrades.length !== 1 ? 's' : ''}.`}
+                {exerciseSellTrades.length > 0 && ` ${exerciseSellTrades.length} cashless exercise${exerciseSellTrades.length !== 1 ? 's' : ''}.`}
                 {insiderCtx && (
                   <> Net: <span className={`font-semibold ${
                     insiderCtx.net_direction === 'buying' ? 'text-green-700' :
@@ -330,7 +502,7 @@ export default function SignalStory() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <Link to={`/company/${deal.cik}`} className="font-semibold text-gray-900 hover:text-primary-600">
+                      <Link to={`/signals?cik=${deal.cik}`} className="font-semibold text-gray-900 hover:text-primary-600">
                         {deal.name}
                       </Link>
                       {deal.ticker && <span className="text-sm text-gray-500">({deal.ticker})</span>}
@@ -352,17 +524,6 @@ export default function SignalStory() {
         </section>
       )}
 
-      {/* ===== Chapter 5: The Verdict ===== */}
-      <section className="mb-8">
-        <VerdictCard
-          signalLevel={event.signal_level}
-          combinedSignalLevel={combinedLevel}
-          signalSummary={event.signal_summary}
-          insiderContext={insiderCtx}
-          itemNumbers={event.item_numbers}
-          companyName={company.name}
-        />
-      </section>
     </div>
   )
 }

@@ -209,6 +209,22 @@ export interface InsiderContextData {
   cluster_activity: boolean
   trade_count: number
   person_matches: string[]
+  near_filing_count: number
+  near_filing_direction: 'buying' | 'selling' | 'mixed' | 'none'
+}
+
+export interface ClusterBuyerDetail {
+  name: string
+  title: string
+  total_value: number
+  trade_count: number
+}
+
+export interface ClusterDetail {
+  window_start: string
+  window_end: string
+  num_buyers: number
+  buyers: ClusterBuyerDetail[]
 }
 
 export interface SignalItem {
@@ -224,6 +240,14 @@ export interface SignalItem {
   accession_number: string
   combined_signal_level: 'critical' | 'high_bearish' | 'high' | 'medium' | 'low'
   insider_context: InsiderContextData | null
+  signal_type?: 'insider_cluster' | '8k'
+  cluster_detail?: ClusterDetail
+}
+
+export interface CompanyFilter {
+  cik: string
+  name: string
+  ticker: string | null
 }
 
 export interface FeedResponse {
@@ -241,6 +265,7 @@ export interface FeedResponse {
     low: number
   }
   signals: SignalItem[]
+  company_filter?: CompanyFilter
 }
 
 export interface DbStats {
@@ -283,6 +308,7 @@ export interface InsiderTradeSummary {
   purchases: number
   sales: number
   awards: number
+  exercises_held: number
   other: number
   total_purchase_value: number
   total_sale_value: number
@@ -422,8 +448,8 @@ export const stockPriceApi = {
 
 // Feed API
 export const feedApi = {
-  getFeed: (days = 30, limit = 50, minLevel = 'low') =>
-    api.get<FeedResponse>('/feed', { params: { days, limit, min_level: minLevel } }),
+  getFeed: (days = 30, limit = 50, minLevel = 'low', cik?: string) =>
+    api.get<FeedResponse>('/feed', { params: { days, limit, min_level: minLevel, ...(cik ? { cik } : {}) } }),
 
   getStats: () => api.get<DbStats>('/feed/stats'),
 
@@ -455,6 +481,12 @@ export const insiderTradesApi = {
 
   scanCompany: (cik: string, companyName: string, limit = 50) =>
     api.post(`/insider-trades/scan/${cik}`, null, { params: { company_name: companyName, limit } }),
+
+  backfill: (maxCompanies?: number) =>
+    api.post('/insider-trades/backfill', null, { params: { max_companies: maxCompanies } }),
+
+  backfillStatus: () =>
+    api.get('/insider-trades/backfill/status'),
 }
 
 // Profile API
@@ -526,7 +558,7 @@ export interface EventTimelineEntry {
   accession_number?: string
   signal_level?: string
   // Trade-specific
-  trade_type?: 'buy' | 'sell' | 'other'
+  trade_type?: 'buy' | 'sell' | 'exercise_hold' | 'exercise_sell' | 'award' | 'tax' | 'disposition' | 'gift' | 'conversion' | 'will' | 'other'
   notable?: boolean
   notable_reasons?: string[]
 }
@@ -539,6 +571,26 @@ export interface DealConnection {
   filing_date: string
   accession_number: string
   source_quote: string
+}
+
+export interface CompanyContext {
+  sic_description: string | null
+  state_of_incorporation: string | null
+  officers: Array<{ name: string; title: string | null }>
+  directors: Array<{ name: string; other_boards: string[] }>
+  board_connections: Array<{ company_name: string; cik: string; shared_directors: string[] }>
+  subsidiaries_count: number
+}
+
+export interface DecisionCard {
+  action: 'BUY' | 'WATCH' | 'PASS'
+  conviction: 'HIGH' | 'MEDIUM' | 'LOW'
+  one_liner: string
+  insider_direction: 'buying' | 'selling' | 'mixed' | 'none'
+  days_since_filing: number | null
+  price_change_pct?: number
+  price_at_filing?: number
+  price_current?: number
 }
 
 export interface EventDetailResponse {
@@ -561,6 +613,10 @@ export interface EventDetailResponse {
   }
   combined_signal_level?: string
   insider_context?: InsiderContextData | null
+  decision_card?: DecisionCard
+  company_context?: CompanyContext | null
+  signal_type?: 'insider_cluster' | '8k'
+  cluster_detail?: ClusterDetail
 }
 
 // Event Detail API

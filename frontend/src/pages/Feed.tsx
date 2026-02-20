@@ -1,18 +1,21 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { feedApi, profileApi, SignalItem, ProfileSearchResult, MarketScanStatus, TopInsiderActivity } from '../services/api'
-import { useNavigate, Link } from 'react-router-dom'
+import { feedApi, profileApi, SignalItem, ProfileSearchResult, MarketScanStatus, TopInsiderActivity, CompanyFilter } from '../services/api'
+import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import SignalCard from '../components/SignalCard'
 
 type SignalLevel = 'all' | 'critical' | 'high' | 'medium' | 'low'
 
 export default function Feed() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const cikFilter = searchParams.get('cik')
   const [signals, setSignals] = useState<SignalItem[]>([])
   const [loading, setLoading] = useState(true)
   const [filterLevel, setFilterLevel] = useState<SignalLevel>('all')
-  const [days, setDays] = useState(30)
+  const [days, setDays] = useState(cikFilter ? 90 : 30)
   const [byLevel, setByLevel] = useState({ high: 0, medium: 0, low: 0 })
   const [byCombined, setByCombined] = useState({ critical: 0, high_bearish: 0, high: 0, medium: 0, low: 0 })
+  const [companyFilter, setCompanyFilter] = useState<CompanyFilter | null>(null)
 
   // Search state
   const [searchQuery, setSearchQuery] = useState('')
@@ -29,7 +32,7 @@ export default function Feed() {
 
   useEffect(() => {
     loadFeed()
-  }, [days])
+  }, [days, cikFilter])
 
   useEffect(() => {
     if (searchQuery.length >= 2) {
@@ -81,15 +84,16 @@ export default function Feed() {
     setLoading(true)
     try {
       const [feedRes, insiderRes] = await Promise.allSettled([
-        feedApi.getFeed(days, 100, 'low'),
-        feedApi.getTopInsiderActivity(30, 10),
+        feedApi.getFeed(days, 100, 'low', cikFilter || undefined),
+        cikFilter ? Promise.resolve(null) : feedApi.getTopInsiderActivity(30, 10),
       ])
       if (feedRes.status === 'fulfilled') {
         setSignals(feedRes.value.data.signals)
         setByLevel(feedRes.value.data.by_level)
         if (feedRes.value.data.by_combined) setByCombined(feedRes.value.data.by_combined)
+        setCompanyFilter(feedRes.value.data.company_filter || null)
       }
-      if (insiderRes.status === 'fulfilled') setInsiderActivity(insiderRes.value.data)
+      if (insiderRes.status === 'fulfilled' && insiderRes.value) setInsiderActivity((insiderRes.value as any).data)
     } catch (error) {
       console.error('Failed to load feed:', error)
     } finally {
@@ -167,6 +171,22 @@ export default function Feed() {
         </div>
       )}
 
+      {/* Company filter header */}
+      {companyFilter && (
+        <div className="mb-4 p-4 bg-white rounded-lg border border-gray-200 shadow-sm flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-bold text-gray-900">
+              {companyFilter.name}
+              {companyFilter.ticker && <span className="text-gray-500 ml-2">({companyFilter.ticker})</span>}
+            </h2>
+            <p className="text-sm text-gray-600">All signals for this company</p>
+          </div>
+          <Link to="/signals" className="text-sm text-primary-600 hover:underline font-medium">
+            Clear filter
+          </Link>
+        </div>
+      )}
+
       {/* Sticky filter bar */}
       <div className="sticky top-0 z-10 bg-gray-50 -mx-4 px-4 py-3 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 border-b border-gray-200 mb-4">
         <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -201,35 +221,37 @@ export default function Feed() {
               ))}
             </div>
 
-            {/* Search */}
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="Search..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="w-48 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-              />
-              {searching && (
-                <div className="absolute right-2 top-2">
-                  <div className="animate-spin h-3 w-3 border-2 border-primary-500 border-t-transparent rounded-full"></div>
-                </div>
-              )}
-              {searchResults.length > 0 && (
-                <div className="absolute top-full right-0 mt-1 w-72 bg-white rounded-lg shadow-xl border border-gray-200 z-50 max-h-64 overflow-y-auto">
-                  {searchResults.map(r => (
-                    <button
-                      key={r.cik}
-                      onClick={() => { navigate(`/company/${r.cik}`); setSearchQuery(''); setSearchResults([]) }}
-                      className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm border-b border-gray-100 last:border-0"
-                    >
-                      <span className="font-medium text-gray-900">{r.name}</span>
-                      {r.ticker && <span className="text-gray-500 ml-1">({r.ticker})</span>}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            {/* Search (hidden when filtered by company) */}
+            {!cikFilter && (
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Search..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="w-48 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                />
+                {searching && (
+                  <div className="absolute right-2 top-2">
+                    <div className="animate-spin h-3 w-3 border-2 border-primary-500 border-t-transparent rounded-full"></div>
+                  </div>
+                )}
+                {searchResults.length > 0 && (
+                  <div className="absolute top-full right-0 mt-1 w-72 bg-white rounded-lg shadow-xl border border-gray-200 z-50 max-h-64 overflow-y-auto">
+                    {searchResults.map(r => (
+                      <button
+                        key={r.cik}
+                        onClick={() => { navigate(`/signals?cik=${r.cik}`); setSearchQuery(''); setSearchResults([]) }}
+                        className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm border-b border-gray-100 last:border-0"
+                      >
+                        <span className="font-medium text-gray-900">{r.name}</span>
+                        {r.ticker && <span className="text-gray-500 ml-1">({r.ticker})</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -257,7 +279,7 @@ export default function Feed() {
             {insiderActivity.map((item, idx) => (
               <Link
                 key={idx}
-                to={`/company/${item.cik}`}
+                to={`/signals?cik=${item.cik}`}
                 className="flex items-center justify-between p-2.5 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors"
               >
                 <div className="flex-1 min-w-0">

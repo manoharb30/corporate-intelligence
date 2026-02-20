@@ -2,6 +2,7 @@
 
 import logging
 import time
+from datetime import datetime
 from typing import Optional
 
 import yfinance as yf
@@ -66,3 +67,41 @@ class StockPriceService:
         except Exception as e:
             logger.error(f"Failed to fetch price data for {ticker}: {e}")
             return []
+
+    @staticmethod
+    def get_price_at_date(ticker: str, target_date: str) -> Optional[dict]:
+        """
+        Get the close price on or nearest to target_date, plus the latest close.
+
+        Returns dict with: price_at_date, price_current, date_used, current_date
+        or None if data unavailable.
+        """
+        data = StockPriceService.get_price_data(ticker, "1y")
+        if not data:
+            return None
+
+        try:
+            target = datetime.strptime(target_date, "%Y-%m-%d")
+        except ValueError:
+            return None
+
+        # Find closest date to target
+        best = None
+        best_diff = None
+        for point in data:
+            d = datetime.strptime(point["date"], "%Y-%m-%d")
+            diff = abs((d - target).days)
+            if best_diff is None or diff < best_diff:
+                best = point
+                best_diff = diff
+
+        if not best:
+            return None
+
+        latest = data[-1]
+        return {
+            "price_at_date": best["close"],
+            "date_used": best["date"],
+            "price_current": latest["close"],
+            "current_date": latest["date"],
+        }

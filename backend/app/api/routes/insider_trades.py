@@ -1,10 +1,17 @@
 """API endpoints for insider trading (Form 4) data."""
 
-from fastapi import APIRouter, Query
+import logging
 
-from app.services.insider_trading_service import InsiderTradingService
+from fastapi import APIRouter, BackgroundTasks, Query
+
+from app.services.insider_trading_service import BackfillResult, InsiderTradingService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Module-level backfill state (single-user app)
+_backfill_state = BackfillResult()
 
 
 @router.get("")
@@ -67,3 +74,73 @@ async def scan_insider_trades(
         limit=limit,
     )
     return result
+
+
+@router.post("/backfill")
+async def backfill_insider_trades(
+    background_tasks: BackgroundTasks,
+    max_companies: int = Query(50, ge=1, le=1000, description="Maximum companies to backfill"),
+):
+    """
+    Backfill insider trade data for companies missing it.
+
+    Prioritizes HIGH signal companies first, then MEDIUM, then LOW.
+    Runs in background.
+
+    Example:
+        POST /insider-trades/backfill?max_companies=50
+    """
+    global _backfill_state
+
+    if _backfill_state.status == "in_progress":
+        return {
+            "status": "already_running",
+            "message": (
+                f"Backfill in progress: {_backfill_state.companies_scanned}/"
+                f"{_backfill_state.total_companies} companies"
+            ),
+        }
+
+    # Get prioritized list of companies missing insider data
+    companies = await InsiderTradingService.get_companies_missing_insider_data()
+
+    if not companies:
+        return {
+            "status": "no_work",
+            "message": "All companies with M&A signals already have insider trade data",
+        }
+
+    # Limit batch size
+    batch = companies[:max_companies]
+
+    # Reset state and start
+    _backfill_state = BackfillResult(status="in_progress", message="Starting backfill...")
+
+    background_tasks.add_task(InsiderTradingService.backfill_companies, batch, _backfill_state)
+
+    priority_counts = {"1": 0, "2": 0, "3": 0}
+    for c in batch:
+        priority_counts[str(c.get("priority", 3))] = priority_counts.get(str(c.get("priority", 3)), 0) + 1
+
+    return {
+        "status": "started",
+        "message": f"Backfill started for {len(batch)} companies (of {len(companies)} missing data)",
+        "total_missing": len(companies),
+        "batch_size": len(batch),
+        "priority_breakdown": {
+            "high_signal": priority_counts.get("1", 0),
+            "medium_signal": priority_counts.get("2", 0),
+            "low_signal": priority_counts.get("3", 0),
+        },
+    }
+
+
+@router.get("/backfill/status")
+async def backfill_status():
+    """
+    Get the current backfill status.
+
+    Example:
+        GET /insider-trades/backfill/status
+    """
+    return _backfill_state.to_dict()

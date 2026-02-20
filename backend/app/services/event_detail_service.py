@@ -5,9 +5,17 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from app.db.neo4j_client import Neo4jClient
-from app.services.feed_service import FeedService, SignalItem
+from app.services.feed_service import FeedService, SignalItem, pick_ticker
+from app.services.company_profile_service import CompanyProfileService
 from app.services.llm_analysis_service import LLMAnalysisService
 from app.services.party_linker_service import PartyLinkerService
+from app.services.stock_price_service import StockPriceService
+from app.services.trade_classifier import (
+    classify_trades_batch,
+    is_bullish_trade,
+    is_bearish_trade,
+    BULLISH_TRADE_TYPES,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +59,7 @@ class EventDetailService:
         first = results[0]
         cik = first["cik"]
         company_name = first["company_name"]
-        ticker = first["tickers"][0] if first.get("tickers") else None
+        ticker = pick_ticker(first.get("tickers"))
 
         # Build event items (one filing can have multiple items)
         items = []
@@ -133,6 +141,20 @@ class EventDetailService:
         except Exception as e:
             logger.warning(f"Failed to compute insider context for event detail: {e}")
 
+        # Build decision card
+        decision_card = EventDetailService._build_decision_card(
+            combined_signal_level=combined_signal_level,
+            signal_level=signal_level,
+            signal_summary=signal_summary,
+            insider_context_data=insider_context_data,
+            item_numbers=item_numbers,
+            ticker=ticker,
+            filing_date=first["filing_date"],
+        )
+
+        # Build company context (lightweight: top 5 officers, all directors, board connections)
+        company_context = await EventDetailService._build_company_context(cik)
+
         return {
             "event": event,
             "analysis": analysis,
@@ -145,7 +167,105 @@ class EventDetailService:
             },
             "combined_signal_level": combined_signal_level,
             "insider_context": insider_context_data,
+            "decision_card": decision_card,
+            "company_context": company_context,
         }
+
+    @staticmethod
+    def _build_decision_card(
+        combined_signal_level: str,
+        signal_level: str,
+        signal_summary: str,
+        insider_context_data: Optional[dict],
+        item_numbers: list[str],
+        ticker: Optional[str],
+        filing_date: str,
+    ) -> dict:
+        """Build the 30-second decision card."""
+        insider_direction = "none"
+        if insider_context_data:
+            insider_direction = insider_context_data.get("net_direction", "none")
+
+        # Action mapping
+        level = combined_signal_level or signal_level
+        if level in ("critical", "high"):
+            if insider_direction == "buying":
+                action = "BUY"
+            else:
+                action = "WATCH"
+        elif level == "high_bearish":
+            action = "PASS"
+        elif level == "medium":
+            if insider_direction == "buying":
+                action = "WATCH"
+            else:
+                action = "PASS"
+        else:
+            action = "PASS"
+
+        # Conviction from combined signal level
+        conviction_map = {
+            "critical": "HIGH",
+            "high": "HIGH",
+            "high_bearish": "HIGH",
+            "medium": "MEDIUM",
+            "low": "LOW",
+        }
+        conviction = conviction_map.get(level, "LOW")
+
+        # One-liner: punchy version of signal + insider context
+        parts = []
+        if "1.01" in item_numbers:
+            parts.append("Material Agreement")
+            if any(i in item_numbers for i in ("5.02", "5.03")):
+                parts.append("+ leadership changes")
+        else:
+            parts.append(signal_summary)
+
+        if insider_context_data and insider_context_data.get("trade_count", 0) > 0:
+            if insider_context_data.get("cluster_activity"):
+                parts.append(f"with insider cluster {insider_direction}")
+            elif insider_direction != "none":
+                parts.append(f"with insider {insider_direction}")
+        one_liner = " ".join(parts)
+
+        # Days since filing
+        days_since_filing = None
+        try:
+            fd = datetime.strptime(filing_date, "%Y-%m-%d")
+            days_since_filing = (datetime.now() - fd).days
+        except (ValueError, TypeError):
+            pass
+
+        # Price change since filing
+        price_change_pct = None
+        price_at_filing = None
+        price_current = None
+        if ticker:
+            try:
+                price_data = StockPriceService.get_price_at_date(ticker, filing_date)
+                if price_data and price_data["price_at_date"] > 0:
+                    price_at_filing = price_data["price_at_date"]
+                    price_current = price_data["price_current"]
+                    price_change_pct = round(
+                        (price_current - price_at_filing) / price_at_filing * 100, 1
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to get price change for decision card: {e}")
+
+        card = {
+            "action": action,
+            "conviction": conviction,
+            "one_liner": one_liner,
+            "insider_direction": insider_direction,
+            "days_since_filing": days_since_filing,
+        }
+        if price_change_pct is not None:
+            card["price_change_pct"] = price_change_pct
+            card["price_at_filing"] = price_at_filing
+            card["price_current"] = price_current
+
+        return card
 
     @staticmethod
     async def _build_timeline(
@@ -257,30 +377,34 @@ class EventDetailService:
                 pass
             return False
 
-        # Detect cluster buys: 3+ purchases within a 30-day window
-        purchases_by_date = {}
-        for t in trades:
-            if (t["transaction_code"] or "") == "P" and t.get("date"):
-                purchases_by_date.setdefault(t["date"], []).append(t["insider_name"])
+        # Classify all trades using the batch classifier
+        trade_types = classify_trades_batch(
+            trades, name_key="insider_name", date_key="date", code_key="transaction_code"
+        )
+
+        # Detect cluster buys: 3+ bullish trades within a 30-day window
+        bullish_by_date: dict[str, list[str]] = {}
+        for t, ttype in zip(trades, trade_types):
+            if is_bullish_trade(ttype) and t.get("date"):
+                bullish_by_date.setdefault(t["date"], []).append(t["insider_name"])
 
         cluster_buy_dates = set()
-        purchase_dates_sorted = sorted(purchases_by_date.keys())
-        for i, date_str in enumerate(purchase_dates_sorted):
+        bullish_dates_sorted = sorted(bullish_by_date.keys())
+        for date_str in bullish_dates_sorted:
             try:
                 d = datetime.strptime(date_str, "%Y-%m-%d")
                 window_buyers = set()
-                for other_str in purchase_dates_sorted:
+                for other_str in bullish_dates_sorted:
                     od = datetime.strptime(other_str, "%Y-%m-%d")
                     if abs((od - d).days) <= 30:
-                        window_buyers.update(purchases_by_date[other_str])
+                        window_buyers.update(bullish_by_date[other_str])
                 if len(window_buyers) >= 3:
                     cluster_buy_dates.add(date_str)
             except ValueError:
                 pass
 
-        for t in trades:
+        for t, trade_type in zip(trades, trade_types):
             code = t["transaction_code"] or ""
-            trade_type = "buy" if code == "P" else "sell" if code == "S" else "other"
 
             shares_str = f"{t['shares']:,.0f}" if t.get("shares") else "?"
             value_str = f"${t['total_value']:,.0f}" if t.get("total_value") else ""
@@ -297,34 +421,34 @@ class EventDetailService:
             notable_reasons = []
             total_value = t.get("total_value") or 0
 
-            # Large discretionary purchase ($100K+) by C-suite
-            if code == "P" and total_value >= 100000 and is_c_suite(t.get("insider_title", "")):
+            # Large bullish trade ($100K+) by C-suite
+            if is_bullish_trade(trade_type) and total_value >= 100000 and is_c_suite(t.get("insider_title", "")):
                 notable = True
                 notable_reasons.append("Large C-suite purchase")
 
-            # Large purchase by anyone ($100K+)
-            if code == "P" and total_value >= 100000 and not notable:
+            # Large bullish trade by anyone ($100K+)
+            if is_bullish_trade(trade_type) and total_value >= 100000 and not notable:
                 notable = True
                 notable_reasons.append("Large purchase")
 
             # Large sale ($500K+)
-            if code == "S" and total_value >= 500000:
+            if trade_type == "sell" and total_value >= 500000:
                 notable = True
                 notable_reasons.append("Large sale")
 
             # Large disposition ($500K+) by C-suite — often merger-related
-            if code == "D" and total_value >= 500000 and is_c_suite(t.get("insider_title", "")):
+            if trade_type == "disposition" and total_value >= 500000 and is_c_suite(t.get("insider_title", "")):
                 notable = True
                 notable_reasons.append("Large C-suite disposition")
 
             # Cluster buy
-            if code == "P" and t.get("date") in cluster_buy_dates:
+            if is_bullish_trade(trade_type) and t.get("date") in cluster_buy_dates:
                 notable = True
                 if "Cluster buy" not in " ".join(notable_reasons):
                     notable_reasons.append("Cluster buy pattern")
 
-            # Unusual timing — trade within 30 days before a filing
-            if code in ("P", "S") and is_near_filing(t.get("date", ""), event_dates):
+            # Unusual timing — bullish or bearish trade within 30 days before a filing
+            if (is_bullish_trade(trade_type) or is_bearish_trade(trade_type)) and is_near_filing(t.get("date", ""), event_dates):
                 notable = True
                 if "Pre-filing" not in " ".join(notable_reasons):
                     notable_reasons.append("Pre-filing activity")
@@ -427,3 +551,37 @@ class EventDetailService:
         timeline_entries.sort(key=lambda x: x.get("date", ""), reverse=True)
 
         return timeline_entries
+
+    @staticmethod
+    async def _build_company_context(cik: str) -> Optional[dict]:
+        """Build lightweight company context: SIC, state, officers, directors, board connections."""
+        try:
+            # Get basic company info (SIC, state, subsidiary count)
+            info_query = """
+                MATCH (c:Company {cik: $cik})
+                OPTIONAL MATCH (c)-[:OWNS]->(sub:Company)
+                RETURN c.sic_description as sic_description,
+                       c.state_of_incorporation as state_of_incorporation,
+                       count(DISTINCT sub) as subsidiaries_count
+            """
+            info_result = await Neo4jClient.execute_query(info_query, {"cik": cik})
+            if not info_result:
+                return None
+
+            info = info_result[0]
+
+            officers = await CompanyProfileService._get_officers(cik, limit=5)
+            directors = await CompanyProfileService._get_directors(cik, limit=15)
+            connections_result = await CompanyProfileService._get_connections(cik)
+
+            return {
+                "sic_description": info["sic_description"],
+                "state_of_incorporation": info["state_of_incorporation"],
+                "officers": officers,
+                "directors": directors,
+                "board_connections": connections_result["connections"],
+                "subsidiaries_count": info["subsidiaries_count"],
+            }
+        except Exception as e:
+            logger.warning(f"Failed to build company context for {cik}: {e}")
+            return None

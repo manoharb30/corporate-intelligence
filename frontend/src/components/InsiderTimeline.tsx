@@ -15,7 +15,11 @@ export default function InsiderTimeline({ entries, maxItems = 30, highlightDate 
   const getTradeColor = (tradeType?: string) => {
     switch (tradeType) {
       case 'buy': return 'text-green-700 bg-green-50 border-green-200'
+      case 'exercise_hold': return 'text-green-700 bg-green-50 border-green-200'
       case 'sell': return 'text-red-700 bg-red-50 border-red-200'
+      case 'exercise_sell': return 'text-orange-700 bg-orange-50 border-orange-200'
+      case 'award': return 'text-blue-700 bg-blue-50 border-blue-200'
+      case 'disposition': return 'text-rose-700 bg-rose-50 border-rose-200'
       default: return 'text-gray-700 bg-gray-50 border-gray-200'
     }
   }
@@ -24,8 +28,11 @@ export default function InsiderTimeline({ entries, maxItems = 30, highlightDate 
     if (entry.is_current) return 'bg-primary-500 border-primary-500 w-4 h-4 ring-2 ring-primary-200'
     if (entry.notable) return 'bg-amber-500 border-amber-500 w-4 h-4 ring-2 ring-amber-200'
     if (entry.type === 'trade') {
-      if (entry.trade_type === 'buy') return 'bg-green-400 border-green-400 w-3 h-3'
+      if (entry.trade_type === 'buy' || entry.trade_type === 'exercise_hold') return 'bg-green-400 border-green-400 w-3 h-3'
       if (entry.trade_type === 'sell') return 'bg-red-400 border-red-400 w-3 h-3'
+      if (entry.trade_type === 'exercise_sell') return 'bg-orange-400 border-orange-400 w-3 h-3'
+      if (entry.trade_type === 'award') return 'bg-blue-400 border-blue-400 w-3 h-3'
+      if (entry.trade_type === 'disposition') return 'bg-rose-400 border-rose-400 w-3 h-3'
       return 'bg-gray-300 border-gray-300 w-3 h-3'
     }
     if (entry.signal_level === 'high') return 'bg-red-500 border-red-500 w-3 h-3'
@@ -92,7 +99,14 @@ export default function InsiderTimeline({ entries, maxItems = 30, highlightDate 
               )}
               {entry.type === 'trade' && (
                 <span className={`px-1.5 py-0.5 rounded font-medium border ${getTradeColor(entry.trade_type)}`}>
-                  {entry.trade_type === 'buy' ? '\u2191 Buy' : entry.trade_type === 'sell' ? '\u2193 Sell' : 'Trade'}
+                  {entry.trade_type === 'buy' ? '\u2191 Buy'
+                    : entry.trade_type === 'exercise_hold' ? '\u2191 Exercise & Hold'
+                    : entry.trade_type === 'sell' ? '\u2193 Sell'
+                    : entry.trade_type === 'exercise_sell' ? '\u2194 Exercise & Sell'
+                    : entry.trade_type === 'award' ? 'Award'
+                    : entry.trade_type === 'disposition' ? '\u2193 Disposition'
+                    : entry.trade_type === 'tax' ? 'Tax'
+                    : 'Trade'}
                 </span>
               )}
               {entry.is_current && (

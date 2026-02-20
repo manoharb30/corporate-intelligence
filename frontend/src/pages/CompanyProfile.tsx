@@ -65,12 +65,14 @@ export default function CompanyProfile() {
   })
   insider_trades?.forEach(t => {
     if (t.total_value >= 50000) {
+      const isBuy = t.transaction_code === 'P' || t.transaction_code === 'M'
+      const isSell = t.transaction_code === 'S'
       chartMarkers.push({
         date: t.transaction_date,
-        label: t.transaction_code === 'P' ? 'B' : 'S',
-        color: t.transaction_code === 'P' ? '#10b981' : '#ef4444',
-        shape: t.transaction_code === 'P' ? 'arrowUp' : 'arrowDown',
-        position: t.transaction_code === 'P' ? 'belowBar' : 'aboveBar',
+        label: isBuy ? (t.transaction_code === 'M' ? 'E' : 'B') : isSell ? 'S' : 'T',
+        color: isBuy ? '#10b981' : isSell ? '#ef4444' : '#6b7280',
+        shape: isBuy ? 'arrowUp' : isSell ? 'arrowDown' : 'circle',
+        position: isBuy ? 'belowBar' : 'aboveBar',
       })
     }
   })
@@ -88,6 +90,9 @@ export default function CompanyProfile() {
       case 'P': return 'bg-green-100 text-green-800'
       case 'S': return 'bg-red-100 text-red-800'
       case 'A': return 'bg-blue-100 text-blue-800'
+      case 'M': return 'bg-teal-100 text-teal-800'
+      case 'F': return 'bg-gray-100 text-gray-600'
+      case 'D': return 'bg-rose-100 text-rose-800'
       default: return 'bg-gray-100 text-gray-800'
     }
   }

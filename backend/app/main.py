@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.db.neo4j_client import Neo4jClient
-from app.api.routes import companies, persons, filings, graph, health, citations, connections, sanctions, insights, events, feed, profile, insider_trades, event_detail, stock_price
+from app.api.routes import companies, persons, filings, graph, health, citations, connections, sanctions, insights, events, feed, profile, insider_trades, event_detail, stock_price, officers
 
 
 @asynccontextmanager
@@ -53,6 +53,7 @@ app.include_router(profile.router, prefix="/api/profile", tags=["Profile"])
 app.include_router(insider_trades.router, prefix="/api/insider-trades", tags=["Insider Trades"])
 app.include_router(event_detail.router, prefix="/api/event-detail", tags=["Event Detail"])
 app.include_router(stock_price.router, prefix="/api/stock-price", tags=["Stock Price"])
+app.include_router(officers.router, prefix="/api/officers", tags=["Officers"])
 
 
 @app.get("/")

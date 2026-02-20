@@ -7,10 +7,31 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from app.db.neo4j_client import Neo4jClient
+from app.services.trade_classifier import (
+    classify_trades_batch,
+    is_bullish_trade,
+    is_bearish_trade,
+)
+from app.services.insider_trading_service import InsiderTradingService
+from app.services.officer_scan_service import OfficerScanService
 from ingestion.sec_edgar.edgar_client import SECEdgarClient
 from ingestion.sec_edgar.parsers.event_parser import EventParser, Filing8KResult
 
 logger = logging.getLogger(__name__)
+
+# Suffixes that indicate non-common-stock tickers (warrants, units, rights)
+_NON_COMMON_SUFFIXES = ("W", "WS", "U", "R")
+
+
+def pick_ticker(tickers: list[str] | None) -> str | None:
+    """Pick the best ticker from a list, preferring common stock over warrants/units/rights."""
+    if not tickers:
+        return None
+    for t in tickers:
+        if not any(t.endswith(s) for s in _NON_COMMON_SUFFIXES):
+            return t
+    # All tickers are non-common; return the first one as fallback
+    return tickers[0]
 
 
 def _name_keywords(name: str) -> set[str]:
@@ -98,6 +119,8 @@ class InsiderContext:
     cluster_activity: bool  # 3+ insiders same direction within window
     trade_count: int
     person_matches: list[str] = field(default_factory=list)  # persons in both filing AND trades
+    near_filing_count: int = 0  # trades within ±90d of filing
+    near_filing_direction: str = "none"  # direction from near-filing trades only
 
     def to_dict(self) -> dict:
         return {
@@ -108,6 +131,8 @@ class InsiderContext:
             "cluster_activity": self.cluster_activity,
             "trade_count": self.trade_count,
             "person_matches": self.person_matches[:5],
+            "near_filing_count": self.near_filing_count,
+            "near_filing_direction": self.near_filing_direction,
         }
 
 
@@ -127,6 +152,8 @@ class SignalItem:
     accession_number: str
     combined_signal_level: Optional[str] = None  # critical, high_bearish, high, medium, low
     insider_context: Optional[InsiderContext] = None
+    signal_type: str = "8k"  # "8k" or "insider_cluster"
+    cluster_detail: Optional[dict] = None  # Only for insider_cluster signals
 
     def to_dict(self) -> dict:
         result = {
@@ -142,7 +169,10 @@ class SignalItem:
             "accession_number": self.accession_number,
             "combined_signal_level": self.combined_signal_level or self.signal_level,
             "insider_context": self.insider_context.to_dict() if self.insider_context else None,
+            "signal_type": self.signal_type,
         }
+        if self.cluster_detail:
+            result["cluster_detail"] = self.cluster_detail
         return result
 
 
@@ -154,6 +184,7 @@ class MarketScanResult:
     companies_discovered: int = 0
     companies_scanned: int = 0
     events_stored: int = 0
+    insider_transactions_stored: int = 0
     errors: list = field(default_factory=list)
     message: str = ""
 
@@ -163,6 +194,7 @@ class MarketScanResult:
             "companies_discovered": self.companies_discovered,
             "companies_scanned": self.companies_scanned,
             "events_stored": self.events_stored,
+            "insider_transactions_stored": self.insider_transactions_stored,
             "errors_count": len(self.errors),
             "message": self.message,
         }
@@ -264,17 +296,18 @@ class FeedService:
         if not insider_ctx or insider_ctx.trade_count == 0:
             return signal_level
 
+        # Only upgrade/downgrade based on near-filing trades (±90d)
+        # All-trades direction is informational context only
+        if insider_ctx.near_filing_count == 0:
+            return signal_level
+
         if signal_level == "high":
-            if insider_ctx.net_direction == "buying":
+            if insider_ctx.near_filing_direction == "buying":
                 return "critical"
-            if insider_ctx.cluster_activity and insider_ctx.net_direction == "selling":
-                return "high_bearish"
-            if insider_ctx.net_direction == "selling":
+            if insider_ctx.near_filing_direction == "selling":
                 return "high_bearish"
         elif signal_level == "medium":
-            if insider_ctx.cluster_activity and insider_ctx.net_direction == "buying":
-                return "high"
-            if insider_ctx.net_direction == "buying":
+            if insider_ctx.near_filing_direction == "buying":
                 return "high"
         return signal_level
 
@@ -323,7 +356,10 @@ class FeedService:
         """
         Batch-fetch insider trade context for a list of signals.
 
-        For each signal, queries InsiderTransaction nodes within ±60 days of filing.
+        Two-tier approach:
+        - ALL trades for overall context (net_direction, trade_count, buy/sell values)
+        - Near-filing trades (±90d) for signal enrichment (near_filing_direction, cluster_activity, notable_trades)
+
         Returns dict keyed by (cik, filing_date, accession_number) string.
         """
         if not signals:
@@ -338,6 +374,7 @@ class FeedService:
             WHERE c.cik IN $ciks
             RETURN c.cik as cik,
                    t.transaction_date as transaction_date,
+                   t.transaction_code as transaction_code,
                    t.transaction_type as transaction_type,
                    t.total_value as total_value,
                    t.shares as shares,
@@ -368,7 +405,7 @@ class FeedService:
                 )
                 continue
 
-            # Filter to ±60 days of filing date
+            # Parse filing date
             try:
                 filing_dt = datetime.strptime(signal.filing_date, "%Y-%m-%d")
             except (ValueError, TypeError):
@@ -378,65 +415,39 @@ class FeedService:
                 )
                 continue
 
-            window_start = (filing_dt - timedelta(days=60)).strftime("%Y-%m-%d")
-            window_end = (filing_dt + timedelta(days=60)).strftime("%Y-%m-%d")
-
-            window_trades = [
-                t for t in trades
-                if t["transaction_date"] and window_start <= t["transaction_date"] <= window_end
-            ]
-
-            if not window_trades:
-                contexts[key] = InsiderContext(
-                    net_direction="none", total_buy_value=0, total_sell_value=0,
-                    notable_trades=[], cluster_activity=False, trade_count=0,
-                )
-                continue
-
+            # === TIER 1: ALL trades for this company ===
             total_buy = 0.0
             total_sell = 0.0
             buyers = set()
             sellers = set()
-            notable = []
-            # Track trades by person for person-level matching
             trades_by_person: dict[str, list[dict]] = {}
 
-            for t in window_trades:
+            all_trade_types = classify_trades_batch(
+                trades,
+                name_key="insider_name",
+                date_key="transaction_date",
+                code_key="transaction_code",
+            )
+
+            for t, trade_type in zip(trades, all_trade_types):
                 val = abs(t["total_value"] or 0)
-                ttype = (t["transaction_type"] or "").lower()
                 name = t["insider_name"] or "Unknown"
                 title = t["insider_title"] or ""
 
-                if "purchase" in ttype or ttype in ("p", "buy"):
+                if is_bullish_trade(trade_type):
                     total_buy += val
                     buyers.add(name)
                     trades_by_person.setdefault(name, []).append(
                         {"direction": "buy", "value": val, "title": title}
                     )
-                    # Days relative to filing
-                    try:
-                        trade_dt = datetime.strptime(t["transaction_date"], "%Y-%m-%d")
-                        days_diff = (filing_dt - trade_dt).days
-                        if days_diff > 0:
-                            time_desc = f"{days_diff}d before filing"
-                        elif days_diff < 0:
-                            time_desc = f"{abs(days_diff)}d after filing"
-                        else:
-                            time_desc = "same day as filing"
-                    except (ValueError, TypeError):
-                        time_desc = ""
-
-                    label = title.split(",")[0].strip() if title else name.split()[-1]
-                    if val >= 10000:
-                        notable.append(f"{label} bought ${val:,.0f} {time_desc}")
-                elif "sale" in ttype or ttype in ("s", "sell"):
+                elif is_bearish_trade(trade_type):
                     total_sell += val
                     sellers.add(name)
                     trades_by_person.setdefault(name, []).append(
                         {"direction": "sell", "value": val, "title": title}
                     )
 
-            # Determine direction
+            # Overall direction from ALL trades
             if total_buy > total_sell * 1.5:
                 direction = "buying"
             elif total_sell > total_buy * 1.5:
@@ -446,10 +457,72 @@ class FeedService:
             else:
                 direction = "none"
 
-            cluster = len(buyers) >= 3 or len(sellers) >= 3
-
-            # Person-level matching: link persons in 8-K filing to their trades
+            # Person-level matching from ALL trades
             person_matches = _match_persons(signal.persons_mentioned, trades_by_person)
+
+            # === TIER 2: Near-filing window (±90 days) ===
+            window_start = (filing_dt - timedelta(days=90)).strftime("%Y-%m-%d")
+            window_end = (filing_dt + timedelta(days=90)).strftime("%Y-%m-%d")
+
+            window_trades = [
+                t for t in trades
+                if t["transaction_date"] and window_start <= t["transaction_date"] <= window_end
+            ]
+
+            notable = []
+            near_buy = 0.0
+            near_sell = 0.0
+            near_buyers = set()
+            near_sellers = set()
+
+            if window_trades:
+                window_trade_types = classify_trades_batch(
+                    window_trades,
+                    name_key="insider_name",
+                    date_key="transaction_date",
+                    code_key="transaction_code",
+                )
+
+                for t, trade_type in zip(window_trades, window_trade_types):
+                    val = abs(t["total_value"] or 0)
+                    name = t["insider_name"] or "Unknown"
+                    title = t["insider_title"] or ""
+
+                    if is_bullish_trade(trade_type):
+                        near_buy += val
+                        near_buyers.add(name)
+                        # Days relative to filing (only meaningful for near-filing)
+                        try:
+                            trade_dt = datetime.strptime(t["transaction_date"], "%Y-%m-%d")
+                            days_diff = (filing_dt - trade_dt).days
+                            if days_diff > 0:
+                                time_desc = f"{days_diff}d before filing"
+                            elif days_diff < 0:
+                                time_desc = f"{abs(days_diff)}d after filing"
+                            else:
+                                time_desc = "same day as filing"
+                        except (ValueError, TypeError):
+                            time_desc = ""
+
+                        label = title.split(",")[0].strip() if title else name.split()[-1]
+                        if val >= 10000:
+                            notable.append(f"{label} bought ${val:,.0f} {time_desc}")
+                    elif is_bearish_trade(trade_type):
+                        near_sell += val
+                        near_sellers.add(name)
+
+            # Near-filing direction
+            if near_buy > near_sell * 1.5:
+                near_direction = "buying"
+            elif near_sell > near_buy * 1.5:
+                near_direction = "selling"
+            elif near_buy > 0 or near_sell > 0:
+                near_direction = "mixed"
+            else:
+                near_direction = "none"
+
+            # Cluster activity only meaningful within near-filing window
+            cluster = len(near_buyers) >= 3 or len(near_sellers) >= 3
 
             contexts[key] = InsiderContext(
                 net_direction=direction,
@@ -457,8 +530,10 @@ class FeedService:
                 total_sell_value=total_sell,
                 notable_trades=notable[:5],
                 cluster_activity=cluster,
-                trade_count=len(window_trades),
+                trade_count=len(trades),
                 person_matches=person_matches,
+                near_filing_count=len(window_trades),
+                near_filing_direction=near_direction,
             )
 
         return contexts
@@ -468,7 +543,8 @@ class FeedService:
         days: int = 7,
         limit: int = 50,
         min_level: str = "low",
-    ) -> list[SignalItem]:
+        cik: Optional[str] = None,
+    ) -> tuple[list['SignalItem'], Optional[dict]]:
         """
         Get signal feed from stored events.
 
@@ -476,15 +552,18 @@ class FeedService:
             days: Look back this many days
             limit: Maximum signals to return
             min_level: Minimum signal level (low, medium, high)
+            cik: Optional CIK to filter to a single company
 
         Returns:
-            List of SignalItem sorted by date and importance
+            Tuple of (list of SignalItem sorted by date and importance, company_filter dict or None)
         """
         # Query stored events
-        query = """
+        cik_clause = "AND c.cik = $cik" if cik else ""
+        query = f"""
             MATCH (c:Company)-[:FILED_EVENT]->(e:Event)
             WHERE e.is_ma_signal = true
             AND e.filing_date >= $since_date
+            {cik_clause}
             RETURN c.name as company_name,
                    c.cik as cik,
                    c.tickers as tickers,
@@ -499,8 +578,11 @@ class FeedService:
         """
 
         since_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+        params: dict = {"since_date": since_date}
+        if cik:
+            params["cik"] = cik
 
-        results = await Neo4jClient.execute_query(query, {"since_date": since_date})
+        results = await Neo4jClient.execute_query(query, params)
 
         # Group by company + filing date + accession number
         grouped = {}
@@ -510,7 +592,7 @@ class FeedService:
                 grouped[key] = {
                     "company_name": r["company_name"],
                     "cik": r["cik"],
-                    "ticker": r["tickers"][0] if r["tickers"] else None,
+                    "ticker": pick_ticker(r["tickers"]),
                     "filing_date": r["filing_date"],
                     "items": [],
                     "item_names": [],
@@ -567,12 +649,70 @@ class FeedService:
             for s in signals:
                 s.combined_signal_level = s.signal_level
 
+        # Merge standalone insider cluster signals (no 8-K required)
+        if not cik:
+            try:
+                from app.services.insider_cluster_service import InsiderClusterService
+                cluster_signals = await InsiderClusterService.detect_clusters_excluding_8k(
+                    days=days, window_days=30, min_level=min_level,
+                )
+                for cs in cluster_signals:
+                    d = cs.to_signal_dict()
+                    signals.append(SignalItem(
+                        company_name=d["company_name"],
+                        cik=d["cik"],
+                        ticker=d["ticker"],
+                        filing_date=d["filing_date"],
+                        signal_level=d["signal_level"],
+                        signal_summary=d["signal_summary"],
+                        items=d["items"],
+                        item_names=d["item_names"],
+                        persons_mentioned=d["persons_mentioned"],
+                        accession_number=d["accession_number"],
+                        combined_signal_level=d["combined_signal_level"],
+                        insider_context=InsiderContext(
+                            net_direction="buying",
+                            total_buy_value=cs.total_buy_value,
+                            total_sell_value=0,
+                            notable_trades=[f"{b.name} bought ${b.total_value:,.0f}" for b in cs.buyers[:5]],
+                            cluster_activity=cs.num_buyers >= 3,
+                            trade_count=sum(b.trade_count for b in cs.buyers),
+                        ),
+                        signal_type="insider_cluster",
+                        cluster_detail=d.get("cluster_detail"),
+                    ))
+            except Exception as e:
+                logger.warning(f"Failed to merge insider cluster signals: {e}")
+
         # Sort by combined level then by date
         combined_order = {"critical": 0, "high_bearish": 1, "high": 2, "medium": 3, "low": 4}
         signals.sort(key=lambda x: (x.filing_date,), reverse=True)
         signals.sort(key=lambda x: combined_order.get(x.combined_signal_level or x.signal_level, 4))
 
-        return signals[:limit]
+        # Build company_filter when CIK is specified
+        company_filter = None
+        if cik and signals:
+            company_filter = {
+                "cik": cik,
+                "name": signals[0].company_name,
+                "ticker": signals[0].ticker,
+            }
+        elif cik and not signals:
+            # Query company name even if no signals
+            company_query = """
+                MATCH (c:Company {cik: $cik})
+                RETURN c.name as name, c.tickers as tickers
+            """
+            company_result = await Neo4jClient.execute_query(company_query, {"cik": cik})
+            if company_result:
+                r = company_result[0]
+                company_filter = {
+                    "cik": cik,
+                    "name": r["name"],
+                    "ticker": pick_ticker(r.get("tickers")),
+                }
+
+        return signals[:limit], company_filter
 
     @staticmethod
     async def get_feed_summary() -> dict:
@@ -640,7 +780,7 @@ class FeedService:
             {
                 "cik": r["cik"],
                 "company_name": r["company_name"],
-                "ticker": r["tickers"][0] if r.get("tickers") else None,
+                "ticker": pick_ticker(r.get("tickers")),
                 "trade_count": r["trade_count"],
                 "unique_insiders": r["unique_insiders"],
                 "total_buy_value": r["total_buy_value"] or 0,
@@ -862,6 +1002,27 @@ class FeedService:
                     f"Market scan [{scan_result.companies_scanned}/{scan_result.companies_discovered}] "
                     f"{filer['name']}: {result['events_stored']} events"
                 )
+
+                # Also scan for officer/director data (latest DEF 14A only)
+                try:
+                    await OfficerScanService.scan_and_store_company(
+                        cik=filer["cik"],
+                        company_name=filer["name"],
+                        limit=1,
+                    )
+                except Exception as officer_err:
+                    logger.warning(f"Officer scan failed for {filer['name']}: {officer_err}")
+
+                # Also scan for insider trades (Form 4)
+                try:
+                    insider_result = await InsiderTradingService.scan_and_store_company(
+                        cik=filer["cik"],
+                        company_name=filer["name"],
+                        limit=10,
+                    )
+                    scan_result.insider_transactions_stored += insider_result.get("transactions_stored", 0)
+                except Exception as insider_err:
+                    logger.warning(f"Insider trade scan failed for {filer['name']}: {insider_err}")
             except Exception as e:
                 scan_result.errors.append({"company": filer["name"], "error": str(e)})
                 logger.error(f"Market scan error for {filer['name']}: {e}")

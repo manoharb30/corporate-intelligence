@@ -2,7 +2,13 @@
 
 from fastapi import APIRouter, Query, BackgroundTasks
 
+import logging
+
 from app.services.feed_service import FeedService, MarketScanResult
+from app.services.insider_trading_service import InsiderTradingService
+from app.services.officer_scan_service import OfficerScanService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -26,6 +32,7 @@ async def get_feed(
     days: int = Query(7, ge=1, le=90, description="Look back this many days"),
     limit: int = Query(50, ge=1, le=200, description="Maximum signals to return"),
     min_level: str = Query("low", description="Minimum signal level: low, medium, high"),
+    cik: str = Query(None, description="Optional CIK to filter to a single company"),
 ):
     """
     Get the signal feed.
@@ -40,11 +47,13 @@ async def get_feed(
     Example:
         GET /feed
         GET /feed?days=30&min_level=medium
+        GET /feed?cik=0000320193
     """
-    signals = await FeedService.get_feed(
+    signals, company_filter = await FeedService.get_feed(
         days=days,
         limit=limit,
         min_level=min_level,
+        cik=cik,
     )
 
     # Group by level for summary (base level)
@@ -55,12 +64,16 @@ async def get_feed(
         combined = s.combined_signal_level or s.signal_level
         by_combined[combined] = by_combined.get(combined, 0) + 1
 
-    return {
+    result = {
         "total": len(signals),
         "by_level": by_level,
         "by_combined": by_combined,
         "signals": [s.to_dict() for s in signals],
     }
+    if company_filter:
+        result["company_filter"] = company_filter
+
+    return result
 
 
 @router.get("/top-insider-activity")
@@ -105,6 +118,33 @@ async def scan_company(
         company_name=company_name,
         limit=limit,
     )
+
+    # Also scan for officer/director data
+    try:
+        officer_result = await OfficerScanService.scan_and_store_company(
+            cik=cik,
+            company_name=company_name,
+            limit=1,
+        )
+        result["officers_found"] = officer_result.get("officers_found", 0)
+        result["directors_found"] = officer_result.get("directors_found", 0)
+    except Exception as e:
+        logger.warning(f"Officer scan failed for {cik}: {e}")
+        result["officers_found"] = 0
+        result["directors_found"] = 0
+
+    # Also scan for insider trades (Form 4)
+    try:
+        insider_result = await InsiderTradingService.scan_and_store_company(
+            cik=cik,
+            company_name=company_name,
+            limit=50,
+        )
+        result["insider_transactions"] = insider_result.get("transactions_stored", 0)
+    except Exception as insider_err:
+        logger.warning(f"Insider trade scan failed for {cik}: {insider_err}")
+        result["insider_transactions"] = 0
+
     return result
 
 
@@ -221,7 +261,7 @@ async def get_high_signals(
         GET /feed/high-signals
         GET /feed/high-signals?days=60
     """
-    signals = await FeedService.get_feed(
+    signals, _ = await FeedService.get_feed(
         days=days,
         limit=limit,
         min_level="high",

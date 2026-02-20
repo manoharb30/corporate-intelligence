@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from app.db.neo4j_client import Neo4jClient
+from app.services.feed_service import pick_ticker
 
 
 @dataclass
@@ -98,7 +99,7 @@ class CompanyProfileService:
         profile = CompanyProfile(
             cik=r["cik"],
             name=r["name"],
-            ticker=r["tickers"][0] if r["tickers"] else None,
+            ticker=pick_ticker(r["tickers"]),
             sic=r["sic"],
             sic_description=r["sic_description"],
             state_of_incorporation=r["state"],
@@ -347,7 +348,7 @@ class CompanyProfileService:
             {
                 "cik": r["cik"],
                 "name": r["name"],
-                "ticker": r["tickers"][0] if r.get("tickers") else None,
+                "ticker": pick_ticker(r.get("tickers")),
                 "signal_count": r["signal_count"],
             }
             for r in results

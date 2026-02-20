@@ -1,11 +1,16 @@
 """Service for insider trading (Form 4) data."""
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Optional
 
 from app.db.neo4j_client import Neo4jClient
+from app.services.trade_classifier import (
+    classify_trades_batch,
+    is_bullish_trade,
+)
 from ingestion.sec_edgar.edgar_client import SECEdgarClient
 from ingestion.sec_edgar.parsers.form4_parser import Form4Parser
 
@@ -47,6 +52,30 @@ class InsiderTradeItem:
             "is_derivative": self.is_derivative,
             "filing_date": self.filing_date,
             "accession_number": self.accession_number,
+        }
+
+
+@dataclass
+class BackfillResult:
+    """Progress tracker for insider trade backfill."""
+
+    status: str = "idle"  # idle, in_progress, completed, error
+    total_companies: int = 0
+    companies_scanned: int = 0
+    transactions_stored: int = 0
+    errors_count: int = 0
+    current_company: str = ""
+    message: str = ""
+
+    def to_dict(self) -> dict:
+        return {
+            "status": self.status,
+            "total_companies": self.total_companies,
+            "companies_scanned": self.companies_scanned,
+            "transactions_stored": self.transactions_stored,
+            "errors_count": self.errors_count,
+            "current_company": self.current_company,
+            "message": self.message,
         }
 
 
@@ -264,25 +293,34 @@ class InsiderTradingService:
         purchases = 0
         sales = 0
         awards = 0
+        exercises_held = 0
         other = 0
         total_purchase_value = 0.0
         total_sale_value = 0.0
 
-        for r in results:
+        # Classify all trades as a batch for context-aware exercise detection
+        trade_types = classify_trades_batch(
+            results, name_key="insider_name", date_key="txn_date", code_key="code"
+        )
+
+        for r, trade_type in zip(results, trade_types):
             name = r["insider_name"]
-            code = r["code"]
             value = r["total_value"] or 0
 
             unique_insiders.add(name)
 
-            if code == "P":
+            if trade_type == "buy":
                 purchases += 1
                 total_purchase_value += value
                 buying_insiders.add(name)
-            elif code == "S":
+            elif trade_type == "exercise_hold":
+                exercises_held += 1
+                total_purchase_value += value
+                buying_insiders.add(name)
+            elif trade_type == "sell":
                 sales += 1
                 total_sale_value += value
-            elif code == "A":
+            elif trade_type == "award":
                 awards += 1
             else:
                 other += 1
@@ -298,6 +336,7 @@ class InsiderTradingService:
             "purchases": purchases,
             "sales": sales,
             "awards": awards,
+            "exercises_held": exercises_held,
             "other": other,
             "total_purchase_value": total_purchase_value,
             "total_sale_value": total_sale_value,
@@ -316,17 +355,23 @@ class InsiderTradingService:
         Classify insider trading signal.
 
         Focuses on recent trades (within `days`) for signal strength.
+        Counts exercise_hold alongside purchases as bullish.
 
         Returns: (level, summary)
         """
         cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
 
+        # Classify all trades to detect exercise patterns
+        trade_types = classify_trades_batch(
+            trades, name_key="insider_name", date_key="txn_date", code_key="code"
+        )
+
         recent_buyers = set()
         total_purchase_value = 0.0
 
-        for t in trades:
+        for t, ttype in zip(trades, trade_types):
             txn_date = t.get("txn_date") or t.get("transaction_date", "")
-            if txn_date >= cutoff and t["code"] == "P":
+            if txn_date >= cutoff and is_bullish_trade(ttype):
                 recent_buyers.add(t["insider_name"])
                 total_purchase_value += (t.get("total_value") or 0)
 
@@ -349,3 +394,78 @@ class InsiderTradingService:
             return "low", f"Single purchase by {buyer}"
 
         return "none", "No recent purchases"
+
+    @staticmethod
+    async def get_companies_missing_insider_data() -> list[dict]:
+        """
+        Query companies with M&A signals but no insider trade data,
+        ordered by signal priority (HIGH first).
+        """
+        query = """
+            MATCH (c:Company)-[:FILED_EVENT]->(e:Event)
+            WHERE e.is_ma_signal = true
+            AND NOT EXISTS {
+                MATCH (c)-[:INSIDER_TRADE_OF]->(:InsiderTransaction)
+            }
+            WITH c,
+                 collect(DISTINCT e.signal_level) as levels,
+                 count(DISTINCT e) as event_count
+            RETURN c.cik as cik, c.name as name,
+                   CASE
+                       WHEN 'high' IN levels THEN 1
+                       WHEN 'medium' IN levels THEN 2
+                       ELSE 3
+                   END as priority
+            ORDER BY priority, event_count DESC
+        """
+        results = await Neo4jClient.execute_query(query)
+        return [{"cik": r["cik"], "name": r["name"], "priority": r["priority"]} for r in results]
+
+    @staticmethod
+    async def backfill_companies(
+        companies: list[dict],
+        progress: 'BackfillResult',
+    ) -> None:
+        """
+        Backfill insider trade data for a list of companies.
+
+        Updates the shared progress object as it goes.
+        """
+        progress.status = "in_progress"
+        progress.total_companies = len(companies)
+        progress.message = f"Starting backfill for {len(companies)} companies..."
+
+        for i, company in enumerate(companies):
+            cik = company["cik"]
+            name = company.get("name", cik)
+            progress.current_company = name
+            progress.message = f"Scanning {name} ({i + 1}/{len(companies)})"
+
+            try:
+                result = await InsiderTradingService.scan_and_store_company(
+                    cik=cik,
+                    company_name=name,
+                    limit=50,
+                )
+                stored = result.get("transactions_stored", 0)
+                progress.transactions_stored += stored
+                progress.companies_scanned += 1
+                logger.info(
+                    f"Backfill [{progress.companies_scanned}/{progress.total_companies}] "
+                    f"{name}: {stored} transactions"
+                )
+            except Exception as e:
+                progress.errors_count += 1
+                logger.error(f"Backfill error for {name}: {e}")
+
+            # Be gentle on EDGAR rate limits
+            await asyncio.sleep(0.5)
+
+        progress.status = "completed"
+        progress.current_company = ""
+        progress.message = (
+            f"Backfill complete — {progress.companies_scanned} companies scanned, "
+            f"{progress.transactions_stored} transactions stored, "
+            f"{progress.errors_count} errors"
+        )
+        logger.info(progress.message)

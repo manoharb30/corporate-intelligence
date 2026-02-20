@@ -3,6 +3,7 @@
 from fastapi import APIRouter, HTTPException
 
 from app.services.event_detail_service import EventDetailService
+from app.services.insider_cluster_service import InsiderClusterService
 from app.services.party_linker_service import PartyLinkerService
 
 router = APIRouter()
@@ -44,7 +45,10 @@ async def get_event_detail(accession_number: str):
     Example:
         GET /api/event-detail/0001193125-23-237963
     """
-    result = await EventDetailService.get_event_detail(accession_number)
+    if accession_number.startswith("CLUSTER-"):
+        result = await InsiderClusterService.get_cluster_detail(accession_number)
+    else:
+        result = await EventDetailService.get_event_detail(accession_number)
 
     if not result:
         raise HTTPException(status_code=404, detail="Event not found")

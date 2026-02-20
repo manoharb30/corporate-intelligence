@@ -112,7 +112,7 @@ export default function Dashboard() {
                 <button
                   key={r.cik}
                   onClick={() => {
-                    navigate(`/company/${r.cik}`)
+                    navigate(`/signals?cik=${r.cik}`)
                     setSearchQuery('')
                     setSearchResults([])
                   }}
@@ -230,8 +230,8 @@ export default function Dashboard() {
       {/* ===== CTA ===== */}
       <section className="text-center py-10 mb-8 border-t border-gray-200">
         <h2 className="text-2xl font-bold text-gray-900 mb-2">Ready to explore?</h2>
-        <p className="text-gray-600 mb-6">Browse all signals, search any company, or explore the corporate network.</p>
-        <div className="flex items-center justify-center gap-4">
+        <p className="text-gray-600 mb-6">Browse all signals, search any company, or see our plans for institutional access.</p>
+        <div className="flex items-center justify-center gap-4 flex-wrap">
           <Link
             to="/signals"
             className="px-6 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium"
@@ -245,10 +245,10 @@ export default function Dashboard() {
             Search Companies
           </Link>
           <Link
-            to="/network"
+            to="/pricing"
             className="px-6 py-2.5 bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 font-medium"
           >
-            Explore Network
+            View Pricing
           </Link>
         </div>
       </section>

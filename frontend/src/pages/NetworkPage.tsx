@@ -420,7 +420,7 @@ export default function NetworkPage() {
                       <div className="flex flex-wrap gap-1 mt-1">
                         {insight.entities.slice(0, 3).map((entity, eidx) =>
                           entity.cik ? (
-                            <Link key={eidx} to={`/company/${entity.cik}`} className="text-xs text-primary-600 hover:underline">
+                            <Link key={eidx} to={`/signals?cik=${entity.cik}`} className="text-xs text-primary-600 hover:underline">
                               {entity.name}
                             </Link>
                           ) : (

@@ -94,7 +94,7 @@ export default function EventDetail() {
             {event.signal_level}
           </span>
           <Link
-            to={`/company/${company.cik}`}
+            to={`/signals?cik=${company.cik}`}
             className="text-2xl font-bold text-gray-900 hover:text-primary-600"
           >
             {company.name}
@@ -220,7 +220,7 @@ export default function EventDetail() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <Link
-                      to={`/company/${deal.cik}`}
+                      to={`/signals?cik=${deal.cik}`}
                       className="font-semibold text-gray-900 hover:text-primary-600"
                     >
                       {deal.name}

@@ -10,6 +10,7 @@ const navigation = [
   { name: 'Signals', href: '/signals' },
   { name: 'Companies', href: '/companies' },
   { name: 'Network', href: '/network' },
+  { name: 'Pricing', href: '/pricing' },
 ]
 
 export default function Layout({ children }: LayoutProps) {
