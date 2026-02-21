@@ -854,4 +854,133 @@ export const connectionsApi = {
     }),
 }
 
+// Alert types
+export interface AlertItem {
+  id: string
+  alert_type: string
+  severity: 'high' | 'medium' | 'low'
+  company_cik: string
+  company_name: string
+  ticker: string | null
+  title: string
+  description: string
+  created_at: string
+  acknowledged: boolean
+  acknowledged_at: string | null
+}
+
+export interface AlertsResponse {
+  total: number
+  alerts: AlertItem[]
+}
+
+export interface AlertStats {
+  total: number
+  unread: number
+  by_severity: {
+    high: number
+    medium: number
+    low: number
+  }
+}
+
+// Accuracy types
+export interface LevelStats {
+  level: string
+  count: number
+  scoreable: number
+  hits: number
+  partial_hits: number
+  misses: number
+  hit_rate: number | null
+  avg_return_30d: number | null
+  avg_return_60d: number | null
+  avg_return_90d: number | null
+  eight_k_follow_rate: number | null
+}
+
+export interface AccuracySummary {
+  total_signals: number
+  scoreable_signals: number
+  overall_hit_rate: number | null
+  overall_avg_return_90d: number | null
+  overall_8k_follow_rate: number | null
+  by_level: Record<string, LevelStats>
+}
+
+export interface SignalOutcome {
+  cik: string
+  company_name: string
+  ticker: string | null
+  signal_level: string
+  signal_date: string
+  num_buyers: number
+  total_buy_value: number
+  signal_age_days: number
+  price_at_signal: number | null
+  price_change_30d: number | null
+  price_change_60d: number | null
+  price_change_90d: number | null
+  followed_by_8k: boolean
+  followed_by_deal_close: boolean
+  days_to_first_8k: number | null
+  first_8k_items: string[]
+  insider_buying_continued: boolean
+  insider_selling_after: boolean
+  verdict: 'hit' | 'partial_hit' | 'miss' | 'pending' | 'no_data'
+}
+
+export interface AccuracyResponse {
+  summary: AccuracySummary
+  signals: SignalOutcome[]
+}
+
+// Scanner types
+export interface ScannerHealth {
+  status: string
+  last_run_at: string | null
+  companies_scanned: number
+  transactions_stored: number
+  alerts_created: number
+  total_runs: number
+  last_error: string | null
+}
+
+// Alerts API
+export const alertsApi = {
+  getAlerts: (days = 7, severity?: string, acknowledged?: boolean, limit = 50) =>
+    api.get<AlertsResponse>('/alerts', {
+      params: {
+        days,
+        limit,
+        ...(severity ? { severity } : {}),
+        ...(acknowledged !== undefined ? { acknowledged } : {}),
+      },
+    }),
+
+  getStats: () => api.get<AlertStats>('/alerts/stats'),
+
+  acknowledge: (alertId: string) =>
+    api.post(`/alerts/${alertId}/acknowledge`),
+}
+
+// Accuracy API
+export const accuracyApi = {
+  getAccuracy: (lookbackDays = 365, minSignalAge = 30, minLevel = 'medium') =>
+    api.get<AccuracyResponse>('/accuracy', {
+      params: { lookback_days: lookbackDays, min_signal_age: minSignalAge, min_level: minLevel },
+    }),
+
+  getSummary: (lookbackDays = 365, minSignalAge = 30, minLevel = 'medium') =>
+    api.get<AccuracySummary>('/accuracy/summary', {
+      params: { lookback_days: lookbackDays, min_signal_age: minSignalAge, min_level: minLevel },
+    }),
+}
+
+// Scanner API
+export const scannerApi = {
+  getHealth: () => api.get<ScannerHealth>('/scanner/health'),
+  trigger: () => api.post('/scanner/trigger'),
+}
+
 export default api

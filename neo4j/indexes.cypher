@@ -142,3 +142,19 @@ FOR ()-[r:OFFICER_OF]-() ON (r.extraction_method);
 
 CREATE INDEX director_of_extraction_method_idx IF NOT EXISTS
 FOR ()-[r:DIRECTOR_OF]-() ON (r.extraction_method);
+
+// Alert indexes
+CREATE INDEX alert_created_at_idx IF NOT EXISTS
+FOR (a:Alert) ON (a.created_at);
+
+CREATE INDEX alert_severity_idx IF NOT EXISTS
+FOR (a:Alert) ON (a.severity);
+
+CREATE INDEX alert_acknowledged_idx IF NOT EXISTS
+FOR (a:Alert) ON (a.acknowledged);
+
+CREATE INDEX alert_dedup_key_idx IF NOT EXISTS
+FOR (a:Alert) ON (a.dedup_key);
+
+CREATE INDEX alert_company_cik_idx IF NOT EXISTS
+FOR (a:Alert) ON (a.company_cik);

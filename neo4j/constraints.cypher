@@ -36,5 +36,13 @@ FOR (j:Jurisdiction) REQUIRE j.code IS UNIQUE;
 CREATE CONSTRAINT insider_txn_id_unique IF NOT EXISTS
 FOR (t:InsiderTransaction) REQUIRE t.id IS UNIQUE;
 
+// Alert constraints
+CREATE CONSTRAINT alert_id_unique IF NOT EXISTS
+FOR (a:Alert) REQUIRE a.id IS UNIQUE;
+
+// ScannerState constraints
+CREATE CONSTRAINT scanner_state_id_unique IF NOT EXISTS
+FOR (s:ScannerState) REQUIRE s.scanner_id IS UNIQUE;
+
 // Note: Removed composite node key constraint (normalized_name, jurisdiction)
 // as companies may not always have jurisdiction information

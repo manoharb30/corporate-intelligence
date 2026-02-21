@@ -1,5 +1,6 @@
 import { ReactNode } from 'react'
 import { Link, useLocation } from 'react-router-dom'
+import AlertBell from './AlertBell'
 
 interface LayoutProps {
   children: ReactNode
@@ -8,6 +9,7 @@ interface LayoutProps {
 const navigation = [
   { name: 'Dashboard', href: '/' },
   { name: 'Signals', href: '/signals' },
+  { name: 'Track Record', href: '/accuracy' },
   { name: 'Companies', href: '/companies' },
   { name: 'Network', href: '/network' },
   { name: 'Pricing', href: '/pricing' },
@@ -49,6 +51,9 @@ export default function Layout({ children }: LayoutProps) {
                   ))}
                 </div>
               </div>
+            </div>
+            <div className="flex items-center">
+              <AlertBell />
             </div>
           </div>
         </div>

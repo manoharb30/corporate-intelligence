@@ -359,6 +359,65 @@ class SECEdgarClient:
         logger.info(f"EFTS discovery: found {len(seen_ciks)} unique 8-K filers in last {days_back} days")
         return [{"cik": cik, "name": name} for cik, name in seen_ciks.items()]
 
+    async def get_recent_form4_filers(self, since_date: str, max_results: int = 2000) -> list[dict]:
+        """
+        Discover companies that filed Form 4s since a given date using SEC EFTS.
+
+        Args:
+            since_date: ISO date string (YYYY-MM-DD) to search from
+            max_results: Cap on total results to avoid runaway pagination
+
+        Returns: [{"cik": "0001234567", "name": "COMPANY NAME"}, ...]
+        """
+        seen_ciks = {}  # cik -> name
+        end_date = datetime.now().strftime("%Y-%m-%d")
+
+        from_idx = 0
+        while len(seen_ciks) < max_results:
+            params = {
+                "forms": "4",
+                "dateRange": "custom",
+                "startdt": since_date,
+                "enddt": end_date,
+                "from": str(from_idx),
+            }
+
+            url = f"{self.FULL_TEXT_SEARCH_URL}?{httpx.QueryParams(params)}"
+
+            try:
+                response = await self._request(url)
+                data = response.json()
+
+                hits = data.get("hits", {}).get("hits", [])
+                if not hits:
+                    break
+
+                for hit in hits:
+                    source = hit.get("_source", {})
+                    ciks = source.get("ciks", [])
+                    display_names = source.get("display_names", [])
+
+                    for i, cik in enumerate(ciks):
+                        if cik not in seen_ciks:
+                            name = ""
+                            if i < len(display_names):
+                                raw = display_names[i]
+                                name = re.sub(r"\s*\(CIK[^)]*\)", "", raw)
+                                name = re.sub(r"\s*\([A-Z0-9,\s]+\)\s*$", "", name).strip()
+                            seen_ciks[cik] = name or f"CIK {cik}"
+
+                if len(hits) >= 100:
+                    from_idx += 100
+                else:
+                    break
+
+            except Exception as e:
+                logger.warning(f"EFTS Form 4 search failed: {e}")
+                break
+
+        logger.info(f"EFTS discovery: found {len(seen_ciks)} unique Form 4 filers since {since_date}")
+        return [{"cik": cik, "name": name} for cik, name in seen_ciks.items()]
+
     async def get_ownership_filings(self, cik: str, limit: int = 20) -> list[FilingInfo]:
         """Get recent ownership-related filings for a company."""
         return await self.get_company_filings(
