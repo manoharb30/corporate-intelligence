@@ -964,6 +964,21 @@ export const alertsApi = {
     api.post(`/alerts/${alertId}/acknowledge`),
 }
 
+// Proof Wall types
+export interface ProofHit {
+  company_name: string
+  ticker: string
+  cik: string
+  signal_date: string
+  signal_level: string
+  num_buyers: number
+  total_buy_value: number
+  best_price_change: number | null
+  best_horizon: string | null
+  followed_by_8k: boolean
+  days_to_first_8k: number | null
+}
+
 // Accuracy API
 export const accuracyApi = {
   getAccuracy: (lookbackDays = 365, minSignalAge = 30, minLevel = 'medium') =>
@@ -975,6 +990,9 @@ export const accuracyApi = {
     api.get<AccuracySummary>('/accuracy/summary', {
       params: { lookback_days: lookbackDays, min_signal_age: minSignalAge, min_level: minLevel },
     }),
+
+  getTopHits: (limit = 3) =>
+    api.get<ProofHit[]>('/accuracy/top-hits', { params: { limit } }),
 }
 
 // Scanner API

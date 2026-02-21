@@ -7,6 +7,14 @@ from app.services.accuracy_service import AccuracyService
 router = APIRouter()
 
 
+@router.get("/top-hits")
+async def get_top_hits(
+    limit: int = Query(3, ge=1, le=10),
+):
+    """Top proof-wall hits sorted by marketing impact score."""
+    return await AccuracyService.get_top_hits(limit=limit)
+
+
 @router.get("")
 async def get_accuracy(
     lookback_days: int = Query(365, ge=30, le=730),

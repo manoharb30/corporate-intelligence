@@ -5,6 +5,7 @@ Answers: "when we detected a cluster, what actually happened?"
 """
 
 import logging
+import math
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -289,6 +290,65 @@ def compute_level_stats(outcomes: list[SignalOutcome], level: str) -> LevelStats
     return stats
 
 
+def proof_score(outcome: SignalOutcome) -> float:
+    """Score a hit for marketing impact on the proof wall.
+
+    Weights: 40% return, 25% buy value (log scale), 15% buyer count,
+    10% 8-K confirmation, 10% signal level.
+    """
+    # Best available return (prefer longest horizon)
+    best_return = outcome.price_change_90d or outcome.price_change_60d or outcome.price_change_30d or 0.0
+    return_score = min(best_return / 150.0, 1.0)  # cap at 150%
+
+    # Buy value via log scale (e.g. $1M → ~0.6, $10M → ~0.8)
+    buy_val = max(outcome.total_buy_value, 1)
+    value_score = min(math.log10(buy_val) / 8.0, 1.0)  # $100M → 1.0
+
+    # Buyer count (3 → 0.6, 5+ → 1.0)
+    buyer_score = min(outcome.num_buyers / 5.0, 1.0)
+
+    # 8-K confirmation
+    eight_k_score = 1.0 if outcome.followed_by_8k else 0.0
+
+    # Signal level
+    level_map = {"high": 1.0, "medium": 0.5, "low": 0.2}
+    level_score = level_map.get(outcome.signal_level, 0.0)
+
+    return (
+        0.40 * return_score
+        + 0.25 * value_score
+        + 0.15 * buyer_score
+        + 0.10 * eight_k_score
+        + 0.10 * level_score
+    )
+
+
+def _to_proof_dict(outcome: SignalOutcome) -> dict:
+    """Slim payload for the proof wall frontend."""
+    best_change = None
+    best_horizon = None
+    for horizon, attr in [("90d", "price_change_90d"), ("60d", "price_change_60d"), ("30d", "price_change_30d")]:
+        val = getattr(outcome, attr)
+        if val is not None:
+            best_change = val
+            best_horizon = horizon
+            break
+
+    return {
+        "company_name": outcome.company_name,
+        "ticker": outcome.ticker,
+        "cik": outcome.cik,
+        "signal_date": outcome.signal_date,
+        "signal_level": outcome.signal_level,
+        "num_buyers": outcome.num_buyers,
+        "total_buy_value": outcome.total_buy_value,
+        "best_price_change": best_change,
+        "best_horizon": best_horizon,
+        "followed_by_8k": outcome.followed_by_8k,
+        "days_to_first_8k": outcome.days_to_first_8k,
+    }
+
+
 class AccuracyService:
     """Computes signal accuracy by checking what happened after cluster detections."""
 
@@ -436,6 +496,30 @@ class AccuracyService:
 
         _accuracy_cache[cache_key] = (time.time(), result)
         return result
+
+    @staticmethod
+    async def get_top_hits(limit: int = 3) -> list[dict]:
+        """Return the top N hits sorted by proof_score for the proof wall.
+
+        Reuses the cached get_accuracy() call (4h TTL).
+        """
+        data = await AccuracyService.get_accuracy()
+        outcomes: list[SignalOutcome] = []
+        for s in data["signals"]:
+            o = SignalOutcome(**{k: v for k, v in s.items() if k in SignalOutcome.__dataclass_fields__})
+            outcomes.append(o)
+
+        # Filter: verdict=hit, has ticker, positive best return
+        hits = []
+        for o in outcomes:
+            if o.verdict != "hit" or not o.ticker:
+                continue
+            best = o.price_change_90d or o.price_change_60d or o.price_change_30d
+            if best is not None and best > 0:
+                hits.append(o)
+
+        hits.sort(key=proof_score, reverse=True)
+        return [_to_proof_dict(h) for h in hits[:limit]]
 
     @staticmethod
     async def get_accuracy_summary(

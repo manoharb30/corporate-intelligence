@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { feedApi, profileApi, DbStats, SignalItem, ProfileSearchResult } from '../services/api'
 import SignalCard from '../components/SignalCard'
+import ProofWall from '../components/ProofWall'
 
 export default function Dashboard() {
   const navigate = useNavigate()
@@ -189,47 +190,8 @@ export default function Dashboard() {
         </Link>
       </section>
 
-      {/* ===== Proof Point — Splunk ===== */}
-      <section className="mb-14">
-        <div className="bg-gradient-to-r from-gray-900 to-primary-900 rounded-xl p-8 text-white">
-          <div className="flex items-center gap-2 mb-3">
-            <span className="px-2.5 py-1 bg-purple-600 rounded text-xs font-bold uppercase">Case Study</span>
-            <span className="px-2.5 py-1 bg-red-600 rounded text-xs font-bold uppercase">Insider Cluster: HIGH</span>
-          </div>
-          <h3 className="text-xl font-bold mb-2">Splunk &rarr; Cisco: Insiders Knew First</h3>
-          <p className="text-gray-300 leading-relaxed mb-4">
-            Our pattern detection flagged coordinated insider activity at Splunk, confirmed by an 8-K
-            filing with Item 1.01 (Material Agreement) + Item 5.03 (Governance Changes) in September 2023.
-            The signal was classified <span className="text-red-400 font-semibold">HIGH</span>.
-            Six months later, Cisco completed the $28B acquisition — one of the largest tech deals
-            of the decade.
-          </p>
-          <div className="flex items-center gap-6 text-sm">
-            <div>
-              <span className="text-gray-400">Signal:</span>{' '}
-              <span className="font-medium">Insider Cluster</span>
-            </div>
-            <div>
-              <span className="text-gray-400">Confirmed:</span>{' '}
-              <span className="font-medium">Sep 2023 (8-K)</span>
-            </div>
-            <div>
-              <span className="text-gray-400">Deal Closed:</span>{' '}
-              <span className="font-medium">Mar 2024</span>
-            </div>
-            <div>
-              <span className="text-gray-400">Lead Time:</span>{' '}
-              <span className="font-semibold text-green-400">~6 months</span>
-            </div>
-          </div>
-          <Link
-            to="/signal/0001104659-23-102594"
-            className="inline-block mt-4 px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg text-sm font-medium transition-colors"
-          >
-            See the full signal story &rarr;
-          </Link>
-        </div>
-      </section>
+      {/* ===== Proof Wall ===== */}
+      <ProofWall variant="dark" />
 
       {/* ===== Live Signals ===== */}
       <section className="mb-14">
