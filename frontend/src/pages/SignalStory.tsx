@@ -127,7 +127,7 @@ export default function SignalStory() {
       </Link>
 
       {/* ===== Decision Card ===== */}
-      {data.decision_card && <DecisionCard card={data.decision_card} />}
+      {data.decision_card && <DecisionCard card={data.decision_card} isCluster={isCluster} />}
 
       {/* ===== Chapter 1: The Filing ===== */}
       <section className="mb-8">

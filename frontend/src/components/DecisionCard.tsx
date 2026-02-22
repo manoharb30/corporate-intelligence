@@ -2,6 +2,7 @@ import { DecisionCard as DecisionCardType } from '../services/api'
 
 interface DecisionCardProps {
   card: DecisionCardType
+  isCluster?: boolean
 }
 
 const actionStyles: Record<string, { bg: string; text: string; border: string }> = {
@@ -23,16 +24,17 @@ const directionStyles: Record<string, { badge: string; label: string }> = {
   none: { badge: 'bg-gray-100 text-gray-500 border-gray-200', label: 'NO TRADES' },
 }
 
-function formatDays(days: number | null): string {
+function formatDays(days: number | null, isCluster: boolean): string {
   if (days === null) return ''
-  if (days === 0) return 'Filed today'
-  if (days === 1) return 'Filed 1d ago'
-  if (days < 30) return `Filed ${days}d ago`
-  if (days < 365) return `Filed ${Math.round(days / 30)}mo ago`
-  return `Filed ${(days / 365).toFixed(1)}y ago`
+  const prefix = isCluster ? 'Detected' : 'Filed'
+  if (days === 0) return `${prefix} today`
+  if (days === 1) return `${prefix} 1d ago`
+  if (days < 30) return `${prefix} ${days}d ago`
+  if (days < 365) return `${prefix} ${Math.round(days / 30)}mo ago`
+  return `${prefix} ${(days / 365).toFixed(1)}y ago`
 }
 
-export default function DecisionCard({ card }: DecisionCardProps) {
+export default function DecisionCard({ card, isCluster = false }: DecisionCardProps) {
   const style = actionStyles[card.action] || actionStyles.PASS
   const dir = directionStyles[card.insider_direction] || directionStyles.none
   const hasPriceData = card.price_change_pct !== undefined && card.price_change_pct !== null
@@ -47,7 +49,7 @@ export default function DecisionCard({ card }: DecisionCardProps) {
           <span className="text-sm font-medium opacity-90">{convictionLabel[card.conviction] || card.conviction}</span>
         </div>
         {card.days_since_filing !== null && (
-          <span className="text-sm font-medium opacity-80">{formatDays(card.days_since_filing)}</span>
+          <span className="text-sm font-medium opacity-80">{formatDays(card.days_since_filing, isCluster)}</span>
         )}
       </div>
 
@@ -63,7 +65,7 @@ export default function DecisionCard({ card }: DecisionCardProps) {
               <span className={`text-lg font-bold ${priceUp ? 'text-green-600' : 'text-red-600'}`}>
                 {priceUp ? '\u25B2' : '\u25BC'} {priceUp ? '+' : ''}{card.price_change_pct}%
               </span>
-              <span className="text-sm text-gray-500">since filing</span>
+              <span className="text-sm text-gray-500">{isCluster ? 'since detection' : 'since filing'}</span>
               {card.price_at_filing !== undefined && card.price_current !== undefined && (
                 <span className="text-xs text-gray-400">
                   ${card.price_at_filing.toFixed(2)} &rarr; ${card.price_current.toFixed(2)}
