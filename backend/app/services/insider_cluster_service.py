@@ -488,13 +488,13 @@ class InsiderClusterService:
             "conviction": conviction,
             "one_liner": one_liner,
             "insider_direction": "buying",
-            "days_since_filing": (datetime.now() - window_end_dt).days,
+            "days_since_filing": (datetime.now() - window_start_dt).days,
         }
 
-        # Price change since window end
+        # Price change since first insider purchase (window_start)
         if ticker:
             try:
-                price_data = StockPriceService.get_price_at_date(ticker, window_end)
+                price_data = StockPriceService.get_price_at_date(ticker, window_start)
                 if price_data and price_data["price_at_date"] > 0:
                     decision_card["price_at_filing"] = price_data["price_at_date"]
                     decision_card["price_current"] = price_data["price_current"]
