@@ -97,6 +97,16 @@ class InsiderTradingService:
         parser = Form4Parser()
 
         try:
+            # Fetch company metadata (tickers, entity_type) for enrichment
+            tickers = []
+            entity_type = None
+            try:
+                info = await client.get_company_info(cik)
+                tickers = info.tickers or []
+                entity_type = info.entity_type
+            except Exception:
+                pass  # Non-critical — proceed without tickers
+
             filings = await client.get_form4_filings(cik, limit=limit)
 
             parsed_count = 0
@@ -128,7 +138,11 @@ class InsiderTradingService:
 
                         query = """
                             MERGE (c:Company {cik: $cik})
-                            ON CREATE SET c.name = $company_name
+                            ON CREATE SET c.name = $company_name,
+                                          c.tickers = $tickers,
+                                          c.entity_type = $entity_type
+                            SET c.tickers = COALESCE(c.tickers, $tickers),
+                                c.entity_type = COALESCE(c.entity_type, $entity_type)
 
                             MERGE (t:InsiderTransaction {id: $txn_id})
                             SET t.accession_number = $accession_number,
@@ -160,6 +174,8 @@ class InsiderTradingService:
                         await Neo4jClient.execute_query(query, {
                             "cik": cik,
                             "company_name": company_name,
+                            "tickers": tickers,
+                            "entity_type": entity_type,
                             "txn_id": txn_id,
                             "accession_number": filing.accession_number,
                             "filing_date": filing.filing_date,

@@ -163,6 +163,10 @@ class TestRunScanner:
             new_callable=AsyncMock,
             side_effect=lambda x: x,
         ), patch(
+            "scanner.form4_scanner.filter_non_companies",
+            new_callable=AsyncMock,
+            side_effect=lambda x: x,
+        ), patch(
             "scanner.form4_scanner.filter_already_scanned",
             new_callable=AsyncMock,
             side_effect=lambda f, _: f,
@@ -197,6 +201,10 @@ class TestRunScanner:
             return_value=filers,
         ), patch(
             "scanner.form4_scanner.filter_investment_vehicles",
+            new_callable=AsyncMock,
+            side_effect=lambda x: x,
+        ), patch(
+            "scanner.form4_scanner.filter_non_companies",
             new_callable=AsyncMock,
             side_effect=lambda x: x,
         ), patch(

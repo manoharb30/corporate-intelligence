@@ -26,6 +26,7 @@ class AlertItem:
     acknowledged: bool
     acknowledged_at: Optional[str] = None
     dedup_key: Optional[str] = None
+    signal_id: Optional[str] = None
 
     def to_dict(self) -> dict:
         return {
@@ -40,6 +41,7 @@ class AlertItem:
             "created_at": self.created_at,
             "acknowledged": self.acknowledged,
             "acknowledged_at": self.acknowledged_at,
+            "signal_id": self.signal_id,
         }
 
 
@@ -55,6 +57,7 @@ class AlertService:
         ticker: Optional[str],
         title: str,
         description: str,
+        signal_id: Optional[str] = None,
     ) -> Optional[str]:
         """
         Create or deduplicate an alert.
@@ -79,6 +82,7 @@ class AlertService:
                 a.ticker = $ticker,
                 a.title = $title,
                 a.description = $description,
+                a.signal_id = $signal_id,
                 a.created_at = $now,
                 a.acknowledged = false
             WITH a
@@ -99,6 +103,7 @@ class AlertService:
                 "ticker": ticker,
                 "title": title,
                 "description": description,
+                "signal_id": signal_id,
                 "now": now,
             })
             if results:
@@ -145,7 +150,8 @@ class AlertService:
                    a.created_at as created_at,
                    a.acknowledged as acknowledged,
                    a.acknowledged_at as acknowledged_at,
-                   a.dedup_key as dedup_key
+                   a.dedup_key as dedup_key,
+                   a.signal_id as signal_id
             ORDER BY a.created_at DESC
             LIMIT $limit
         """
@@ -166,6 +172,7 @@ class AlertService:
                 acknowledged=r["acknowledged"] if r["acknowledged"] is not None else False,
                 acknowledged_at=r.get("acknowledged_at"),
                 dedup_key=r.get("dedup_key"),
+                signal_id=r.get("signal_id"),
             )
             for r in results
         ]

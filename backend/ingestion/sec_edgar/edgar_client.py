@@ -26,6 +26,7 @@ class CompanyInfo:
     sic_description: Optional[str] = None
     state_of_incorporation: Optional[str] = None
     fiscal_year_end: Optional[str] = None
+    entity_type: Optional[str] = None
 
 
 @dataclass
@@ -161,6 +162,7 @@ class SECEdgarClient:
             sic_description=data.get("sicDescription"),
             state_of_incorporation=data.get("stateOfIncorporation"),
             fiscal_year_end=data.get("fiscalYearEnd"),
+            entity_type=data.get("entityType"),
         )
 
     async def get_company_filings(

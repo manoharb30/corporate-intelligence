@@ -144,6 +144,76 @@ async def filter_investment_vehicles(filers: list[dict]) -> list[dict]:
     return filtered
 
 
+async def filter_non_companies(filers: list[dict]) -> list[dict]:
+    """
+    Remove non-company filers (individuals, funds, trusts) using SEC EDGAR's
+    entityType field. Only filers with entityType == "operating" are real
+    companies; individuals and investment vehicles are classified as "other".
+
+    Checks Neo4j first for cached entity_type. For unknown filers, fetches
+    from the EDGAR submissions API.
+    """
+    if not filers:
+        return []
+
+    ciks = [f["cik"] for f in filers]
+
+    # Batch lookup entity_type from Neo4j for known companies
+    query = """
+        UNWIND $ciks AS cik
+        MATCH (c:Company {cik: cik})
+        WHERE c.entity_type IS NOT NULL
+        RETURN c.cik as cik, c.entity_type as entity_type
+    """
+    results = await Neo4jClient.execute_query(query, {"ciks": ciks})
+    known_types = {r["cik"]: r["entity_type"] for r in results}
+
+    # For unknown filers, fetch entityType from EDGAR
+    unknown = [f for f in filers if f["cik"] not in known_types]
+    if unknown:
+        client = SECEdgarClient()
+        try:
+            for filer in unknown:
+                try:
+                    info = await client.get_company_info(filer["cik"])
+                    if info.entity_type:
+                        known_types[filer["cik"]] = info.entity_type
+                        # Cache in Neo4j for future runs
+                        await Neo4jClient.execute_query(
+                            """
+                            MERGE (c:Company {cik: $cik})
+                            SET c.entity_type = $entity_type
+                            """,
+                            {"cik": filer["cik"], "entity_type": info.entity_type},
+                        )
+                except Exception:
+                    pass  # Can't determine type — allow through
+        finally:
+            await client.close()
+
+    # Only keep filers with entityType == "operating"
+    filtered = []
+    excluded_count = 0
+    for filer in filers:
+        entity_type = known_types.get(filer["cik"])
+        if entity_type and entity_type != "operating":
+            excluded_count += 1
+            logger.debug(
+                f"Skipping non-company filer: {filer['name']} "
+                f"(entityType={entity_type})"
+            )
+        else:
+            filtered.append(filer)
+
+    if excluded_count:
+        logger.info(
+            f"Filtered out {excluded_count} non-company filers "
+            f"(individuals/funds) by EDGAR entityType"
+        )
+
+    return filtered
+
+
 async def discover_form4_filers(since_date: str) -> list[dict]:
     """Discover companies that filed Form 4s since the checkpoint."""
     client = SECEdgarClient()
@@ -227,6 +297,7 @@ async def detect_and_alert(affected_ciks: set[str]) -> int:
             ticker=cluster.ticker,
             title=f"Insider Cluster: {cluster.num_buyers} buyers at {cluster.company_name}",
             description=cluster.signal_summary,
+            signal_id=cluster.accession_number,
         )
         if alert_id:
             alerts_created += 1
@@ -270,6 +341,7 @@ async def _check_large_purchases(cik: str) -> None:
         insider = r["insider_name"] or "Unknown"
         value = r["total_value"] or 0
 
+        today = datetime.utcnow().strftime("%Y-%m-%d")
         await AlertService.create_alert(
             alert_type="large_purchase",
             severity="medium",
@@ -278,6 +350,7 @@ async def _check_large_purchases(cik: str) -> None:
             ticker=ticker,
             title=f"Large Purchase: {insider} bought ${value:,.0f} of {name}",
             description=f"{insider} purchased ${value:,.0f} worth of shares",
+            signal_id=f"CLUSTER-{cik}-{today}",
         )
 
 
@@ -316,7 +389,10 @@ async def run_scanner() -> dict:
         # 1b. Filter out investment vehicles (funds, trusts, etc.)
         all_filers = await filter_investment_vehicles(all_filers)
 
-        # 1c. Filter out companies we already scanned since checkpoint
+        # 1c. Filter out non-companies (individuals, funds) by EDGAR entityType
+        all_filers = await filter_non_companies(all_filers)
+
+        # 1d. Filter out companies we already scanned since checkpoint
         filers = await filter_already_scanned(all_filers, checkpoint)
 
         if not filers:

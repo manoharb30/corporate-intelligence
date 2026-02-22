@@ -867,6 +867,7 @@ export interface AlertItem {
   created_at: string
   acknowledged: boolean
   acknowledged_at: string | null
+  signal_id: string | null
 }
 
 export interface AlertsResponse {

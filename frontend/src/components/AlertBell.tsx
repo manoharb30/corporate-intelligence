@@ -104,9 +104,11 @@ export default function AlertBell() {
               </div>
             ) : (
               recentAlerts.map((alert) => (
-                <div
+                <Link
                   key={alert.id}
-                  className="px-4 py-3 border-b border-gray-50 hover:bg-gray-50"
+                  to={alert.signal_id ? `/signal/${alert.signal_id}` : `/signals?cik=${alert.company_cik}`}
+                  onClick={() => setOpen(false)}
+                  className="block px-4 py-3 border-b border-gray-50 hover:bg-gray-50"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
@@ -130,6 +132,7 @@ export default function AlertBell() {
                     <button
                       onClick={(e) => {
                         e.stopPropagation()
+                        e.preventDefault()
                         handleDismiss(alert.id)
                       }}
                       className="flex-shrink-0 text-gray-400 hover:text-gray-600"
@@ -140,7 +143,7 @@ export default function AlertBell() {
                       </svg>
                     </button>
                   </div>
-                </div>
+                </Link>
               ))
             )}
           </div>

@@ -128,10 +128,10 @@ export default function Alerts() {
 
                   <div className="mt-2 flex items-center gap-3">
                     <Link
-                      to={`/signals?cik=${alert.company_cik}`}
+                      to={alert.signal_id ? `/signal/${alert.signal_id}` : `/signals?cik=${alert.company_cik}`}
                       className="text-xs font-medium text-primary-600 hover:text-primary-800"
                     >
-                      View signals for {alert.company_name}
+                      {alert.signal_id ? 'View signal details' : 'View signals for'} {alert.company_name}
                       {alert.ticker ? ` (${alert.ticker})` : ''}
                     </Link>
                   </div>
