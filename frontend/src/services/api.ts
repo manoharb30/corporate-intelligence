@@ -211,6 +211,7 @@ export interface InsiderContextData {
   person_matches: string[]
   near_filing_count: number
   near_filing_direction: 'buying' | 'selling' | 'mixed' | 'none'
+  near_filing_buy_type: 'open_market' | 'exercise_hold' | 'mixed' | 'none'
 }
 
 export interface ClusterBuyerDetail {
@@ -218,6 +219,9 @@ export interface ClusterBuyerDetail {
   title: string
   total_value: number
   trade_count: number
+  total_shares: number
+  avg_price_per_share: number | null
+  trade_dates: string[]
 }
 
 export interface ClusterDetail {
@@ -587,10 +591,19 @@ export interface DecisionCard {
   conviction: 'HIGH' | 'MEDIUM' | 'LOW'
   one_liner: string
   insider_direction: 'buying' | 'selling' | 'mixed' | 'none'
+  insider_buy_type?: 'open_market' | 'exercise_hold' | 'mixed' | 'none'
   days_since_filing: number | null
   price_change_pct?: number
   price_at_filing?: number
   price_current?: number
+  confidence?: {
+    tier: 'Strong' | 'Moderate' | 'Weak'
+    win_rate: number
+    avg_return: number
+    pattern_label: string
+    sample_size: number
+    micro_cap_warning: boolean
+  }
 }
 
 export interface EventDetailResponse {

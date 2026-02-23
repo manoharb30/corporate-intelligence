@@ -49,23 +49,25 @@ async def get_feed(
         GET /feed?days=30&min_level=medium
         GET /feed?cik=0000320193
     """
-    signals, company_filter = await FeedService.get_feed(
+    all_signals, company_filter = await FeedService.get_feed(
         days=days,
-        limit=limit,
         min_level=min_level,
         cik=cik,
     )
 
-    # Group by level for summary (base level)
+    # Group by level for summary (counts on ALL signals, not just limited)
     by_level = {"high": 0, "medium": 0, "low": 0}
     by_combined = {"critical": 0, "high_bearish": 0, "high": 0, "medium": 0, "low": 0}
-    for s in signals:
+    for s in all_signals:
         by_level[s.signal_level] = by_level.get(s.signal_level, 0) + 1
         combined = s.combined_signal_level or s.signal_level
         by_combined[combined] = by_combined.get(combined, 0) + 1
 
+    # Truncate for response
+    signals = all_signals[:limit]
+
     result = {
-        "total": len(signals),
+        "total": len(all_signals),
         "by_level": by_level,
         "by_combined": by_combined,
         "signals": [s.to_dict() for s in signals],
@@ -261,14 +263,13 @@ async def get_high_signals(
         GET /feed/high-signals
         GET /feed/high-signals?days=60
     """
-    signals, _ = await FeedService.get_feed(
+    all_sigs, _ = await FeedService.get_feed(
         days=days,
-        limit=limit,
         min_level="high",
     )
 
-    # Filter to only high
-    high_signals = [s for s in signals if s.signal_level == "high"]
+    # Filter to only high, then truncate
+    high_signals = [s for s in all_sigs if s.signal_level == "high"][:limit]
 
     return {
         "total": len(high_signals),

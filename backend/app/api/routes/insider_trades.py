@@ -4,7 +4,10 @@ import logging
 
 from fastapi import APIRouter, BackgroundTasks, Query
 
+from app.db.neo4j_client import Neo4jClient
+from app.services.feed_service import pick_ticker
 from app.services.insider_trading_service import BackfillResult, InsiderTradingService
+from ingestion.sec_edgar.edgar_client import SECEdgarClient
 
 logger = logging.getLogger(__name__)
 
@@ -144,3 +147,68 @@ async def backfill_status():
         GET /insider-trades/backfill/status
     """
     return _backfill_state.to_dict()
+
+
+@router.post("/backfill/tickers")
+async def backfill_tickers():
+    """
+    Backfill missing tickers for all companies using SEC company_tickers.json.
+    Runs synchronously (typically completes in seconds).
+
+    Example:
+        POST /insider-trades/backfill/tickers
+    """
+    # 1. Get all companies missing tickers
+    missing_query = """
+        MATCH (c:Company)
+        WHERE c.tickers IS NULL OR c.tickers = []
+        RETURN c.cik as cik
+    """
+    missing = await Neo4jClient.execute_query(missing_query, {})
+    if not missing:
+        return {"status": "no_work", "updated": 0, "message": "All companies have tickers"}
+
+    missing_ciks = {r["cik"] for r in missing}
+
+    # 2. Fetch SEC's master ticker list (single HTTP request)
+    client = SECEdgarClient()
+    try:
+        response = await client._request(client.COMPANY_TICKERS_URL)
+        sec_data = response.json()
+    finally:
+        await client.close()
+
+    # 3. Build CIK -> tickers mapping
+    cik_tickers: dict[str, list[str]] = {}
+    for entry in sec_data.values():
+        cik = str(entry.get("cik_str", "")).zfill(10)
+        ticker = entry.get("ticker")
+        if cik in missing_ciks and ticker:
+            if cik not in cik_tickers:
+                cik_tickers[cik] = []
+            if ticker not in cik_tickers[cik]:
+                cik_tickers[cik].append(ticker)
+
+    if not cik_tickers:
+        return {
+            "status": "no_matches",
+            "updated": 0,
+            "missing_count": len(missing_ciks),
+            "message": "No SEC ticker matches found for missing companies",
+        }
+
+    # 4. Batch update Neo4j
+    update_query = """
+        UNWIND $updates AS u
+        MATCH (c:Company {cik: u.cik})
+        SET c.tickers = u.tickers
+    """
+    updates = [{"cik": cik, "tickers": tickers} for cik, tickers in cik_tickers.items()]
+    await Neo4jClient.execute_query(update_query, {"updates": updates})
+
+    return {
+        "status": "completed",
+        "updated": len(updates),
+        "missing_count": len(missing_ciks),
+        "message": f"Backfilled tickers for {len(updates)} of {len(missing_ciks)} companies missing tickers",
+    }

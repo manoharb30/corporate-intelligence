@@ -34,6 +34,32 @@ def pick_ticker(tickers: list[str] | None) -> str | None:
     return tickers[0]
 
 
+async def resolve_ticker(cik: str, tickers: list | None) -> str | None:
+    """Resolve ticker, falling back to SEC API lookup + Neo4j backfill if missing."""
+    ticker = pick_ticker(tickers)
+    if ticker:
+        return ticker
+
+    try:
+        client = SECEdgarClient()
+        try:
+            info = await client.get_company_info(cik)
+            if info.tickers:
+                # Backfill into Neo4j so future queries don't need the SEC call
+                await Neo4jClient.execute_query(
+                    "MATCH (c:Company {cik: $cik}) SET c.tickers = $tickers",
+                    {"cik": cik, "tickers": info.tickers},
+                )
+                logger.info(f"Backfilled tickers {info.tickers} for CIK {cik}")
+                return pick_ticker(info.tickers)
+        finally:
+            await client.close()
+    except Exception as e:
+        logger.warning(f"Failed to resolve ticker for CIK {cik}: {e}")
+
+    return None
+
+
 def _name_keywords(name: str) -> set[str]:
     """Extract significant keywords from a name for matching.
 
@@ -121,6 +147,7 @@ class InsiderContext:
     person_matches: list[str] = field(default_factory=list)  # persons in both filing AND trades
     near_filing_count: int = 0  # trades within ±90d of filing
     near_filing_direction: str = "none"  # direction from near-filing trades only
+    near_filing_buy_type: str = "none"  # "open_market", "exercise_hold", "mixed", "none"
 
     def to_dict(self) -> dict:
         return {
@@ -133,6 +160,7 @@ class InsiderContext:
             "person_matches": self.person_matches[:5],
             "near_filing_count": self.near_filing_count,
             "near_filing_direction": self.near_filing_direction,
+            "near_filing_buy_type": self.near_filing_buy_type,
         }
 
 
@@ -474,6 +502,8 @@ class FeedService:
             near_sell = 0.0
             near_buyers = set()
             near_sellers = set()
+            has_open_market = False
+            has_exercise_hold = False
 
             if window_trades:
                 window_trade_types = classify_trades_batch(
@@ -491,6 +521,10 @@ class FeedService:
                     if is_bullish_trade(trade_type):
                         near_buy += val
                         near_buyers.add(name)
+                        if trade_type == "buy":
+                            has_open_market = True
+                        elif trade_type == "exercise_hold":
+                            has_exercise_hold = True
                         # Days relative to filing (only meaningful for near-filing)
                         try:
                             trade_dt = datetime.strptime(t["transaction_date"], "%Y-%m-%d")
@@ -505,8 +539,9 @@ class FeedService:
                             time_desc = ""
 
                         label = title.split(",")[0].strip() if title else name.split()[-1]
+                        action = "bought" if trade_type == "buy" else "exercised & held"
                         if val >= 10000:
-                            notable.append(f"{label} bought ${val:,.0f} {time_desc}")
+                            notable.append(f"{label} {action} ${val:,.0f} {time_desc}")
                     elif is_bearish_trade(trade_type):
                         near_sell += val
                         near_sellers.add(name)
@@ -524,6 +559,16 @@ class FeedService:
             # Cluster activity only meaningful within near-filing window
             cluster = len(near_buyers) >= 3 or len(near_sellers) >= 3
 
+            # Classify the type of buying near the filing
+            if has_open_market and has_exercise_hold:
+                buy_type = "mixed"
+            elif has_open_market:
+                buy_type = "open_market"
+            elif has_exercise_hold:
+                buy_type = "exercise_hold"
+            else:
+                buy_type = "none"
+
             contexts[key] = InsiderContext(
                 net_direction=direction,
                 total_buy_value=total_buy,
@@ -534,6 +579,7 @@ class FeedService:
                 person_matches=person_matches,
                 near_filing_count=len(window_trades),
                 near_filing_direction=near_direction,
+                near_filing_buy_type=buy_type,
             )
 
         return contexts
@@ -541,7 +587,6 @@ class FeedService:
     @staticmethod
     async def get_feed(
         days: int = 7,
-        limit: int = 50,
         min_level: str = "low",
         cik: Optional[str] = None,
     ) -> tuple[list['SignalItem'], Optional[dict]]:
@@ -550,7 +595,6 @@ class FeedService:
 
         Args:
             days: Look back this many days
-            limit: Maximum signals to return
             min_level: Minimum signal level (low, medium, high)
             cik: Optional CIK to filter to a single company
 
@@ -669,7 +713,7 @@ class FeedService:
                         item_names=d["item_names"],
                         persons_mentioned=d["persons_mentioned"],
                         accession_number=d["accession_number"],
-                        combined_signal_level=d["combined_signal_level"],
+                        combined_signal_level="critical" if cs.signal_level == "high" and cs.num_buyers >= 3 else d["combined_signal_level"],
                         insider_context=InsiderContext(
                             net_direction="buying",
                             total_buy_value=cs.total_buy_value,
@@ -677,6 +721,7 @@ class FeedService:
                             notable_trades=[f"{b.name} bought ${b.total_value:,.0f}" for b in cs.buyers[:5]],
                             cluster_activity=cs.num_buyers >= 3,
                             trade_count=sum(b.trade_count for b in cs.buyers),
+                            near_filing_buy_type="open_market",
                         ),
                         signal_type="insider_cluster",
                         cluster_detail=d.get("cluster_detail"),
@@ -712,7 +757,7 @@ class FeedService:
                     "ticker": pick_ticker(r.get("tickers")),
                 }
 
-        return signals[:limit], company_filter
+        return signals, company_filter
 
     @staticmethod
     async def get_feed_summary() -> dict:

@@ -24,6 +24,13 @@ const directionStyles: Record<string, { badge: string; label: string }> = {
   none: { badge: 'bg-gray-100 text-gray-500 border-gray-200', label: 'NO TRADES' },
 }
 
+function buyTypeLabel(buyType?: string): string {
+  if (buyType === 'open_market') return ' (Open Market)'
+  if (buyType === 'exercise_hold') return ' (Exercise & Hold)'
+  if (buyType === 'mixed') return ' (Open Market + Exercise)'
+  return ''
+}
+
 function formatDays(days: number | null, isCluster: boolean): string {
   if (days === null) return ''
   const prefix = isCluster ? 'Detected' : 'Filed'
@@ -34,11 +41,19 @@ function formatDays(days: number | null, isCluster: boolean): string {
   return `${prefix} ${(days / 365).toFixed(1)}y ago`
 }
 
+const tierStyles: Record<string, { bg: string; text: string; dot: string }> = {
+  Strong: { bg: 'bg-green-50', text: 'text-green-700', dot: 'bg-green-500' },
+  Moderate: { bg: 'bg-amber-50', text: 'text-amber-700', dot: 'bg-amber-500' },
+  Weak: { bg: 'bg-gray-50', text: 'text-gray-600', dot: 'bg-gray-400' },
+}
+
 export default function DecisionCard({ card, isCluster = false }: DecisionCardProps) {
   const style = actionStyles[card.action] || actionStyles.PASS
   const dir = directionStyles[card.insider_direction] || directionStyles.none
   const hasPriceData = card.price_change_pct !== undefined && card.price_change_pct !== null
   const priceUp = hasPriceData && card.price_change_pct! >= 0
+  const conf = card.confidence
+  const tier = conf ? tierStyles[conf.tier] || tierStyles.Weak : null
 
   return (
     <div className={`rounded-xl border-2 ${style.border} overflow-hidden shadow-lg mb-6`}>
@@ -75,9 +90,30 @@ export default function DecisionCard({ card, isCluster = false }: DecisionCardPr
           )}
 
           <span className={`px-3 py-1 rounded-full text-xs font-bold border ${dir.badge}`}>
-            Insiders: {dir.label}
+            Insiders: {dir.label}{buyTypeLabel(card.insider_buy_type)}
           </span>
         </div>
+
+        {/* Confidence badge */}
+        {conf && tier && (
+          <div className={`mt-3 pt-3 border-t border-gray-100`}>
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${tier.bg} ${tier.text}`}>
+                <span className={`w-2 h-2 rounded-full ${tier.dot}`}></span>
+                {conf.tier} Confidence
+              </span>
+              <span className="text-sm text-gray-700 font-medium">{conf.win_rate}% win rate</span>
+              <span className={`text-sm font-medium ${conf.avg_return >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {conf.avg_return >= 0 ? '+' : ''}{conf.avg_return}% avg return
+              </span>
+              <span className="text-xs text-gray-400">Based on {conf.sample_size} historical signals</span>
+              {conf.micro_cap_warning && (
+                <span className="text-xs text-amber-600 font-medium">Micro-cap adjusted</span>
+              )}
+            </div>
+            <p className="text-xs text-gray-400 mt-1">Pattern: {conf.pattern_label}</p>
+          </div>
+        )}
       </div>
     </div>
   )

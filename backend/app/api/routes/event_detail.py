@@ -1,10 +1,15 @@
 """API endpoints for event detail with LLM analysis and party linking."""
 
+import logging
+
 from fastapi import APIRouter, HTTPException
 
+from app.services.accuracy_service import AccuracyService
 from app.services.event_detail_service import EventDetailService
 from app.services.insider_cluster_service import InsiderClusterService
 from app.services.party_linker_service import PartyLinkerService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -45,10 +50,17 @@ async def get_event_detail(accession_number: str):
     Example:
         GET /api/event-detail/0001193125-23-237963
     """
+    # Fetch confidence stats (cached 4h) for decision card badges
+    try:
+        confidence_stats = await AccuracyService.get_confidence_stats()
+    except Exception as e:
+        logger.warning(f"Failed to fetch confidence stats: {e}")
+        confidence_stats = None
+
     if accession_number.startswith("CLUSTER-"):
-        result = await InsiderClusterService.get_cluster_detail(accession_number)
+        result = await InsiderClusterService.get_cluster_detail(accession_number, confidence_stats=confidence_stats)
     else:
-        result = await EventDetailService.get_event_detail(accession_number)
+        result = await EventDetailService.get_event_detail(accession_number, confidence_stats=confidence_stats)
 
     if not result:
         raise HTTPException(status_code=404, detail="Event not found")

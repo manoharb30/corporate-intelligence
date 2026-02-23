@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from app.db.neo4j_client import Neo4jClient
-from app.services.feed_service import FeedService, SignalItem, pick_ticker
+from app.services.feed_service import FeedService, SignalItem, pick_ticker, resolve_ticker
 from app.services.company_profile_service import CompanyProfileService
 from app.services.llm_analysis_service import LLMAnalysisService
 from app.services.party_linker_service import PartyLinkerService
@@ -24,7 +24,84 @@ class EventDetailService:
     """Service for retrieving detailed event information with analysis."""
 
     @staticmethod
-    async def get_event_detail(accession_number: str) -> Optional[dict]:
+    def _match_confidence_pattern(
+        insider_context_data: Optional[dict],
+        item_numbers: list[str],
+        price_current: Optional[float],
+        stats: dict,
+        signal_level: Optional[str] = None,
+    ) -> Optional[dict]:
+        """Match a signal to a confidence pattern using precomputed stats.
+
+        For 8-K signals (item_numbers non-empty): uses 8-K-based patterns.
+        For pure cluster signals (item_numbers empty): uses cluster-specific
+        stats keyed by signal_level (cluster_high, cluster_medium).
+
+        Returns confidence dict or None if no pattern matches.
+        """
+        if not stats or not insider_context_data:
+            return None
+
+        direction = insider_context_data.get("net_direction", "none")
+        if direction not in ("buying", "mixed"):
+            return None  # No bullish activity
+
+        is_cluster = insider_context_data.get("cluster_activity", False)
+        is_pure_cluster = not item_numbers  # No 8-K items = pure cluster signal
+
+        # Pure cluster signals use cluster-specific stats
+        # (signal_level passed explicitly — don't rely on cluster_activity flag
+        #  which is only true for 3+ buyers)
+        if is_pure_cluster and signal_level:
+            pattern = f"cluster_{signal_level}"  # cluster_high or cluster_medium
+        else:
+            # 8-K signals use event-based patterns
+            has_exec_change = any(i in ("5.02", "5.03") for i in item_numbers)
+            has_material = "1.01" in item_numbers
+
+            pattern = None
+            if is_cluster and has_exec_change:
+                pattern = "cluster_exec_change"
+            elif is_cluster:
+                pattern = "cluster_buy"
+            elif has_material and direction == "buying":
+                pattern = "material_agreement"
+            elif direction == "buying":
+                pattern = "single_buyer"
+
+        if not pattern or pattern not in stats:
+            return None
+
+        s = stats[pattern]
+        win_rate = s["win_rate"]
+
+        # Micro-cap filter: downgrade tier if price < $5
+        micro_cap_warning = False
+        if price_current is not None and price_current < 5.0:
+            micro_cap_warning = True
+            # Downgrade: treat win_rate as one tier lower
+            win_rate_for_tier = win_rate - 10
+        else:
+            win_rate_for_tier = win_rate
+
+        if win_rate_for_tier >= 60:
+            tier = "Strong"
+        elif win_rate_for_tier >= 50:
+            tier = "Moderate"
+        else:
+            tier = "Weak"
+
+        return {
+            "tier": tier,
+            "win_rate": s["win_rate"],
+            "avg_return": s["avg_return"],
+            "pattern_label": s["label"],
+            "sample_size": s["n"],
+            "micro_cap_warning": micro_cap_warning,
+        }
+
+    @staticmethod
+    async def get_event_detail(accession_number: str, confidence_stats: Optional[dict] = None) -> Optional[dict]:
         """
         Get full event detail including LLM analysis and company timeline.
 
@@ -59,7 +136,7 @@ class EventDetailService:
         first = results[0]
         cik = first["cik"]
         company_name = first["company_name"]
-        ticker = pick_ticker(first.get("tickers"))
+        ticker = await resolve_ticker(cik, first.get("tickers"))
 
         # Build event items (one filing can have multiple items)
         items = []
@@ -151,6 +228,15 @@ class EventDetailService:
             ticker=ticker,
             filing_date=first["filing_date"],
         )
+
+        # Add confidence badge from precomputed stats
+        if confidence_stats:
+            price_current = decision_card.get("price_current")
+            confidence = EventDetailService._match_confidence_pattern(
+                insider_context_data, item_numbers, price_current, confidence_stats
+            )
+            if confidence:
+                decision_card["confidence"] = confidence
 
         # Build company context (lightweight: top 5 officers, all directors, board connections)
         company_context = await EventDetailService._build_company_context(cik)
@@ -253,11 +339,16 @@ class EventDetailService:
             except Exception as e:
                 logger.warning(f"Failed to get price change for decision card: {e}")
 
+        insider_buy_type = "none"
+        if insider_context_data:
+            insider_buy_type = insider_context_data.get("near_filing_buy_type", "none")
+
         card = {
             "action": action,
             "conviction": conviction,
             "one_liner": one_liner,
             "insider_direction": insider_direction,
+            "insider_buy_type": insider_buy_type,
             "days_since_filing": days_since_filing,
         }
         if price_change_pct is not None:
@@ -403,14 +494,22 @@ class EventDetailService:
             except ValueError:
                 pass
 
+        # Skip noise trades (tax withholding, awards, gifts, etc.)
+        _SKIP_TYPES = {"tax", "award", "gift", "conversion", "will", "other"}
         for t, trade_type in zip(trades, trade_types):
+            if trade_type in _SKIP_TYPES:
+                continue
             code = t["transaction_code"] or ""
 
             shares_str = f"{t['shares']:,.0f}" if t.get("shares") else "?"
             value_str = f"${t['total_value']:,.0f}" if t.get("total_value") else ""
 
+            price_str = f"@ ${t['price_per_share']:,.2f}" if t.get("price_per_share") else ""
+
             description = f"{t['insider_name']} - {t['transaction_type'] or code}"
             detail = f"{shares_str} shares"
+            if price_str:
+                detail += f" {price_str}"
             if value_str:
                 detail += f" ({value_str})"
             if t.get("insider_title"):

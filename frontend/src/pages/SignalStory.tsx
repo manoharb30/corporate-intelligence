@@ -268,7 +268,7 @@ export default function SignalStory() {
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-lg font-semibold text-gray-900">The Insider Cluster</h2>
               <span className="px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full text-sm font-medium">
-                {data.cluster_detail.num_buyers} Insiders Buying
+                {data.cluster_detail.num_buyers} Open Market Purchases
               </span>
             </div>
 
@@ -284,12 +284,23 @@ export default function SignalStory() {
                       {buyer.name.charAt(0)}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-gray-900 text-sm">{buyer.name}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-gray-900 text-sm">{buyer.name}</p>
+                        <span className="px-1.5 py-0.5 bg-emerald-200 text-emerald-800 rounded text-[10px] font-medium uppercase">Open Market</span>
+                      </div>
                       {buyer.title && <p className="text-xs text-gray-500">{buyer.title}</p>}
                       <div className="flex items-center gap-3 mt-1 text-xs">
-                        <span className="text-emerald-700 font-medium">${buyer.total_value.toLocaleString()}</span>
-                        <span className="text-gray-400">{buyer.trade_count} trade{buyer.trade_count !== 1 ? 's' : ''}</span>
+                        <span className="text-emerald-700 font-bold">${buyer.total_value.toLocaleString()}</span>
+                        <span className="text-gray-600">
+                          {buyer.total_shares.toLocaleString()} shares
+                          {buyer.avg_price_per_share ? ` @ $${buyer.avg_price_per_share.toFixed(2)}` : ''}
+                        </span>
                       </div>
+                      {buyer.trade_dates && buyer.trade_dates.length > 0 && (
+                        <p className="text-[11px] text-gray-500 mt-1">
+                          Purchased: {buyer.trade_dates.join(', ')}
+                        </p>
+                      )}
                     </div>
                   </div>
                 ))}

@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from app.db.neo4j_client import Neo4jClient
+from app.services.feed_service import pick_ticker
 from app.services.insider_cluster_service import InsiderClusterService
 from app.services.stock_price_service import StockPriceService
 
@@ -496,6 +497,172 @@ class AccuracyService:
 
         _accuracy_cache[cache_key] = (time.time(), result)
         return result
+
+    @staticmethod
+    async def get_confidence_stats() -> dict[str, dict]:
+        """Compute win rates by signal pattern for confidence badges.
+
+        Groups events with pre-event insider buying into patterns:
+        - cluster_exec_change: 2+ buyers + exec change event
+        - cluster_buy: 2+ buyers (any event type)
+        - material_agreement: 1.01 event + any buying
+        - single_buyer: 1 buyer (fallback)
+
+        Returns: pattern_key -> {win_rate, avg_return, n, label}
+        Cached 4h in _accuracy_cache.
+        """
+        cache_key = "confidence_stats"
+        if cache_key in _accuracy_cache:
+            ts, data = _accuracy_cache[cache_key]
+            if time.time() - ts < _CACHE_TTL:
+                return data
+
+        # Find events that had insider buying within 60 days before
+        # Use toString(date() - duration()) for Neo4j Aura compatibility
+        query = """
+            MATCH (c:Company)-[:FILED_EVENT]->(e:Event)
+            WHERE e.is_ma_signal = true AND e.filing_date IS NOT NULL
+            OPTIONAL MATCH (c)-[:INSIDER_TRADE_OF]->(t:InsiderTransaction)
+            WHERE t.transaction_code = 'P'
+              AND t.total_value > 0
+              AND t.transaction_date IS NOT NULL
+              AND t.transaction_date <= e.filing_date
+              AND t.transaction_date >= toString(date(e.filing_date) - duration('P60D'))
+            RETURN c.cik as cik,
+                   c.name as company_name,
+                   c.tickers as tickers,
+                   e.accession_number as accession_number,
+                   e.filing_date as filing_date,
+                   e.item_number as item_number,
+                   e.signal_type as signal_type,
+                   count(DISTINCT t.insider_name) as num_buyers
+        """
+        results = await Neo4jClient.execute_query(query, {})
+
+        if not results:
+            empty: dict[str, dict] = {}
+            _accuracy_cache[cache_key] = (time.time(), empty)
+            return empty
+
+        # Group by accession_number (one event can have multiple items)
+        events: dict[str, dict] = {}
+        for r in results:
+            acc = r["accession_number"]
+            if acc not in events:
+                events[acc] = {
+                    "cik": r["cik"],
+                    "ticker": pick_ticker(r.get("tickers")),
+                    "filing_date": r["filing_date"],
+                    "item_numbers": [],
+                    "signal_types": [],
+                    "num_buyers": r["num_buyers"] or 0,
+                }
+            events[acc]["item_numbers"].append(r["item_number"] or "")
+            if r["signal_type"]:
+                events[acc]["signal_types"].append(r["signal_type"])
+
+        # Classify each event into a pattern
+        pattern_results: dict[str, list[float]] = {
+            "cluster_exec_change": [],
+            "cluster_buy": [],
+            "material_agreement": [],
+            "single_buyer": [],
+        }
+
+        for acc, evt in events.items():
+            if evt["num_buyers"] < 1:
+                continue  # No pre-event buying — skip
+
+            items = evt["item_numbers"]
+            has_exec_change = any(i in ("5.02", "5.03") for i in items)
+            has_material = "1.01" in items
+            is_cluster = evt["num_buyers"] >= 2
+
+            if is_cluster and has_exec_change:
+                pattern = "cluster_exec_change"
+            elif is_cluster:
+                pattern = "cluster_buy"
+            elif has_material:
+                pattern = "material_agreement"
+            else:
+                pattern = "single_buyer"
+
+            # Get price performance
+            ticker = evt["ticker"]
+            if not ticker:
+                continue
+
+            try:
+                price_data = StockPriceService.get_price_at_date(ticker, evt["filing_date"])
+                if price_data and price_data["price_at_date"] and price_data["price_at_date"] > 0:
+                    ret = (price_data["price_current"] - price_data["price_at_date"]) / price_data["price_at_date"] * 100
+                    pattern_results[pattern].append(ret)
+            except Exception:
+                continue
+
+        # Compute stats per pattern
+        labels = {
+            "cluster_exec_change": "Cluster Buy + Exec Change",
+            "cluster_buy": "Cluster Buy",
+            "material_agreement": "Material Agreement + Buying",
+            "single_buyer": "Single Buyer",
+        }
+
+        stats: dict[str, dict] = {}
+        for pattern, returns in pattern_results.items():
+            if not returns:
+                continue
+            wins = sum(1 for r in returns if r > 0)
+            stats[pattern] = {
+                "win_rate": round(wins / len(returns) * 100, 1),
+                "avg_return": round(sum(returns) / len(returns), 1),
+                "n": len(returns),
+                "label": labels[pattern],
+            }
+
+        # --- Pool 2: Cluster-specific stats from get_accuracy() ---
+        # These apply to pure insider cluster signals (no 8-K event)
+        try:
+            accuracy_data = await AccuracyService.get_accuracy()
+            cluster_labels = {
+                "cluster_high": "High Cluster (3+ buyers)",
+                "cluster_medium": "Medium Cluster (2 buyers)",
+            }
+            for level, label in [("high", "cluster_high"), ("medium", "cluster_medium")]:
+                level_signals = [
+                    s for s in accuracy_data["signals"]
+                    if s["signal_level"] == level
+                    and s["verdict"] not in ("pending", "no_data")
+                ]
+                if not level_signals:
+                    continue
+
+                # Prefer 90d returns, fall back to 30d
+                returns = []
+                for s in level_signals:
+                    ret = s.get("price_change_90d")
+                    if ret is None:
+                        ret = s.get("price_change_60d")
+                    if ret is None:
+                        ret = s.get("price_change_30d")
+                    if ret is not None:
+                        returns.append(ret)
+
+                if not returns:
+                    continue
+
+                wins = sum(1 for r in returns if r > 0)
+                stats[label] = {
+                    "win_rate": round(wins / len(returns) * 100, 1),
+                    "avg_return": round(sum(returns) / len(returns), 1),
+                    "n": len(returns),
+                    "label": cluster_labels[label],
+                }
+        except Exception as e:
+            logger.warning(f"Failed to compute cluster confidence stats: {e}")
+
+        _accuracy_cache[cache_key] = (time.time(), stats)
+        return stats
 
     @staticmethod
     async def get_top_hits(limit: int = 3) -> list[dict]:

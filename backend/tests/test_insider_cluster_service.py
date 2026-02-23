@@ -99,12 +99,12 @@ class TestDetectClusters:
         assert result[0].signal_level == "low"
 
     @pytest.mark.asyncio
-    async def test_exercise_hold_counted_as_bullish(self):
-        """M (exercise) without same-day S -> exercise_hold -> counted as bullish buyer."""
+    async def test_exercise_hold_excluded_from_clusters(self):
+        """M (exercise_hold) excluded from cluster detection — only P-code counts."""
         trades = [
             _make_trade("Alice", "P", 100000, _today_minus(5)),
             _make_trade("Bob", "P", 50000, _today_minus(10)),
-            _make_trade("Charlie", "M", 75000, _today_minus(15)),  # exercise_hold
+            _make_trade("Charlie", "M", 75000, _today_minus(15)),  # exercise_hold — excluded
         ]
 
         with patch("app.services.insider_cluster_service.Neo4jClient") as mock_db:
@@ -112,43 +112,27 @@ class TestDetectClusters:
             result = await InsiderClusterService.detect_clusters(days=90, min_level="low")
 
         assert len(result) == 1
-        assert result[0].signal_level == "high"
-        assert result[0].num_buyers == 3
+        assert result[0].signal_level == "medium"  # Only 2 P-code buyers
+        assert result[0].num_buyers == 2
 
     @pytest.mark.asyncio
-    async def test_exercise_sell_not_counted(self):
-        """M + same-day S -> exercise_sell -> NOT counted as bullish buyer."""
-        # Charlie has both M and S on the same day = exercise_sell (neutral)
+    async def test_m_and_s_codes_excluded_from_clusters(self):
+        """Only P-code trades count for cluster detection. M and S are ignored."""
         date_15 = _today_minus(15)
         trades = [
             _make_trade("Alice", "P", 100000, _today_minus(5)),
-            _make_trade("Bob", "P", 50000, _today_minus(10)),
-            _make_trade("Charlie", "M", 75000, date_15),
-            # Need a same-day S for Charlie to trigger exercise_sell
-            # But our query only fetches P and M codes, so exercise_sell detection
-            # won't happen in isolation. This tests that M alone = exercise_hold.
-        ]
-        # To properly test exercise_sell, we need S in the trades.
-        # Since the query filters to P and M, exercise_sell can only happen
-        # if the batch classifier sees both M and S for the same person+date.
-        # In practice, we only query P and M, so M without S = exercise_hold.
-        # Let's test with a scenario where S is also present (simulate
-        # a broader query result).
-        trades_with_sell = [
-            _make_trade("Alice", "P", 100000, _today_minus(5)),
-            _make_trade("Charlie", "M", 75000, date_15),
+            _make_trade("Charlie", "M", 75000, date_15),  # exercise — excluded
             {"cik": "0001234567", "company_name": "Test Corp", "tickers": ["TEST"],
              "transaction_date": date_15, "transaction_code": "S",
              "total_value": 75000, "shares": 7500,
-             "insider_name": "Charlie", "insider_title": "VP"},
+             "insider_name": "Charlie", "insider_title": "VP"},  # sell — excluded
         ]
 
         with patch("app.services.insider_cluster_service.Neo4jClient") as mock_db:
-            mock_db.execute_query = AsyncMock(return_value=trades_with_sell)
+            mock_db.execute_query = AsyncMock(return_value=trades)
             result = await InsiderClusterService.detect_clusters(days=90, min_level="low")
 
-        # Alice (buy) + Charlie (exercise_sell = neutral, not bullish)
-        # So only 1 buyer = LOW
+        # Only Alice (P-code) counts
         assert len(result) == 1
         assert result[0].num_buyers == 1
         assert result[0].signal_level == "low"

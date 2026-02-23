@@ -132,6 +132,11 @@ class InsiderTradingService:
 
                     parsed_count += 1
 
+                    # Use issuer CIK from the Form 4 XML (not the scanner CIK,
+                    # which may be a reporting entity/fund/person)
+                    issuer_cik = result.issuer_cik.zfill(10) if result.issuer_cik else cik
+                    issuer_name = result.issuer_name or company_name
+
                     # Store each transaction
                     for idx, txn in enumerate(result.transactions):
                         txn_id = f"{filing.accession_number}_{idx}"
@@ -172,8 +177,8 @@ class InsiderTradingService:
                         """
 
                         await Neo4jClient.execute_query(query, {
-                            "cik": cik,
-                            "company_name": company_name,
+                            "cik": issuer_cik,
+                            "company_name": issuer_name,
                             "tickers": tickers,
                             "entity_type": entity_type,
                             "txn_id": txn_id,

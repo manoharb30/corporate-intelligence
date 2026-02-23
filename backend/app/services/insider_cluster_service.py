@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from app.db.neo4j_client import Neo4jClient
-from app.services.feed_service import pick_ticker, FeedService, InsiderContext
+from app.services.feed_service import pick_ticker, resolve_ticker, FeedService, InsiderContext
 from app.services.trade_classifier import (
     classify_trades_batch,
     is_bullish_trade,
@@ -30,14 +30,26 @@ class BuyerDetail:
     title: str
     total_value: float
     trade_count: int
+    total_shares: float = 0.0
+    trade_dates: list = field(default_factory=list)
+
+    @property
+    def avg_price_per_share(self) -> Optional[float]:
+        if self.total_shares > 0:
+            return round(self.total_value / self.total_shares, 2)
+        return None
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "name": self.name,
             "title": self.title,
             "total_value": self.total_value,
             "trade_count": self.trade_count,
+            "total_shares": self.total_shares,
+            "avg_price_per_share": self.avg_price_per_share,
+            "trade_dates": sorted(set(self.trade_dates)),
         }
+        return d
 
 
 @dataclass
@@ -109,11 +121,13 @@ class InsiderClusterService:
         """
         Detect insider buying clusters from Form 4 data.
 
-        1. Query all P (purchase) and M (exercise) trades in the last `days` days
+        1. Query open-market purchases (P code) in the last `days` days
         2. Group by company CIK
-        3. Classify trades to handle exercise_hold vs exercise_sell
-        4. Use a 30-day sliding window from the latest bullish trade backward
-        5. Count distinct buyers -> classify: 3+ = HIGH, 2+ or >$500K = MEDIUM, 1 = LOW
+        3. Use a 30-day sliding window from the latest purchase backward
+        4. Count distinct buyers -> classify: 3+ = HIGH, 2+ or >$500K = MEDIUM, 1 = LOW
+
+        Note: exercise_hold (M code) is excluded — RSU vestings inflate cluster
+        counts without real conviction. Exercises still appear in the timeline.
 
         Args:
             days: Look back this many days for trades
@@ -125,10 +139,15 @@ class InsiderClusterService:
         """
         since_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
 
+        # Only open-market purchases (P) — exercise_hold is too noisy
+        # (scheduled RSU vestings inflate cluster counts without real conviction)
+        # Filter to companies with tickers to exclude funds/persons/entities
+        # that got Company nodes from EFTS multi-CIK Form 4 results
         query = """
             MATCH (c:Company)-[:INSIDER_TRADE_OF]->(t:InsiderTransaction)<-[:TRADED_BY]-(p:Person)
             WHERE t.transaction_date >= $since_date
-              AND t.transaction_code IN ['P', 'M']
+              AND t.transaction_code = 'P'
+              AND c.tickers IS NOT NULL AND size(c.tickers) > 0
             RETURN c.cik as cik,
                    c.name as company_name,
                    c.tickers as tickers,
@@ -171,11 +190,10 @@ class InsiderClusterService:
                 code_key="transaction_code",
             )
 
-            # Filter to only bullish trades with actual dollar value
-            # $0 exercises are routine vesting events, not genuine buying signals
+            # Filter to only open-market purchases with actual dollar value
             bullish_trades = [
                 (t, tt) for t, tt in zip(trades, trade_types)
-                if is_bullish_trade(tt) and (t.get("total_value") or 0) > 0
+                if t.get("transaction_code") == "P" and (t.get("total_value") or 0) > 0
             ]
 
             if not bullish_trades:
@@ -218,6 +236,9 @@ class InsiderClusterService:
                     )
                 buyer_agg[name].total_value += val
                 buyer_agg[name].trade_count += 1
+                buyer_agg[name].total_shares += abs(t.get("shares") or 0)
+                if t.get("transaction_date"):
+                    buyer_agg[name].trade_dates.append(t["transaction_date"])
 
             num_buyers = len(buyer_agg)
             total_buy_value = sum(b.total_value for b in buyer_agg.values())
@@ -226,11 +247,11 @@ class InsiderClusterService:
             # Classify signal level
             if num_buyers >= 3:
                 level = "high"
-                summary = f"Insider Cluster: {num_buyers} insiders buying"
+                summary = f"Open Market Cluster: {num_buyers} insiders buying"
             elif num_buyers >= 2 or total_buy_value >= 500_000:
                 level = "medium"
                 if num_buyers >= 2:
-                    summary = f"Insider Cluster: {num_buyers} insiders buying"
+                    summary = f"Open Market Cluster: {num_buyers} insiders buying"
                 else:
                     summary = f"Insider Buying: ${total_buy_value:,.0f} total"
             else:
@@ -290,7 +311,7 @@ class InsiderClusterService:
         return [c for c in clusters if c.cik not in ciks_with_8k]
 
     @staticmethod
-    async def get_cluster_detail(cluster_id: str) -> Optional[dict]:
+    async def get_cluster_detail(cluster_id: str, confidence_stats: Optional[dict] = None) -> Optional[dict]:
         """
         Get detailed information for a cluster signal.
 
@@ -343,7 +364,7 @@ class InsiderClusterService:
 
         company = company_result[0]
         company_name = company["name"]
-        ticker = pick_ticker(company.get("tickers"))
+        ticker = await resolve_ticker(cik, company.get("tickers"))
 
         # Get all trades for this company (broader window for timeline context)
         trades_query = """
@@ -370,12 +391,12 @@ class InsiderClusterService:
             code_key="transaction_code",
         )
 
-        # Aggregate buyers in the cluster window (skip $0 exercises)
+        # Aggregate buyers in the cluster window (open-market purchases only)
         buyer_agg: dict[str, BuyerDetail] = {}
         total_buy_value = 0.0
         earliest_purchase_date: Optional[str] = None
         for t, tt in zip(trades, trade_types):
-            if not is_bullish_trade(tt):
+            if t.get("transaction_code") != "P":
                 continue
             if (t.get("total_value") or 0) <= 0:
                 continue
@@ -394,6 +415,9 @@ class InsiderClusterService:
                 )
             buyer_agg[name].total_value += val
             buyer_agg[name].trade_count += 1
+            buyer_agg[name].total_shares += abs(t.get("shares") or 0)
+            if t.get("transaction_date"):
+                buyer_agg[name].trade_dates.append(t["transaction_date"])
 
             # Track earliest actual purchase date for price measurement
             if earliest_purchase_date is None or t["transaction_date"] < earliest_purchase_date:
@@ -405,26 +429,33 @@ class InsiderClusterService:
         # Classify signal
         if num_buyers >= 3:
             signal_level = "high"
-            signal_summary = f"Insider Cluster: {num_buyers} insiders buying"
+            signal_summary = f"Open Market Cluster: {num_buyers} insiders buying"
         elif num_buyers >= 2 or total_buy_value >= 500_000:
             signal_level = "medium"
             if num_buyers >= 2:
-                signal_summary = f"Insider Cluster: {num_buyers} insiders buying"
+                signal_summary = f"Open Market Cluster: {num_buyers} insiders buying"
             else:
                 signal_summary = f"Insider Buying: ${total_buy_value:,.0f} total"
         else:
             signal_level = "low"
             signal_summary = f"Insider Purchase: {buyers[0].name}" if buyers else "Insider Purchase"
 
-        # Build timeline entries
+        # Build timeline entries (only meaningful trades — skip tax, awards, gifts, etc.)
+        _SKIP_TYPES = {"tax", "award", "gift", "conversion", "will", "other"}
         timeline = []
         for t, tt in zip(trades, trade_types):
+            if tt in _SKIP_TYPES:
+                continue
             code = t["transaction_code"] or ""
             shares_str = f"{t['shares']:,.0f}" if t.get("shares") else "?"
             value_str = f"${t['total_value']:,.0f}" if t.get("total_value") else ""
 
+            price_str = f"@ ${t['price_per_share']:,.2f}" if t.get("price_per_share") else ""
+
             description = f"{t['insider_name']} - {t['transaction_type'] or code}"
             detail = f"{shares_str} shares"
+            if price_str:
+                detail += f" {price_str}"
             if value_str:
                 detail += f" ({value_str})"
             if t.get("insider_title"):
@@ -486,7 +517,7 @@ class InsiderClusterService:
             action = "PASS"
             conviction = "LOW"
 
-        one_liner = f"{num_buyers} insiders buying ${total_buy_value:,.0f} in {(window_end_dt - window_start_dt).days}d window"
+        one_liner = f"{num_buyers} insiders buying on open market — ${total_buy_value:,.0f} in {(window_end_dt - window_start_dt).days}d window"
 
         # Use earliest actual purchase date for price & timing (not arbitrary window_start)
         first_buy_date = earliest_purchase_date or window_start
@@ -497,6 +528,7 @@ class InsiderClusterService:
             "conviction": conviction,
             "one_liner": one_liner,
             "insider_direction": "buying",
+            "insider_buy_type": "open_market",
             "days_since_filing": (datetime.now() - first_buy_dt).days,
         }
 
@@ -513,6 +545,17 @@ class InsiderClusterService:
             except Exception as e:
                 logger.warning(f"Failed to get price data for cluster detail: {e}")
 
+        # Add confidence badge from precomputed stats
+        if confidence_stats:
+            from app.services.event_detail_service import EventDetailService
+            price_current = decision_card.get("price_current")
+            confidence = EventDetailService._match_confidence_pattern(
+                insider_context, [], price_current, confidence_stats,
+                signal_level=signal_level,
+            )
+            if confidence:
+                decision_card["confidence"] = confidence
+
         return {
             "event": {
                 "accession_number": cluster_id,
@@ -525,7 +568,7 @@ class InsiderClusterService:
             },
             "analysis": {
                 "agreement_type": "Insider Cluster",
-                "summary": f"{num_buyers} distinct insiders purchased shares totaling ${total_buy_value:,.0f} within a {(window_end_dt - window_start_dt).days}-day window ({window_start} to {window_end}).",
+                "summary": f"{num_buyers} distinct insiders made open market purchases totaling ${total_buy_value:,.0f} within a {(window_end_dt - window_start_dt).days}-day window ({window_start} to {window_end}).",
                 "parties_involved": [
                     {"name": b.name, "source_quote": f"{b.title} - {b.trade_count} trades, ${b.total_value:,.0f}"}
                     for b in buyers

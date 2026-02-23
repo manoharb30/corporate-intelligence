@@ -22,10 +22,19 @@ const badgeLabel: Record<string, string> = {
   low: 'LOW',
 }
 
+function formatValue(val: number): string {
+  if (val >= 1_000_000) return `$${(val / 1_000_000).toFixed(1)}M`
+  if (val >= 1_000) return `$${(val / 1_000).toFixed(0)}K`
+  return `$${val.toFixed(0)}`
+}
+
 export default function SignalCard({ signal, compact = false }: SignalCardProps) {
   const level = signal.combined_signal_level || signal.signal_level
   const insiderDir = signal.insider_context?.net_direction
+  const buyType = signal.insider_context?.near_filing_buy_type
   const isCluster = signal.signal_type === 'insider_cluster'
+  const buyers = signal.cluster_detail?.buyers || []
+  const notableTrades = signal.insider_context?.notable_trades || []
 
   return (
     <Link
@@ -40,7 +49,7 @@ export default function SignalCard({ signal, compact = false }: SignalCardProps)
             </span>
             {isCluster && (
               <span className="px-2 py-0.5 rounded text-xs font-bold bg-emerald-600 text-white">
-                INSIDER CLUSTER
+                OPEN MARKET CLUSTER
               </span>
             )}
             {insiderDir && insiderDir !== 'none' && !isCluster && (
@@ -49,8 +58,12 @@ export default function SignalCard({ signal, compact = false }: SignalCardProps)
                 insiderDir === 'selling' ? 'text-red-700 bg-red-50 border-red-200' :
                 'text-gray-600 bg-gray-50 border-gray-200'
               }`}>
-                {insiderDir === 'buying' ? 'Insiders Buying' :
-                 insiderDir === 'selling' ? 'Insiders Selling' : 'Mixed Trading'}
+                {insiderDir === 'buying'
+                  ? buyType === 'open_market' ? 'Open Market Buying'
+                    : buyType === 'exercise_hold' ? 'Exercise & Hold'
+                    : buyType === 'mixed' ? 'Open Market + Exercise'
+                    : 'Insiders Buying'
+                  : insiderDir === 'selling' ? 'Insiders Selling' : 'Mixed Trading'}
               </span>
             )}
           </div>
@@ -61,7 +74,38 @@ export default function SignalCard({ signal, compact = false }: SignalCardProps)
             )}
           </div>
           {!compact && (
-            <p className="text-sm text-gray-600 line-clamp-2">{signal.signal_summary}</p>
+            <>
+              {/* Cluster: show who bought and at what price */}
+              {isCluster && buyers.length > 0 ? (
+                <div className="mt-1 space-y-0.5">
+                  {buyers.slice(0, 3).map((b, i) => (
+                    <div key={i} className="text-xs text-gray-600">
+                      <span className="font-medium text-gray-800">{b.title || b.name}</span>
+                      {' bought '}
+                      <span className="font-medium text-green-700">{formatValue(b.total_value)}</span>
+                      {b.avg_price_per_share && (
+                        <span className="text-gray-400"> @ ${b.avg_price_per_share.toFixed(2)}/share</span>
+                      )}
+                    </div>
+                  ))}
+                  {buyers.length > 3 && (
+                    <div className="text-xs text-gray-400">+{buyers.length - 3} more</div>
+                  )}
+                </div>
+              ) : !isCluster && notableTrades.length > 0 ? (
+                /* 8-K: show notable insider trades near filing */
+                <div className="mt-1 space-y-0.5">
+                  {notableTrades.slice(0, 2).map((t, i) => (
+                    <div key={i} className="text-xs text-gray-600">{t}</div>
+                  ))}
+                  {notableTrades.length > 2 && (
+                    <div className="text-xs text-gray-400">+{notableTrades.length - 2} more trades</div>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-600 line-clamp-2">{signal.signal_summary}</p>
+              )}
+            </>
           )}
         </div>
         <div className="text-right shrink-0">
@@ -70,7 +114,7 @@ export default function SignalCard({ signal, compact = false }: SignalCardProps)
             <div className="flex flex-wrap gap-1 mt-1 justify-end">
               {isCluster && signal.cluster_detail ? (
                 <span className="px-1.5 py-0.5 bg-emerald-50 border border-emerald-200 rounded text-xs text-emerald-700 font-medium">
-                  {signal.cluster_detail.num_buyers} insiders buying
+                  {signal.cluster_detail.num_buyers} buyers
                 </span>
               ) : (
                 signal.items.slice(0, 3).map(item => (
