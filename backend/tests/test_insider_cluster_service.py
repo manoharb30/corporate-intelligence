@@ -289,3 +289,137 @@ class TestMultipleCompanies:
         # HIGH should sort first
         assert result[0].signal_level == "high"
         assert result[1].signal_level == "medium"
+
+
+class TestDetectSellClusters:
+    """Tests for sell-side cluster detection."""
+
+    @pytest.mark.asyncio
+    async def test_four_sellers_is_high(self):
+        """4 distinct sellers with >$100K total -> HIGH signal."""
+        trades = [
+            _make_trade("Alice", "S", 50000, _today_minus(5), "CEO"),
+            _make_trade("Bob", "S", 30000, _today_minus(10), "CFO"),
+            _make_trade("Charlie", "S", 25000, _today_minus(15), "COO"),
+            _make_trade("Dave", "S", 20000, _today_minus(20), "VP"),
+        ]
+
+        with patch("app.services.insider_cluster_service.Neo4jClient") as mock_db:
+            mock_db.execute_query = AsyncMock(return_value=trades)
+            result = await InsiderClusterService.detect_sell_clusters(days=90, min_level="medium")
+
+        assert len(result) == 1
+        assert result[0].signal_level == "high"
+        assert result[0].num_buyers == 4
+        assert result[0].direction == "sell"
+        assert "4 insiders selling" in result[0].signal_summary
+
+    @pytest.mark.asyncio
+    async def test_three_sellers_is_medium(self):
+        """3 sellers with >$100K -> MEDIUM signal."""
+        trades = [
+            _make_trade("Alice", "S", 50000, _today_minus(5)),
+            _make_trade("Bob", "S", 30000, _today_minus(10)),
+            _make_trade("Charlie", "S", 25000, _today_minus(15)),
+        ]
+
+        with patch("app.services.insider_cluster_service.Neo4jClient") as mock_db:
+            mock_db.execute_query = AsyncMock(return_value=trades)
+            result = await InsiderClusterService.detect_sell_clusters(days=90, min_level="medium")
+
+        assert len(result) == 1
+        assert result[0].signal_level == "medium"
+        assert result[0].num_buyers == 3
+
+    @pytest.mark.asyncio
+    async def test_two_sellers_excluded(self):
+        """2 sellers -> no signal (below threshold)."""
+        trades = [
+            _make_trade("Alice", "S", 200000, _today_minus(5)),
+            _make_trade("Bob", "S", 100000, _today_minus(10)),
+        ]
+
+        with patch("app.services.insider_cluster_service.Neo4jClient") as mock_db:
+            mock_db.execute_query = AsyncMock(return_value=trades)
+            result = await InsiderClusterService.detect_sell_clusters(days=90, min_level="medium")
+
+        assert len(result) == 0
+
+    @pytest.mark.asyncio
+    async def test_below_100k_excluded(self):
+        """3 sellers but <$100K total -> no signal."""
+        trades = [
+            _make_trade("Alice", "S", 10000, _today_minus(5)),
+            _make_trade("Bob", "S", 10000, _today_minus(10)),
+            _make_trade("Charlie", "S", 10000, _today_minus(15)),
+        ]
+
+        with patch("app.services.insider_cluster_service.Neo4jClient") as mock_db:
+            mock_db.execute_query = AsyncMock(return_value=trades)
+            result = await InsiderClusterService.detect_sell_clusters(days=90, min_level="medium")
+
+        assert len(result) == 0
+
+    def test_sell_cluster_accession_format(self):
+        """Sell cluster accession number should use SELL-CLUSTER- prefix."""
+        signal = InsiderClusterSignal(
+            cik="0001234567",
+            company_name="Test Corp",
+            ticker="TEST",
+            window_start="2026-01-01",
+            window_end="2026-01-31",
+            signal_level="high",
+            signal_summary="",
+            num_buyers=4,
+            total_buy_value=200000,
+            direction="sell",
+        )
+        assert signal.accession_number == "SELL-CLUSTER-0001234567-2026-01-31"
+
+    def test_sell_signal_dict_type(self):
+        """to_signal_dict() for sell direction should have correct signal_type and direction."""
+        signal = InsiderClusterSignal(
+            cik="0001234567",
+            company_name="Test Corp",
+            ticker="TEST",
+            window_start="2026-01-01",
+            window_end="2026-01-31",
+            signal_level="high",
+            signal_summary="Insider Sell Cluster: 4 insiders selling",
+            num_buyers=4,
+            total_buy_value=200000,
+            buyers=[
+                BuyerDetail(name="Alice", title="CEO", total_value=50000, trade_count=1),
+            ],
+            direction="sell",
+        )
+
+        d = signal.to_signal_dict()
+        assert d["signal_type"] == "insider_sell_cluster"
+        assert d["cluster_detail"]["direction"] == "sell"
+        assert d["insider_context"]["net_direction"] == "selling"
+        assert "sold" in d["insider_context"]["notable_trades"][0]
+
+    def test_buy_direction_unchanged(self):
+        """Existing buy direction behavior should be unaffected."""
+        signal = InsiderClusterSignal(
+            cik="0001234567",
+            company_name="Test Corp",
+            ticker="TEST",
+            window_start="2026-01-01",
+            window_end="2026-01-31",
+            signal_level="high",
+            signal_summary="Open Market Cluster: 3 insiders buying",
+            num_buyers=3,
+            total_buy_value=225000,
+            buyers=[
+                BuyerDetail(name="Alice", title="CEO", total_value=100000, trade_count=1),
+            ],
+            direction="buy",
+        )
+
+        assert signal.accession_number == "CLUSTER-0001234567-2026-01-31"
+        d = signal.to_signal_dict()
+        assert d["signal_type"] == "insider_cluster"
+        assert d["insider_context"]["net_direction"] == "buying"
+        assert "bought" in d["insider_context"]["notable_trades"][0]

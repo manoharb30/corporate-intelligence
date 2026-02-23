@@ -180,7 +180,7 @@ class SignalItem:
     accession_number: str
     combined_signal_level: Optional[str] = None  # critical, high_bearish, high, medium, low
     insider_context: Optional[InsiderContext] = None
-    signal_type: str = "8k"  # "8k" or "insider_cluster"
+    signal_type: str = "8k"  # "8k", "insider_cluster", or "insider_sell_cluster"
     cluster_detail: Optional[dict] = None  # Only for insider_cluster signals
 
     def to_dict(self) -> dict:
@@ -728,6 +728,40 @@ class FeedService:
                     ))
             except Exception as e:
                 logger.warning(f"Failed to merge insider cluster signals: {e}")
+
+            # Merge standalone insider SELL cluster signals
+            try:
+                sell_cluster_signals = await InsiderClusterService.detect_sell_clusters_excluding_8k(
+                    days=days, window_days=30, min_level=min_level,
+                )
+                for cs in sell_cluster_signals:
+                    d = cs.to_signal_dict()
+                    signals.append(SignalItem(
+                        company_name=d["company_name"],
+                        cik=d["cik"],
+                        ticker=d["ticker"],
+                        filing_date=d["filing_date"],
+                        signal_level=d["signal_level"],
+                        signal_summary=d["signal_summary"],
+                        items=d["items"],
+                        item_names=d["item_names"],
+                        persons_mentioned=d["persons_mentioned"],
+                        accession_number=d["accession_number"],
+                        combined_signal_level="high_bearish" if cs.signal_level == "high" else d["combined_signal_level"],
+                        insider_context=InsiderContext(
+                            net_direction="selling",
+                            total_buy_value=0,
+                            total_sell_value=cs.total_buy_value,
+                            notable_trades=[f"{b.name} sold ${b.total_value:,.0f}" for b in cs.buyers[:5]],
+                            cluster_activity=cs.num_buyers >= 3,
+                            trade_count=sum(b.trade_count for b in cs.buyers),
+                            near_filing_buy_type="none",
+                        ),
+                        signal_type="insider_sell_cluster",
+                        cluster_detail=d.get("cluster_detail"),
+                    ))
+            except Exception as e:
+                logger.warning(f"Failed to merge insider sell cluster signals: {e}")
 
         # Sort by combined level then by date
         combined_order = {"critical": 0, "high_bearish": 1, "high": 2, "medium": 3, "low": 4}

@@ -33,6 +33,8 @@ export default function SignalCard({ signal, compact = false }: SignalCardProps)
   const insiderDir = signal.insider_context?.net_direction
   const buyType = signal.insider_context?.near_filing_buy_type
   const isCluster = signal.signal_type === 'insider_cluster'
+  const isSellCluster = signal.signal_type === 'insider_sell_cluster'
+  const isAnyCluster = isCluster || isSellCluster
   const buyers = signal.cluster_detail?.buyers || []
   const notableTrades = signal.insider_context?.notable_trades || []
 
@@ -52,7 +54,12 @@ export default function SignalCard({ signal, compact = false }: SignalCardProps)
                 OPEN MARKET CLUSTER
               </span>
             )}
-            {insiderDir && insiderDir !== 'none' && !isCluster && (
+            {isSellCluster && (
+              <span className="px-2 py-0.5 rounded text-xs font-bold bg-red-600 text-white">
+                SELL CLUSTER
+              </span>
+            )}
+            {insiderDir && insiderDir !== 'none' && !isAnyCluster && (
               <span className={`px-2 py-0.5 rounded text-xs font-medium border ${
                 insiderDir === 'buying' ? 'text-green-700 bg-green-50 border-green-200' :
                 insiderDir === 'selling' ? 'text-red-700 bg-red-50 border-red-200' :
@@ -75,14 +82,14 @@ export default function SignalCard({ signal, compact = false }: SignalCardProps)
           </div>
           {!compact && (
             <>
-              {/* Cluster: show who bought and at what price */}
-              {isCluster && buyers.length > 0 ? (
+              {/* Cluster: show who bought/sold and at what price */}
+              {isAnyCluster && buyers.length > 0 ? (
                 <div className="mt-1 space-y-0.5">
                   {buyers.slice(0, 3).map((b, i) => (
                     <div key={i} className="text-xs text-gray-600">
                       <span className="font-medium text-gray-800">{b.title || b.name}</span>
-                      {' bought '}
-                      <span className="font-medium text-green-700">{formatValue(b.total_value)}</span>
+                      {isSellCluster ? ' sold ' : ' bought '}
+                      <span className={`font-medium ${isSellCluster ? 'text-red-700' : 'text-green-700'}`}>{formatValue(b.total_value)}</span>
                       {b.avg_price_per_share && (
                         <span className="text-gray-400"> @ ${b.avg_price_per_share.toFixed(2)}/share</span>
                       )}
@@ -92,7 +99,7 @@ export default function SignalCard({ signal, compact = false }: SignalCardProps)
                     <div className="text-xs text-gray-400">+{buyers.length - 3} more</div>
                   )}
                 </div>
-              ) : !isCluster && notableTrades.length > 0 ? (
+              ) : !isAnyCluster && notableTrades.length > 0 ? (
                 /* 8-K: show notable insider trades near filing */
                 <div className="mt-1 space-y-0.5">
                   {notableTrades.slice(0, 2).map((t, i) => (
@@ -112,9 +119,13 @@ export default function SignalCard({ signal, compact = false }: SignalCardProps)
           <p className="text-xs text-gray-400 font-mono">{signal.filing_date}</p>
           {!compact && (
             <div className="flex flex-wrap gap-1 mt-1 justify-end">
-              {isCluster && signal.cluster_detail ? (
-                <span className="px-1.5 py-0.5 bg-emerald-50 border border-emerald-200 rounded text-xs text-emerald-700 font-medium">
-                  {signal.cluster_detail.num_buyers} buyers
+              {isAnyCluster && signal.cluster_detail ? (
+                <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
+                  isSellCluster
+                    ? 'bg-red-50 border border-red-200 text-red-700'
+                    : 'bg-emerald-50 border border-emerald-200 text-emerald-700'
+                }`}>
+                  {signal.cluster_detail.num_buyers} {isSellCluster ? 'sellers' : 'buyers'}
                 </span>
               ) : (
                 signal.items.slice(0, 3).map(item => (

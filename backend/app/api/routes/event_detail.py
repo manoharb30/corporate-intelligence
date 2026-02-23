@@ -57,7 +57,7 @@ async def get_event_detail(accession_number: str):
         logger.warning(f"Failed to fetch confidence stats: {e}")
         confidence_stats = None
 
-    if accession_number.startswith("CLUSTER-"):
+    if accession_number.startswith("CLUSTER-") or accession_number.startswith("SELL-CLUSTER-"):
         result = await InsiderClusterService.get_cluster_detail(accession_number, confidence_stats=confidence_stats)
     else:
         result = await EventDetailService.get_event_detail(accession_number, confidence_stats=confidence_stats)

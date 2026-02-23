@@ -229,6 +229,7 @@ export interface ClusterDetail {
   window_end: string
   num_buyers: number
   buyers: ClusterBuyerDetail[]
+  direction?: 'buy' | 'sell'
 }
 
 export interface SignalItem {
@@ -244,7 +245,7 @@ export interface SignalItem {
   accession_number: string
   combined_signal_level: 'critical' | 'high_bearish' | 'high' | 'medium' | 'low'
   insider_context: InsiderContextData | null
-  signal_type?: 'insider_cluster' | '8k'
+  signal_type?: 'insider_cluster' | 'insider_sell_cluster' | '8k'
   cluster_detail?: ClusterDetail
 }
 
@@ -628,7 +629,7 @@ export interface EventDetailResponse {
   insider_context?: InsiderContextData | null
   decision_card?: DecisionCard
   company_context?: CompanyContext | null
-  signal_type?: 'insider_cluster' | '8k'
+  signal_type?: 'insider_cluster' | 'insider_sell_cluster' | '8k'
   cluster_detail?: ClusterDetail
 }
 

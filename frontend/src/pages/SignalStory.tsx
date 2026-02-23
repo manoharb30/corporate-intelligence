@@ -73,6 +73,8 @@ export default function SignalStory() {
   const combinedLevel = data.combined_signal_level || event.signal_level
   const insiderCtx = data.insider_context
   const isCluster = data.signal_type === 'insider_cluster'
+  const isSellCluster = data.signal_type === 'insider_sell_cluster'
+  const isAnyCluster = isCluster || isSellCluster
 
   // Build chart markers from timeline
   const chartMarkers: ChartMarker[] = []
@@ -115,7 +117,7 @@ export default function SignalStory() {
   const exerciseSellTrades = tradeEntries.filter(e => e.trade_type === 'exercise_sell')
 
   // SEC EDGAR link (not applicable for cluster signals)
-  const edgarUrl = accessionNumber && !isCluster
+  const edgarUrl = accessionNumber && !isAnyCluster
     ? `https://www.sec.gov/Archives/edgar/data/${company.cik}/${accessionNumber.replace(/-/g, '')}/${accessionNumber}-index.htm`
     : null
 
@@ -127,7 +129,7 @@ export default function SignalStory() {
       </Link>
 
       {/* ===== Decision Card ===== */}
-      {data.decision_card && <DecisionCard card={data.decision_card} isCluster={isCluster} />}
+      {data.decision_card && <DecisionCard card={data.decision_card} isCluster={isAnyCluster} />}
 
       {/* ===== Chapter 1: The Filing ===== */}
       <section className="mb-8">
@@ -147,7 +149,7 @@ export default function SignalStory() {
               {company.ticker && <span className="text-lg text-gray-500">({company.ticker})</span>}
             </div>
             <div className="flex items-center gap-3 mt-1 text-sm text-gray-600">
-              <span>{isCluster ? `Cluster detected: ${event.filing_date}` : `Filed: ${event.filing_date}`}</span>
+              <span>{isAnyCluster ? `Cluster detected: ${event.filing_date}` : `Filed: ${event.filing_date}`}</span>
               <span className="text-gray-300">|</span>
               <span>{event.signal_summary}</span>
             </div>
@@ -252,7 +254,7 @@ export default function SignalStory() {
           </div>
         )}
 
-        {!isCluster && (
+        {!isAnyCluster && (
           <div className="flex flex-wrap gap-2 mb-4">
             {event.items.map((item) => (
               <span key={item.item_number} className="px-2.5 py-1 bg-gray-100 border border-gray-200 rounded text-xs font-mono">
@@ -262,35 +264,51 @@ export default function SignalStory() {
           </div>
         )}
 
-        {isCluster && data.cluster_detail ? (
+        {isAnyCluster && data.cluster_detail ? (
           /* ===== Cluster Chapter: The Insider Cluster ===== */
           <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-lg font-semibold text-gray-900">The Insider Cluster</h2>
-              <span className="px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full text-sm font-medium">
-                {data.cluster_detail.num_buyers} Open Market Purchases
+              <h2 className="text-lg font-semibold text-gray-900">
+                {isSellCluster ? 'The Insider Sell Cluster' : 'The Insider Cluster'}
+              </h2>
+              <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                isSellCluster ? 'bg-red-100 text-red-800' : 'bg-emerald-100 text-emerald-800'
+              }`}>
+                {data.cluster_detail.num_buyers} Open Market {isSellCluster ? 'Sales' : 'Purchases'}
               </span>
             </div>
 
             <p className="text-gray-700 leading-relaxed mb-4">{analysis.summary}</p>
 
-            {/* Buyer Cards */}
+            {/* Trader Cards */}
             <div className="mb-4">
-              <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-2">Buyers</h3>
+              <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-2">
+                {isSellCluster ? 'Sellers' : 'Buyers'}
+              </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {data.cluster_detail.buyers.map((buyer: ClusterBuyerDetail, idx: number) => (
-                  <div key={idx} className="flex items-start gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
-                    <div className="shrink-0 w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center text-sm font-bold">
+                  <div key={idx} className={`flex items-start gap-3 p-3 rounded-lg ${
+                    isSellCluster ? 'bg-red-50 border border-red-200' : 'bg-emerald-50 border border-emerald-200'
+                  }`}>
+                    <div className={`shrink-0 w-8 h-8 rounded-full text-white flex items-center justify-center text-sm font-bold ${
+                      isSellCluster ? 'bg-red-600' : 'bg-emerald-600'
+                    }`}>
                       {buyer.name.charAt(0)}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <p className="font-semibold text-gray-900 text-sm">{buyer.name}</p>
-                        <span className="px-1.5 py-0.5 bg-emerald-200 text-emerald-800 rounded text-[10px] font-medium uppercase">Open Market</span>
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium uppercase ${
+                          isSellCluster ? 'bg-red-200 text-red-800' : 'bg-emerald-200 text-emerald-800'
+                        }`}>
+                          Open Market {isSellCluster ? 'Sale' : 'Purchase'}
+                        </span>
                       </div>
                       {buyer.title && <p className="text-xs text-gray-500">{buyer.title}</p>}
                       <div className="flex items-center gap-3 mt-1 text-xs">
-                        <span className="text-emerald-700 font-bold">${buyer.total_value.toLocaleString()}</span>
+                        <span className={`font-bold ${isSellCluster ? 'text-red-700' : 'text-emerald-700'}`}>
+                          ${buyer.total_value.toLocaleString()}
+                        </span>
                         <span className="text-gray-600">
                           {buyer.total_shares.toLocaleString()} shares
                           {buyer.avg_price_per_share ? ` @ $${buyer.avg_price_per_share.toFixed(2)}` : ''}
@@ -298,7 +316,7 @@ export default function SignalStory() {
                       </div>
                       {buyer.trade_dates && buyer.trade_dates.length > 0 && (
                         <p className="text-[11px] text-gray-500 mt-1">
-                          Purchased: {buyer.trade_dates.join(', ')}
+                          {isSellCluster ? 'Sold' : 'Purchased'}: {buyer.trade_dates.join(', ')}
                         </p>
                       )}
                     </div>
