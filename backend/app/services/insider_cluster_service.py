@@ -373,6 +373,7 @@ class InsiderClusterService:
         # Aggregate buyers in the cluster window (skip $0 exercises)
         buyer_agg: dict[str, BuyerDetail] = {}
         total_buy_value = 0.0
+        earliest_purchase_date: Optional[str] = None
         for t, tt in zip(trades, trade_types):
             if not is_bullish_trade(tt):
                 continue
@@ -393,6 +394,10 @@ class InsiderClusterService:
                 )
             buyer_agg[name].total_value += val
             buyer_agg[name].trade_count += 1
+
+            # Track earliest actual purchase date for price measurement
+            if earliest_purchase_date is None or t["transaction_date"] < earliest_purchase_date:
+                earliest_purchase_date = t["transaction_date"]
 
         num_buyers = len(buyer_agg)
         buyers = sorted(buyer_agg.values(), key=lambda b: b.total_value, reverse=True)
@@ -483,18 +488,22 @@ class InsiderClusterService:
 
         one_liner = f"{num_buyers} insiders buying ${total_buy_value:,.0f} in {(window_end_dt - window_start_dt).days}d window"
 
+        # Use earliest actual purchase date for price & timing (not arbitrary window_start)
+        first_buy_date = earliest_purchase_date or window_start
+        first_buy_dt = datetime.strptime(first_buy_date, "%Y-%m-%d")
+
         decision_card = {
             "action": action,
             "conviction": conviction,
             "one_liner": one_liner,
             "insider_direction": "buying",
-            "days_since_filing": (datetime.now() - window_start_dt).days,
+            "days_since_filing": (datetime.now() - first_buy_dt).days,
         }
 
-        # Price change since first insider purchase (window_start)
+        # Price change since first insider purchase
         if ticker:
             try:
-                price_data = StockPriceService.get_price_at_date(ticker, window_start)
+                price_data = StockPriceService.get_price_at_date(ticker, first_buy_date)
                 if price_data and price_data["price_at_date"] > 0:
                     decision_card["price_at_filing"] = price_data["price_at_date"]
                     decision_card["price_current"] = price_data["price_current"]
