@@ -597,6 +597,8 @@ export interface DecisionCard {
   price_change_pct?: number
   price_at_filing?: number
   price_current?: number
+  price_label?: string
+  price_context?: string
   confidence?: {
     tier: 'Strong' | 'Moderate' | 'Weak'
     win_rate: number

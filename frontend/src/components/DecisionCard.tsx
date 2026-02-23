@@ -80,7 +80,7 @@ export default function DecisionCard({ card, isCluster = false }: DecisionCardPr
               <span className={`text-lg font-bold ${priceUp ? 'text-green-600' : 'text-red-600'}`}>
                 {priceUp ? '\u25B2' : '\u25BC'} {priceUp ? '+' : ''}{card.price_change_pct}%
               </span>
-              <span className="text-sm text-gray-500">{isCluster ? 'since detection' : 'since filing'}</span>
+              <span className="text-sm text-gray-500">{card.price_label || (isCluster ? 'since first trade' : 'since filing')}</span>
               {card.price_at_filing !== undefined && card.price_current !== undefined && (
                 <span className="text-xs text-gray-400">
                   ${card.price_at_filing.toFixed(2)} &rarr; ${card.price_current.toFixed(2)}
@@ -93,6 +93,15 @@ export default function DecisionCard({ card, isCluster = false }: DecisionCardPr
             Insiders: {dir.label}{buyTypeLabel(card.insider_buy_type)}
           </span>
         </div>
+
+        {/* Rally / dip context */}
+        {card.price_context && (
+          <p className={`mt-2 text-sm font-medium ${
+            card.insider_direction === 'selling' ? 'text-amber-700' : 'text-emerald-700'
+          }`}>
+            {card.price_context}
+          </p>
+        )}
 
         {/* Confidence badge */}
         {conf && tier && (

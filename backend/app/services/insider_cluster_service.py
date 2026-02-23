@@ -632,9 +632,22 @@ class InsiderClusterService:
                 if price_data and price_data["price_at_date"] > 0:
                     decision_card["price_at_filing"] = price_data["price_at_date"]
                     decision_card["price_current"] = price_data["price_current"]
-                    decision_card["price_change_pct"] = round(
+                    pct = round(
                         (price_data["price_current"] - price_data["price_at_date"]) / price_data["price_at_date"] * 100, 1
                     )
+                    decision_card["price_change_pct"] = pct
+
+                    # Add context label for price measurement
+                    if is_sell:
+                        decision_card["price_label"] = "since first sale"
+                        if pct > 5:
+                            decision_card["price_context"] = f"Insiders selling into +{pct}% rally"
+                        elif pct < -5:
+                            decision_card["price_context"] = f"Stock already down {abs(pct)}% — insiders heading for the exits"
+                    else:
+                        decision_card["price_label"] = "since first purchase"
+                        if pct < -10:
+                            decision_card["price_context"] = f"Insiders buying into a {abs(pct)}% dip — contrarian signal"
             except Exception as e:
                 logger.warning(f"Failed to get price data for cluster detail: {e}")
 
