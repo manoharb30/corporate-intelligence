@@ -71,6 +71,10 @@ class TestDetectAndAlert:
             "scanner.form4_scanner.InsiderClusterService.detect_clusters",
             new_callable=AsyncMock,
         ) as mock_detect, patch(
+            "scanner.form4_scanner.InsiderClusterService.detect_sell_clusters",
+            new_callable=AsyncMock,
+            return_value=[],
+        ), patch(
             "scanner.form4_scanner.AlertService.create_alert",
             new_callable=AsyncMock,
             return_value="alert-1",
@@ -85,6 +89,7 @@ class TestDetectAndAlert:
             mock_cluster.signal_level = "high"
             mock_cluster.signal_summary = "3 insiders buying"
             mock_cluster.num_buyers = 3
+            mock_cluster.accession_number = "CLUSTER-0001234567-2026-02-24"
             mock_detect.return_value = [mock_cluster]
 
             alerts = await detect_and_alert({"0001234567"})
@@ -98,6 +103,10 @@ class TestDetectAndAlert:
             "scanner.form4_scanner.InsiderClusterService.detect_clusters",
             new_callable=AsyncMock,
         ) as mock_detect, patch(
+            "scanner.form4_scanner.InsiderClusterService.detect_sell_clusters",
+            new_callable=AsyncMock,
+            return_value=[],
+        ), patch(
             "scanner.form4_scanner.AlertService.create_alert",
             new_callable=AsyncMock,
         ) as mock_create, patch(
@@ -118,6 +127,10 @@ class TestDetectAndAlert:
     async def test_empty_clusters(self):
         with patch(
             "scanner.form4_scanner.InsiderClusterService.detect_clusters",
+            new_callable=AsyncMock,
+            return_value=[],
+        ), patch(
+            "scanner.form4_scanner.InsiderClusterService.detect_sell_clusters",
             new_callable=AsyncMock,
             return_value=[],
         ), patch(

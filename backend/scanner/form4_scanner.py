@@ -295,13 +295,37 @@ async def detect_and_alert(affected_ciks: set[str]) -> int:
             cik=cluster.cik,
             name=cluster.company_name,
             ticker=cluster.ticker,
-            title=f"Insider Cluster: {cluster.num_buyers} buyers at {cluster.company_name}",
+            title=f"Open Market Cluster: {cluster.num_buyers} buyers at {cluster.company_name}",
             description=cluster.signal_summary,
             signal_id=cluster.accession_number,
         )
         if alert_id:
             alerts_created += 1
             logger.info(f"Alert created: {cluster.signal_level} cluster at {cluster.company_name}")
+
+    # Detect insider selling clusters (last 30 days, medium+)
+    sell_clusters = await InsiderClusterService.detect_sell_clusters(
+        days=30,
+        window_days=30,
+        min_level="medium",
+    )
+
+    relevant_sell_clusters = [c for c in sell_clusters if c.cik in affected_ciks]
+
+    for cluster in relevant_sell_clusters:
+        alert_id = await AlertService.create_alert(
+            alert_type="insider_sell_cluster",
+            severity=cluster.signal_level,
+            cik=cluster.cik,
+            name=cluster.company_name,
+            ticker=cluster.ticker,
+            title=f"Open Market Sell Cluster: {cluster.num_buyers} sellers at {cluster.company_name}",
+            description=cluster.signal_summary,
+            signal_id=cluster.accession_number,
+        )
+        if alert_id:
+            alerts_created += 1
+            logger.info(f"Alert created: {cluster.signal_level} sell cluster at {cluster.company_name}")
 
     # Check for large individual purchases (>$500K) in affected companies
     for cik in affected_ciks:
@@ -348,8 +372,8 @@ async def _check_large_purchases(cik: str) -> None:
             cik=cik,
             name=name,
             ticker=ticker,
-            title=f"Large Purchase: {insider} bought ${value:,.0f} of {name}",
-            description=f"{insider} purchased ${value:,.0f} worth of shares",
+            title=f"Large Open Market Purchase: {insider} bought ${value:,.0f} of {name}",
+            description=f"{insider} made an open market purchase of ${value:,.0f} worth of shares",
             signal_id=f"CLUSTER-{cik}-{today}",
         )
 
