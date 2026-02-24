@@ -11,7 +11,6 @@ const navigation = [
   { name: 'Signals', href: '/signals' },
   { name: 'Track Record', href: '/accuracy' },
   { name: 'Companies', href: '/companies' },
-  { name: 'Network', href: '/network' },
   { name: 'Pricing', href: '/pricing' },
 ]
 
