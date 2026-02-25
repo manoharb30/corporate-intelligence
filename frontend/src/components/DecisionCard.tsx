@@ -33,7 +33,7 @@ function buyTypeLabel(buyType?: string): string {
 
 function formatDays(days: number | null, isCluster: boolean): string {
   if (days === null) return ''
-  const prefix = isCluster ? 'Detected' : 'Filed'
+  const prefix = isCluster ? 'First trade' : 'Filed'
   if (days === 0) return `${prefix} today`
   if (days === 1) return `${prefix} 1d ago`
   if (days < 30) return `${prefix} ${days}d ago`

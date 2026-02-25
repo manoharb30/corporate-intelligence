@@ -539,11 +539,13 @@ class InsiderClusterService:
                 signal_level = "low"
                 signal_summary = f"Insider Purchase: {buyers[0].name}" if buyers else "Insider Purchase"
 
-        # Build timeline entries (only meaningful trades — skip tax, awards, gifts, etc.)
-        _SKIP_TYPES = {"tax", "award", "gift", "conversion", "will", "other"}
+        # Build timeline entries — only open market buys (P) and sells (S)
         timeline = []
         for t, tt in zip(trades, trade_types):
-            if tt in _SKIP_TYPES:
+            if t.get("transaction_code") not in ("P", "S"):
+                continue
+            # Exclude 10b5-1 planned sales from sell cluster timelines
+            if is_sell and t.get("is_10b5_1", False):
                 continue
             code = t["transaction_code"] or ""
             shares_str = f"{t['shares']:,.0f}" if t.get("shares") else "?"
