@@ -137,8 +137,10 @@ class InsiderTradingService:
                     issuer_cik = result.issuer_cik.zfill(10) if result.issuer_cik else cik
                     issuer_name = result.issuer_name or company_name
 
-                    # Store each transaction
+                    # Store only open market buys (P) and sells (S)
                     for idx, txn in enumerate(result.transactions):
+                        if txn.transaction_code not in ("P", "S"):
+                            continue
                         txn_id = f"{filing.accession_number}_{idx}"
 
                         query = """
