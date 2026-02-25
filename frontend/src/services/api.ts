@@ -567,6 +567,7 @@ export interface EventTimelineEntry {
   trade_type?: 'buy' | 'sell' | 'exercise_hold' | 'exercise_sell' | 'award' | 'tax' | 'disposition' | 'gift' | 'conversion' | 'will' | 'other'
   notable?: boolean
   notable_reasons?: string[]
+  form4_url?: string
 }
 
 export interface DealConnection {

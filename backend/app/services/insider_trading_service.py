@@ -165,7 +165,8 @@ class InsiderTradingService:
                                 t.insider_name = $insider_name,
                                 t.insider_title = $insider_title,
                                 t.insider_cik = $insider_cik,
-                                t.is_10b5_1 = $is_10b5_1
+                                t.is_10b5_1 = $is_10b5_1,
+                                t.primary_document = $primary_document
 
                             MERGE (c)-[:INSIDER_TRADE_OF]->(t)
 
@@ -200,6 +201,7 @@ class InsiderTradingService:
                             "insider_title": result.insider.title,
                             "insider_cik": result.insider.cik,
                             "is_10b5_1": result.is_10b5_1,
+                            "primary_document": filing.primary_document,
                         })
                         stored_count += 1
 

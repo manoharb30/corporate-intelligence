@@ -34,6 +34,7 @@ class BuyerDetail:
     trade_dates: list = field(default_factory=list)
     insider_cik: str = ""
     filing_accession: str = ""
+    primary_document: str = ""
     form4_url: str = ""
 
     @property
@@ -173,7 +174,8 @@ class InsiderClusterService:
                    t.insider_title as insider_title,
                    t.insider_cik as insider_cik,
                    t.accession_number as accession_number,
-                   t.is_10b5_1 as is_10b5_1
+                   t.is_10b5_1 as is_10b5_1,
+                   t.primary_document as primary_document
             ORDER BY t.transaction_date DESC
         """
         results = await Neo4jClient.execute_query(query, {"since_date": since_date, "tx_code": tx_code})
@@ -261,6 +263,7 @@ class InsiderClusterService:
                         trade_count=0,
                         insider_cik=t.get("insider_cik") or "",
                         filing_accession=t.get("accession_number") or "",
+                        primary_document=t.get("primary_document") or "",
                     )
                 buyer_agg[name].total_value += val
                 buyer_agg[name].trade_count += 1
@@ -272,11 +275,14 @@ class InsiderClusterService:
             total_buy_value = sum(b.total_value for b in buyer_agg.values())
             buyers = sorted(buyer_agg.values(), key=lambda b: b.total_value, reverse=True)
 
-            # Compute Form 4 SEC EDGAR URLs (direct link to specific filing)
+            # Compute Form 4 SEC EDGAR URLs (direct link to rendered filing)
             for buyer in buyers:
                 if buyer.filing_accession:
                     acc_no_dashes = buyer.filing_accession.replace("-", "")
-                    buyer.form4_url = f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc_no_dashes}/{buyer.filing_accession}-index.htm"
+                    if buyer.primary_document:
+                        buyer.form4_url = f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc_no_dashes}/{buyer.primary_document}"
+                    else:
+                        buyer.form4_url = f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc_no_dashes}/{buyer.filing_accession}-index.htm"
 
             # Classify signal level (different thresholds for buy vs sell)
             if direction == "sell":
@@ -454,7 +460,8 @@ class InsiderClusterService:
                    t.security_title as security_title,
                    t.accession_number as accession_number,
                    t.insider_cik as insider_cik,
-                   t.is_10b5_1 as is_10b5_1
+                   t.is_10b5_1 as is_10b5_1,
+                   t.primary_document as primary_document
             ORDER BY t.transaction_date DESC
             LIMIT 100
         """
@@ -494,6 +501,7 @@ class InsiderClusterService:
                     trade_count=0,
                     insider_cik=t.get("insider_cik") or "",
                     filing_accession=t.get("accession_number") or "",
+                    primary_document=t.get("primary_document") or "",
                 )
             buyer_agg[name].total_value += val
             buyer_agg[name].trade_count += 1
@@ -508,11 +516,14 @@ class InsiderClusterService:
         num_traders = len(buyer_agg)
         buyers = sorted(buyer_agg.values(), key=lambda b: b.total_value, reverse=True)
 
-        # Compute Form 4 SEC EDGAR URLs (direct link to specific filing)
+        # Compute Form 4 SEC EDGAR URLs (direct link to rendered filing)
         for buyer in buyers:
             if buyer.filing_accession:
                 acc_no_dashes = buyer.filing_accession.replace("-", "")
-                buyer.form4_url = f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc_no_dashes}/{buyer.filing_accession}-index.htm"
+                if buyer.primary_document:
+                    buyer.form4_url = f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc_no_dashes}/{buyer.primary_document}"
+                else:
+                    buyer.form4_url = f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc_no_dashes}/{buyer.filing_accession}-index.htm"
 
         # Classify signal (direction-aware)
         if is_sell:
@@ -587,6 +598,18 @@ class InsiderClusterService:
                     notable = True
                     notable_reasons.append("Large sale")
 
+            # Build direct Form 4 URL for citation
+            acc = t.get("accession_number") or ""
+            primary_doc = t.get("primary_document") or ""
+            if acc:
+                acc_nd = acc.replace("-", "")
+                if primary_doc:
+                    form4_url = f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc_nd}/{primary_doc}"
+                else:
+                    form4_url = f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc_nd}/{acc}-index.htm"
+            else:
+                form4_url = ""
+
             timeline.append({
                 "date": t["transaction_date"],
                 "type": "trade",
@@ -596,6 +619,7 @@ class InsiderClusterService:
                 "is_current": False,
                 "notable": notable,
                 "notable_reasons": notable_reasons,
+                "form4_url": form4_url,
             })
 
         timeline.sort(key=lambda x: x.get("date", ""), reverse=True)

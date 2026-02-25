@@ -127,7 +127,15 @@ export default function InsiderTimeline({ entries, maxItems = 30, highlightDate 
                 entry.description
               )}
             </p>
-            <p className="text-xs text-gray-500 truncate">{entry.detail}</p>
+            <div className="flex items-center gap-2">
+              <p className="text-xs text-gray-500 truncate">{entry.detail}</p>
+              {entry.form4_url && (
+                <a href={entry.form4_url} target="_blank" rel="noopener noreferrer"
+                   className="text-xs text-blue-600 hover:underline whitespace-nowrap shrink-0">
+                  SEC Filing &rarr;
+                </a>
+              )}
+            </div>
           </div>
           )
         })}
