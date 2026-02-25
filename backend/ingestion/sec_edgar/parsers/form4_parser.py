@@ -64,6 +64,7 @@ class Form4Result:
     filing_date: str
     transactions: list[InsiderTransaction] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    is_10b5_1: bool = False
 
     @property
     def net_shares(self) -> float:
@@ -131,12 +132,16 @@ class Form4Parser:
         if not insider:
             return None
 
+        # Extract 10b5-1 trading plan flag (document-level)
+        aff_10b5 = self._get_text(root, "aff10b5One", "0")
+
         result = Form4Result(
             issuer_cik=issuer_cik,
             issuer_name=issuer_name,
             insider=insider,
             accession_number=accession_number,
             filing_date=filing_date,
+            is_10b5_1=(aff_10b5 == "1"),
         )
 
         # Parse non-derivative transactions

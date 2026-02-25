@@ -163,7 +163,9 @@ class InsiderTradingService:
                                 t.ownership_type = $ownership_type,
                                 t.is_derivative = $is_derivative,
                                 t.insider_name = $insider_name,
-                                t.insider_title = $insider_title
+                                t.insider_title = $insider_title,
+                                t.insider_cik = $insider_cik,
+                                t.is_10b5_1 = $is_10b5_1
 
                             MERGE (c)-[:INSIDER_TRADE_OF]->(t)
 
@@ -196,6 +198,8 @@ class InsiderTradingService:
                             "is_derivative": txn.is_derivative,
                             "insider_name": result.insider.name,
                             "insider_title": result.insider.title,
+                            "insider_cik": result.insider.cik,
+                            "is_10b5_1": result.is_10b5_1,
                         })
                         stored_count += 1
 

@@ -319,6 +319,12 @@ export default function SignalStory() {
                           {isSellCluster ? 'Sold' : 'Purchased'}: {buyer.trade_dates.join(', ')}
                         </p>
                       )}
+                      {buyer.form4_url && (
+                        <a href={buyer.form4_url} target="_blank" rel="noopener noreferrer"
+                           className="text-xs text-blue-600 hover:underline mt-1 inline-block">
+                          View Form 4 &rarr;
+                        </a>
+                      )}
                     </div>
                   </div>
                 ))}

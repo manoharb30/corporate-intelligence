@@ -11,6 +11,7 @@ SAMPLE_FORM4_XML = """<?xml version="1.0"?>
     <schemaVersion>X0306</schemaVersion>
     <documentType>4</documentType>
     <periodOfReport>2023-09-15</periodOfReport>
+    <aff10b5One>1</aff10b5One>
     <issuer>
         <issuerCik>0000789019</issuerCik>
         <issuerName>SPLUNK INC</issuerName>
@@ -144,6 +145,97 @@ SAMPLE_FORM4_XML = """<?xml version="1.0"?>
 </ownershipDocument>
 """
 
+SAMPLE_FORM4_XML_NO_10B5 = """<?xml version="1.0"?>
+<ownershipDocument>
+    <schemaVersion>X0306</schemaVersion>
+    <documentType>4</documentType>
+    <periodOfReport>2023-09-15</periodOfReport>
+    <aff10b5One>0</aff10b5One>
+    <issuer>
+        <issuerCik>0000789019</issuerCik>
+        <issuerName>SPLUNK INC</issuerName>
+    </issuer>
+    <reportingOwner>
+        <reportingOwnerId>
+            <rptOwnerCik>0001234567</rptOwnerCik>
+            <rptOwnerName>DOE JOHN A</rptOwnerName>
+        </reportingOwnerId>
+        <reportingOwnerRelationship>
+            <isDirector>1</isDirector>
+            <isOfficer>0</isOfficer>
+            <isTenPercentOwner>0</isTenPercentOwner>
+        </reportingOwnerRelationship>
+    </reportingOwner>
+    <nonDerivativeTable>
+        <nonDerivativeTransaction>
+            <securityTitle><value>Common Stock</value></securityTitle>
+            <transactionDate><value>2023-09-15</value></transactionDate>
+            <transactionCoding>
+                <transactionFormType>4</transactionFormType>
+                <transactionCode>P</transactionCode>
+                <equitySwapInvolved>0</equitySwapInvolved>
+            </transactionCoding>
+            <transactionAmounts>
+                <transactionShares><value>1000</value></transactionShares>
+                <transactionPricePerShare><value>50.00</value></transactionPricePerShare>
+                <transactionAcquiredDisposedCode><value>A</value></transactionAcquiredDisposedCode>
+            </transactionAmounts>
+            <postTransactionAmounts>
+                <sharesOwnedFollowingTransaction><value>5000</value></sharesOwnedFollowingTransaction>
+            </postTransactionAmounts>
+            <ownershipNature>
+                <directOrIndirectOwnership><value>D</value></directOrIndirectOwnership>
+            </ownershipNature>
+        </nonDerivativeTransaction>
+    </nonDerivativeTable>
+</ownershipDocument>
+"""
+
+SAMPLE_FORM4_XML_MISSING_10B5 = """<?xml version="1.0"?>
+<ownershipDocument>
+    <schemaVersion>X0306</schemaVersion>
+    <documentType>4</documentType>
+    <periodOfReport>2023-09-15</periodOfReport>
+    <issuer>
+        <issuerCik>0000789019</issuerCik>
+        <issuerName>SPLUNK INC</issuerName>
+    </issuer>
+    <reportingOwner>
+        <reportingOwnerId>
+            <rptOwnerCik>0001234567</rptOwnerCik>
+            <rptOwnerName>DOE JOHN A</rptOwnerName>
+        </reportingOwnerId>
+        <reportingOwnerRelationship>
+            <isDirector>1</isDirector>
+            <isOfficer>0</isOfficer>
+            <isTenPercentOwner>0</isTenPercentOwner>
+        </reportingOwnerRelationship>
+    </reportingOwner>
+    <nonDerivativeTable>
+        <nonDerivativeTransaction>
+            <securityTitle><value>Common Stock</value></securityTitle>
+            <transactionDate><value>2023-09-15</value></transactionDate>
+            <transactionCoding>
+                <transactionFormType>4</transactionFormType>
+                <transactionCode>S</transactionCode>
+                <equitySwapInvolved>0</equitySwapInvolved>
+            </transactionCoding>
+            <transactionAmounts>
+                <transactionShares><value>2000</value></transactionShares>
+                <transactionPricePerShare><value>75.00</value></transactionPricePerShare>
+                <transactionAcquiredDisposedCode><value>D</value></transactionAcquiredDisposedCode>
+            </transactionAmounts>
+            <postTransactionAmounts>
+                <sharesOwnedFollowingTransaction><value>3000</value></sharesOwnedFollowingTransaction>
+            </postTransactionAmounts>
+            <ownershipNature>
+                <directOrIndirectOwnership><value>D</value></directOrIndirectOwnership>
+            </ownershipNature>
+        </nonDerivativeTransaction>
+    </nonDerivativeTable>
+</ownershipDocument>
+"""
+
 SAMPLE_HTML_FORM4 = """<html>
 <head><title>Form 4</title></head>
 <body>
@@ -268,6 +360,36 @@ class TestForm4Parser:
         )
 
         assert result is None
+
+    def test_parse_10b5_1_flag_true(self):
+        """aff10b5One=1 should set is_10b5_1=True."""
+        result = self.parser.parse_form4(
+            xml_content=SAMPLE_FORM4_XML,
+            accession_number="0001234567-23-000001",
+            filing_date="2023-09-16",
+        )
+        assert result is not None
+        assert result.is_10b5_1 is True
+
+    def test_parse_10b5_1_flag_false(self):
+        """aff10b5One=0 should set is_10b5_1=False."""
+        result = self.parser.parse_form4(
+            xml_content=SAMPLE_FORM4_XML_NO_10B5,
+            accession_number="0001234567-23-000004",
+            filing_date="2023-09-16",
+        )
+        assert result is not None
+        assert result.is_10b5_1 is False
+
+    def test_parse_10b5_1_flag_missing(self):
+        """Missing aff10b5One element should default to is_10b5_1=False."""
+        result = self.parser.parse_form4(
+            xml_content=SAMPLE_FORM4_XML_MISSING_10B5,
+            accession_number="0001234567-23-000005",
+            filing_date="2023-09-16",
+        )
+        assert result is not None
+        assert result.is_10b5_1 is False
 
 
 class TestInsiderSignalClassification:

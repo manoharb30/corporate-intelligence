@@ -32,6 +32,9 @@ class BuyerDetail:
     trade_count: int
     total_shares: float = 0.0
     trade_dates: list = field(default_factory=list)
+    insider_cik: str = ""
+    filing_accession: str = ""
+    form4_url: str = ""
 
     @property
     def avg_price_per_share(self) -> Optional[float]:
@@ -48,6 +51,7 @@ class BuyerDetail:
             "total_shares": self.total_shares,
             "avg_price_per_share": self.avg_price_per_share,
             "trade_dates": sorted(set(self.trade_dates)),
+            "form4_url": self.form4_url,
         }
         return d
 
@@ -166,7 +170,10 @@ class InsiderClusterService:
                    t.total_value as total_value,
                    t.shares as shares,
                    p.name as insider_name,
-                   t.insider_title as insider_title
+                   t.insider_title as insider_title,
+                   t.insider_cik as insider_cik,
+                   t.accession_number as accession_number,
+                   t.is_10b5_1 as is_10b5_1
             ORDER BY t.transaction_date DESC
         """
         results = await Neo4jClient.execute_query(query, {"since_date": since_date, "tx_code": tx_code})
@@ -201,10 +208,19 @@ class InsiderClusterService:
             )
 
             # Filter to only target transaction code with actual dollar value
-            target_trades = [
-                (t, tt) for t, tt in zip(trades, trade_types)
-                if t.get("transaction_code") == tx_code and (t.get("total_value") or 0) > 0
-            ]
+            # For sell clusters, exclude pre-planned 10b5-1 sales
+            if direction == "sell":
+                target_trades = [
+                    (t, tt) for t, tt in zip(trades, trade_types)
+                    if t.get("transaction_code") == tx_code
+                    and (t.get("total_value") or 0) > 0
+                    and not t.get("is_10b5_1", False)
+                ]
+            else:
+                target_trades = [
+                    (t, tt) for t, tt in zip(trades, trade_types)
+                    if t.get("transaction_code") == tx_code and (t.get("total_value") or 0) > 0
+                ]
 
             if not target_trades:
                 continue
@@ -243,6 +259,8 @@ class InsiderClusterService:
                         title=t.get("insider_title") or "",
                         total_value=0,
                         trade_count=0,
+                        insider_cik=t.get("insider_cik") or "",
+                        filing_accession=t.get("accession_number") or "",
                     )
                 buyer_agg[name].total_value += val
                 buyer_agg[name].trade_count += 1
@@ -253,6 +271,12 @@ class InsiderClusterService:
             num_buyers = len(buyer_agg)
             total_buy_value = sum(b.total_value for b in buyer_agg.values())
             buyers = sorted(buyer_agg.values(), key=lambda b: b.total_value, reverse=True)
+
+            # Compute Form 4 SEC EDGAR URLs (direct link to specific filing)
+            for buyer in buyers:
+                if buyer.filing_accession:
+                    acc_no_dashes = buyer.filing_accession.replace("-", "")
+                    buyer.form4_url = f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc_no_dashes}/{buyer.filing_accession}-index.htm"
 
             # Classify signal level (different thresholds for buy vs sell)
             if direction == "sell":
@@ -427,7 +451,10 @@ class InsiderClusterService:
                    p.name as insider_name,
                    t.insider_title as insider_title,
                    t.transaction_type as transaction_type,
-                   t.security_title as security_title
+                   t.security_title as security_title,
+                   t.accession_number as accession_number,
+                   t.insider_cik as insider_cik,
+                   t.is_10b5_1 as is_10b5_1
             ORDER BY t.transaction_date DESC
             LIMIT 100
         """
@@ -452,6 +479,9 @@ class InsiderClusterService:
                 continue
             if not t["transaction_date"] or t["transaction_date"] < window_start or t["transaction_date"] > window_end:
                 continue
+            # Exclude pre-planned 10b5-1 sales from sell cluster aggregation
+            if is_sell and t.get("is_10b5_1", False):
+                continue
 
             name = t["insider_name"] or "Unknown"
             val = abs(t["total_value"] or 0)
@@ -462,6 +492,8 @@ class InsiderClusterService:
                     title=t.get("insider_title") or "",
                     total_value=0,
                     trade_count=0,
+                    insider_cik=t.get("insider_cik") or "",
+                    filing_accession=t.get("accession_number") or "",
                 )
             buyer_agg[name].total_value += val
             buyer_agg[name].trade_count += 1
@@ -475,6 +507,12 @@ class InsiderClusterService:
 
         num_traders = len(buyer_agg)
         buyers = sorted(buyer_agg.values(), key=lambda b: b.total_value, reverse=True)
+
+        # Compute Form 4 SEC EDGAR URLs (direct link to specific filing)
+        for buyer in buyers:
+            if buyer.filing_accession:
+                acc_no_dashes = buyer.filing_accession.replace("-", "")
+                buyer.form4_url = f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc_no_dashes}/{buyer.filing_accession}-index.htm"
 
         # Classify signal (direction-aware)
         if is_sell:

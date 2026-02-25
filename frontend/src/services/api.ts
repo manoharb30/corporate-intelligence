@@ -222,6 +222,7 @@ export interface ClusterBuyerDetail {
   total_shares: number
   avg_price_per_share: number | null
   trade_dates: string[]
+  form4_url?: string
 }
 
 export interface ClusterDetail {
