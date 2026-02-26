@@ -1020,4 +1020,57 @@ export const scannerApi = {
   trigger: () => api.post('/scanner/trigger'),
 }
 
+// Dashboard Pulse types
+export interface DashboardMover {
+  ticker: string
+  company_name: string
+  price_change_pct: number
+  signal_summary: string
+  accession_number: string
+  signal_type: string
+}
+
+export interface DashboardPulse {
+  last_signal: {
+    company_name: string
+    ticker: string
+    signal_summary: string
+    signal_type: string
+    filing_date: string
+    days_ago: number
+    accession_number: string
+  } | null
+  today: {
+    signal_count: number
+    buy_cluster_count: number
+    sell_cluster_count: number
+    total_buy_volume: number
+    total_sell_volume: number
+  }
+  market_mood: {
+    buy_clusters: number
+    sell_clusters: number
+    buy_volume: number
+    sell_volume: number
+    ratio: number
+    label: string
+  }
+  biggest_movers: {
+    top_gainer: DashboardMover | null
+    top_loser: DashboardMover | null
+  }
+  week_scorecard: {
+    total_signals: number
+    buy_signals: number
+    sell_signals: number
+    buy_avg_return: number | null
+    sell_avg_return: number | null
+  }
+}
+
+// Dashboard API
+export const dashboardApi = {
+  getPulse: () => api.get<DashboardPulse>('/dashboard/pulse'),
+}
+
 export default api
