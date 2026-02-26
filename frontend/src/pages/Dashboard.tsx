@@ -198,7 +198,7 @@ export default function Dashboard() {
                   )}
                 </>
               ) : (
-                <>Scanning 13,000+ companies</>
+                <>No new signals today</>
               )}
             </div>
           </div>
