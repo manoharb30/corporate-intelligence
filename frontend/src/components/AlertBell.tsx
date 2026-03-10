@@ -2,8 +2,6 @@ import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { alertsApi, AlertItem } from '../services/api'
 
-const POLL_INTERVAL = 60_000 // 60 seconds
-
 const severityColors: Record<string, string> = {
   high: 'bg-red-100 text-red-800',
   medium: 'bg-yellow-100 text-yellow-800',
@@ -11,39 +9,34 @@ const severityColors: Record<string, string> = {
 }
 
 export default function AlertBell() {
-  const [unreadCount, setUnreadCount] = useState(0)
+  const [unreadCount, setUnreadCount] = useState<number | null>(null)
   const [recentAlerts, setRecentAlerts] = useState<AlertItem[]>([])
   const [open, setOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
 
-  // Poll for unread count
-  useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        const res = await alertsApi.getStats()
-        setUnreadCount(res.data.unread)
-      } catch {
-        // Silently fail — bell just shows 0
-      }
-    }
-
-    fetchStats()
-    const interval = setInterval(fetchStats, POLL_INTERVAL)
-    return () => clearInterval(interval)
-  }, [])
-
-  // Fetch recent alerts when dropdown opens
+  // Fetch stats + recent alerts only when bell is clicked
   useEffect(() => {
     if (!open) return
-    const fetchRecent = async () => {
+    let ignore = false
+    const fetchData = async () => {
+      setLoading(true)
       try {
-        const res = await alertsApi.getAlerts(7, undefined, false, 5)
-        setRecentAlerts(res.data.alerts)
+        const [statsRes, alertsRes] = await Promise.allSettled([
+          alertsApi.getStats(),
+          alertsApi.getAlerts(7, undefined, false, 5),
+        ])
+        if (ignore) return
+        if (statsRes.status === 'fulfilled') setUnreadCount(statsRes.value.data.unread)
+        if (alertsRes.status === 'fulfilled') setRecentAlerts(alertsRes.value.data.alerts)
       } catch {
         // ignore
+      } finally {
+        if (!ignore) setLoading(false)
       }
     }
-    fetchRecent()
+    fetchData()
+    return () => { ignore = true }
   }, [open])
 
   // Close on outside click
@@ -61,7 +54,7 @@ export default function AlertBell() {
     try {
       await alertsApi.acknowledge(alertId)
       setRecentAlerts((prev) => prev.filter((a) => a.id !== alertId))
-      setUnreadCount((prev) => Math.max(0, prev - 1))
+      setUnreadCount((prev) => Math.max(0, (prev ?? 0) - 1))
     } catch {
       // ignore
     }
@@ -79,8 +72,8 @@ export default function AlertBell() {
           <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
         </svg>
 
-        {/* Badge */}
-        {unreadCount > 0 && (
+        {/* Badge — show count after first fetch, dot before */}
+        {unreadCount !== null && unreadCount > 0 && (
           <span className="absolute -top-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white">
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
@@ -92,13 +85,17 @@ export default function AlertBell() {
         <div className="absolute right-0 mt-2 w-80 rounded-lg bg-white shadow-lg ring-1 ring-black ring-opacity-5 z-50">
           <div className="px-4 py-3 border-b border-gray-100">
             <span className="text-sm font-semibold text-gray-900">Alerts</span>
-            {unreadCount > 0 && (
+            {unreadCount !== null && unreadCount > 0 && (
               <span className="ml-2 text-xs text-gray-500">{unreadCount} unread</span>
             )}
           </div>
 
           <div className="max-h-80 overflow-y-auto">
-            {recentAlerts.length === 0 ? (
+            {loading ? (
+              <div className="px-4 py-6 text-center text-sm text-gray-500">
+                Loading alerts...
+              </div>
+            ) : recentAlerts.length === 0 ? (
               <div className="px-4 py-6 text-center text-sm text-gray-500">
                 No unread alerts
               </div>
