@@ -4,8 +4,10 @@ Shows how signals from the last 7-14 days are performing right now,
 with live price comparisons and win/loss tracking.
 """
 
+import asyncio
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -14,6 +16,8 @@ import yfinance as yf
 from app.services.insider_cluster_service import InsiderClusterService
 from app.services.compound_signal_service import CompoundSignalService
 from app.services.stock_price_service import StockPriceService
+
+_price_executor = ThreadPoolExecutor(max_workers=4)
 
 logger = logging.getLogger(__name__)
 
@@ -95,35 +99,45 @@ class SnapshotService:
                 "signal_action": c.decision,
             })
 
-        # 3. Fetch prices and compute live returns
-        scored_signals = []
+        # 3. Deduplicate by ticker (keep highest-level signal per ticker)
+        level_rank = {"high": 0, "medium": 1, "low": 2}
+        seen: dict[str, dict] = {}
         for sig in raw_signals:
+            ticker = sig.get("ticker")
+            if not ticker or not sig.get("signal_date"):
+                continue
+            existing = seen.get(ticker)
+            if not existing or level_rank.get(sig["signal_level"], 2) < level_rank.get(existing["signal_level"], 2):
+                seen[ticker] = sig
+        deduped_signals = list(seen.values())
+
+        # Cap at 50 signals to avoid blocking the server
+        deduped_signals.sort(
+            key=lambda s: (level_rank.get(s["signal_level"], 2), -(s.get("total_value") or 0))
+        )
+        capped_signals = deduped_signals[:50]
+
+        # Fetch prices in a thread pool so we don't block the event loop
+        def _fetch_price(sig: dict) -> Optional[dict]:
             ticker = sig["ticker"]
             signal_date = sig["signal_date"]
-            if not ticker or not signal_date:
-                continue
-
             try:
                 price_data = StockPriceService.get_price_at_date(ticker, signal_date)
                 if not price_data or not price_data.get("price_at_date"):
-                    continue
-
+                    return None
                 entry_price = price_data["price_at_date"]
                 current_price = price_data["price_current"]
                 if entry_price <= 0:
-                    continue
-
+                    return None
                 return_pct = round(
                     (current_price - entry_price) / entry_price * 100, 2
                 )
-
                 try:
                     sig_dt = datetime.strptime(signal_date[:10], "%Y-%m-%d")
                     days_held = (now - sig_dt).days
                 except (ValueError, TypeError):
                     days_held = 0
-
-                scored_signals.append({
+                return {
                     "ticker": ticker,
                     "company_name": sig["company_name"],
                     "cik": sig["cik"],
@@ -139,10 +153,18 @@ class SnapshotService:
                     "return_pct": return_pct,
                     "days_held": days_held,
                     "status": "winning" if return_pct > 0 else "losing",
-                })
+                }
             except Exception as e:
                 logger.warning(f"Snapshot price fetch failed for {ticker}: {e}")
-                continue
+                return None
+
+        loop = asyncio.get_event_loop()
+        tasks = [
+            loop.run_in_executor(_price_executor, _fetch_price, sig)
+            for sig in capped_signals
+        ]
+        results = await asyncio.gather(*tasks)
+        scored_signals = [r for r in results if r is not None]
 
         # Sort by return descending
         scored_signals.sort(key=lambda s: s["return_pct"], reverse=True)
@@ -168,27 +190,30 @@ class SnapshotService:
         )
 
         # 6. SPY benchmark return over the same period
-        spy_return = None
-        try:
-            end_dt = now
-            start_dt = now - timedelta(days=days + 5)
-            spy_df = yf.download(
-                "SPY",
-                start=start_dt.strftime("%Y-%m-%d"),
-                end=end_dt.strftime("%Y-%m-%d"),
-                progress=False,
-            )
-            if hasattr(spy_df.columns, "levels"):
-                spy_df.columns = spy_df.columns.get_level_values(0)
-            if len(spy_df) >= 2:
-                spy_start = float(spy_df["Close"].iloc[0])
-                spy_end = float(spy_df["Close"].iloc[-1])
-                if spy_start > 0:
-                    spy_return = round(
-                        (spy_end - spy_start) / spy_start * 100, 2
-                    )
-        except Exception as e:
-            logger.warning(f"SPY benchmark fetch failed: {e}")
+        def _fetch_spy() -> Optional[float]:
+            try:
+                end_dt = now
+                start_dt = now - timedelta(days=days + 5)
+                spy_df = yf.download(
+                    "SPY",
+                    start=start_dt.strftime("%Y-%m-%d"),
+                    end=end_dt.strftime("%Y-%m-%d"),
+                    progress=False,
+                )
+                if hasattr(spy_df.columns, "levels"):
+                    spy_df.columns = spy_df.columns.get_level_values(0)
+                if len(spy_df) >= 2:
+                    spy_start = float(spy_df["Close"].iloc[0])
+                    spy_end = float(spy_df["Close"].iloc[-1])
+                    if spy_start > 0:
+                        return round(
+                            (spy_end - spy_start) / spy_start * 100, 2
+                        )
+            except Exception as e:
+                logger.warning(f"SPY benchmark fetch failed: {e}")
+            return None
+
+        spy_return = await loop.run_in_executor(_price_executor, _fetch_spy)
 
         result = {
             "period_days": days,
