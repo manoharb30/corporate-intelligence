@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { feedApi, profileApi, accuracyApi, dashboardApi, anomaliesApi, snapshotApi, DbStats, SignalItem, ProfileSearchResult, AccuracySummary, DashboardPulse, AnomalyItem, WeeklySnapshot } from '../services/api'
 import SignalCard from '../components/SignalCard'
@@ -30,19 +30,20 @@ export default function Dashboard() {
   const [anomalies, setAnomalies] = useState<AnomalyItem[]>([])
   const [snapshot, setSnapshot] = useState<WeeklySnapshot | null>(null)
   const [scorecardTab, setScorecardTab] = useState<'buy' | 'all'>('buy')
+  const [snapshotLoading, setSnapshotLoading] = useState(false)
+  const scorecardRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     let ignore = false
     const fetchData = async () => {
       setLoading(true)
       try {
-        const [statsRes, feedRes, accRes, pulseRes, anomalyRes, snapRes] = await Promise.allSettled([
+        const [statsRes, feedRes, accRes, pulseRes, anomalyRes] = await Promise.allSettled([
           feedApi.getStats(),
           feedApi.getFeed(30, 100, 'medium'),
           accuracyApi.getSummary(),
           dashboardApi.getPulse(),
           anomaliesApi.getTop(15),
-          snapshotApi.getWeekly(14),
         ])
         if (ignore) return
         if (statsRes.status === 'fulfilled') setStats(statsRes.value.data)
@@ -50,7 +51,6 @@ export default function Dashboard() {
         if (accRes.status === 'fulfilled') setAccuracy(accRes.value.data)
         if (pulseRes.status === 'fulfilled') setPulse(pulseRes.value.data)
         if (anomalyRes.status === 'fulfilled') setAnomalies(anomalyRes.value.data.anomalies)
-        if (snapRes.status === 'fulfilled') setSnapshot(snapRes.value.data)
       } catch (error) {
         if (!ignore) console.error('Failed to load:', error)
       } finally {
@@ -79,6 +79,28 @@ export default function Dashboard() {
     }, 300)
     return () => clearTimeout(timeout)
   }, [searchQuery])
+
+  // Lazy-load snapshot when scorecard section scrolls into view
+  useEffect(() => {
+    if (snapshot || snapshotLoading) return
+    const el = scorecardRef.current
+    if (!el) return
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          observer.disconnect()
+          setSnapshotLoading(true)
+          snapshotApi.getWeekly(14)
+            .then(res => setSnapshot(res.data))
+            .catch(() => {})
+            .finally(() => setSnapshotLoading(false))
+        }
+      },
+      { rootMargin: '200px' }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [snapshot, snapshotLoading, loading])
 
   const hitRate = accuracy?.overall_hit_rate ?? null
   const avgReturn = accuracy?.overall_avg_return_90d ?? null
@@ -387,8 +409,14 @@ export default function Dashboard() {
       </section>
 
       {/* ===================================================================
-          LIVE SCORECARD
+          LIVE SCORECARD (lazy-loaded on scroll)
           =================================================================== */}
+      <div ref={scorecardRef} />
+      {snapshotLoading && (
+        <section className="mb-12">
+          <div className="text-center py-8 text-gray-400 text-sm">Loading scorecard...</div>
+        </section>
+      )}
       {snapshot && snapshot.total_signals > 0 && (() => {
         const buySignals = snapshot.signals.filter(s => s.signal_action === 'BUY')
         const watchSignals = snapshot.signals.filter(s => s.signal_action === 'WATCH')
