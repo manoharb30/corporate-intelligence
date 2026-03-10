@@ -5,6 +5,7 @@ import logging
 from fastapi import APIRouter, HTTPException
 
 from app.services.accuracy_service import AccuracyService
+from app.services.compound_signal_service import CompoundSignalService
 from app.services.event_detail_service import EventDetailService
 from app.services.insider_cluster_service import InsiderClusterService
 from app.services.party_linker_service import PartyLinkerService
@@ -57,7 +58,9 @@ async def get_event_detail(accession_number: str):
         logger.warning(f"Failed to fetch confidence stats: {e}")
         confidence_stats = None
 
-    if accession_number.startswith("CLUSTER-") or accession_number.startswith("SELL-CLUSTER-"):
+    if accession_number.startswith("COMPOUND-"):
+        result = await CompoundSignalService.get_compound_detail(accession_number, confidence_stats=confidence_stats)
+    elif accession_number.startswith("CLUSTER-") or accession_number.startswith("SELL-CLUSTER-"):
         result = await InsiderClusterService.get_cluster_detail(accession_number, confidence_stats=confidence_stats)
     else:
         result = await EventDetailService.get_event_detail(accession_number, confidence_stats=confidence_stats)

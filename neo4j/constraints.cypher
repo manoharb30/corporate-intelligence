@@ -44,5 +44,9 @@ FOR (a:Alert) REQUIRE a.id IS UNIQUE;
 CREATE CONSTRAINT scanner_state_id_unique IF NOT EXISTS
 FOR (s:ScannerState) REQUIRE s.scanner_id IS UNIQUE;
 
+// ActivistFiling constraints
+CREATE CONSTRAINT activist_filing_accession_unique IF NOT EXISTS
+FOR (af:ActivistFiling) REQUIRE af.accession_number IS UNIQUE;
+
 // Note: Removed composite node key constraint (normalized_name, jurisdiction)
 // as companies may not always have jurisdiction information

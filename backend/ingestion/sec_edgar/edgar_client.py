@@ -420,6 +420,105 @@ class SECEdgarClient:
         logger.info(f"EFTS discovery: found {len(seen_ciks)} unique Form 4 filers since {since_date}")
         return [{"cik": cik, "name": name} for cik, name in seen_ciks.items()]
 
+    async def get_recent_13d_filers(self, since_date: str, max_results: int = 5000) -> list[dict]:
+        """
+        Discover 13D/13D-A filings since a given date using SEC EFTS.
+
+        Unlike Form 4 discovery (which returns unique CIKs), this returns
+        individual filings because each 13D has a distinct filer + target pair.
+
+        Args:
+            since_date: ISO date string (YYYY-MM-DD) to search from
+            max_results: Cap on total results to avoid runaway pagination
+
+        Returns: [{
+            "accession_number": "0001361570-26-000007",
+            "filing_type": "SCHEDULE 13D/A",
+            "filing_date": "2026-02-27",
+            "target_cik": "0001288847",
+            "target_name": "Five9, Inc.",
+            "filer_cik": "0001361570",
+            "filer_name": "PICTET ASSET MANAGEMENT SA",
+            "primary_document": "xslSCHEDULE_13D_X01/primary_doc.xml",
+        }, ...]
+        """
+        filings = []
+        seen_accessions = set()
+        end_date = datetime.now().strftime("%Y-%m-%d")
+
+        from_idx = 0
+        while len(filings) < max_results:
+            params = {
+                "forms": "SCHEDULE 13D,SCHEDULE 13D/A",
+                "dateRange": "custom",
+                "startdt": since_date,
+                "enddt": end_date,
+                "from": str(from_idx),
+            }
+
+            url = f"{self.FULL_TEXT_SEARCH_URL}?{httpx.QueryParams(params)}"
+
+            try:
+                response = await self._request(url)
+                data = response.json()
+
+                hits = data.get("hits", {}).get("hits", [])
+                if not hits:
+                    break
+
+                for hit in hits:
+                    source = hit.get("_source", {})
+                    adsh = source.get("adsh", "")
+
+                    if not adsh or adsh in seen_accessions:
+                        continue
+                    seen_accessions.add(adsh)
+
+                    ciks = source.get("ciks", [])
+                    display_names = source.get("display_names", [])
+
+                    if len(ciks) < 2:
+                        continue  # Need both target and filer CIKs
+
+                    # EFTS returns [target_cik, filer_cik] for 13D filings
+                    target_cik = ciks[0]
+                    filer_cik = ciks[1] if len(ciks) > 1 else ""
+
+                    def clean_name(raw: str) -> str:
+                        name = re.sub(r"\s*\(CIK[^)]*\)", "", raw)
+                        name = re.sub(r"\s*\([A-Z0-9,\s]+\)\s*$", "", name).strip()
+                        return name
+
+                    target_name = clean_name(display_names[0]) if display_names else f"CIK {target_cik}"
+                    filer_name = clean_name(display_names[1]) if len(display_names) > 1 else f"CIK {filer_cik}"
+
+                    # Build the primary document path
+                    xsl = source.get("xsl", "")
+                    primary_doc = f"{xsl}/primary_doc.xml" if xsl else "primary_doc.xml"
+
+                    filings.append({
+                        "accession_number": adsh,
+                        "filing_type": source.get("file_type", "SCHEDULE 13D"),
+                        "filing_date": source.get("file_date", ""),
+                        "target_cik": target_cik,
+                        "target_name": target_name,
+                        "filer_cik": filer_cik,
+                        "filer_name": filer_name,
+                        "primary_document": primary_doc,
+                    })
+
+                if len(hits) >= 100:
+                    from_idx += 100
+                else:
+                    break
+
+            except Exception as e:
+                logger.warning(f"EFTS 13D search failed: {e}")
+                break
+
+        logger.info(f"EFTS discovery: found {len(filings)} 13D filings since {since_date}")
+        return filings
+
     async def get_ownership_filings(self, cik: str, limit: int = 20) -> list[FilingInfo]:
         """Get recent ownership-related filings for a company."""
         return await self.get_company_filings(

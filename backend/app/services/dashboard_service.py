@@ -62,6 +62,7 @@ class DashboardService:
             "signal_count": len(today_signals),
             "buy_cluster_count": sum(1 for s in today_signals if s.signal_type == "insider_cluster"),
             "sell_cluster_count": sum(1 for s in today_signals if s.signal_type == "insider_sell_cluster"),
+            "compound_count": sum(1 for s in today_signals if s.signal_type == "compound"),
             "total_buy_volume": sum(
                 (s.insider_context.total_buy_value if s.insider_context else 0) for s in today_signals
             ),
@@ -73,13 +74,17 @@ class DashboardService:
         # Market mood (30 days)
         buy_clusters = [s for s in signals if s.signal_type == "insider_cluster"]
         sell_clusters = [s for s in signals if s.signal_type == "insider_sell_cluster"]
+        compound_signals = [s for s in signals if s.signal_type == "compound"]
         buy_volume = sum((s.insider_context.total_buy_value if s.insider_context else 0) for s in buy_clusters)
         sell_volume = sum((s.insider_context.total_sell_value if s.insider_context else 0) for s in sell_clusters)
         bc = len(buy_clusters)
         sc = len(sell_clusters)
-        if sc > 2 * bc:
+        cc = len(compound_signals)
+        # Compound signals are strongly directional — count as extra buy clusters
+        effective_bc = bc + cc
+        if sc > 2 * effective_bc:
             mood_label = "Bearish"
-        elif bc > 2 * sc:
+        elif effective_bc > 2 * sc:
             mood_label = "Bullish"
         else:
             mood_label = "Neutral"
@@ -87,9 +92,10 @@ class DashboardService:
         market_mood = {
             "buy_clusters": bc,
             "sell_clusters": sc,
+            "compound_signals": cc,
             "buy_volume": buy_volume,
             "sell_volume": sell_volume,
-            "ratio": round(sc / bc, 1) if bc > 0 else sc,
+            "ratio": round(sc / effective_bc, 1) if effective_bc > 0 else sc,
             "label": mood_label,
         }
 
@@ -98,10 +104,13 @@ class DashboardService:
         week_buy = [s for s in week_signals if s.signal_type == "insider_cluster"]
         week_sell = [s for s in week_signals if s.signal_type == "insider_sell_cluster"]
 
+        week_compound = [s for s in week_signals if s.signal_type == "compound"]
+
         week_scorecard = {
             "total_signals": len(week_signals),
             "buy_signals": len(week_buy),
             "sell_signals": len(week_sell),
+            "compound_signals": len(week_compound),
             "buy_avg_return": None,
             "sell_avg_return": None,
         }
@@ -154,8 +163,8 @@ class DashboardService:
     def _empty_pulse() -> dict:
         return {
             "last_signal": None,
-            "today": {"signal_count": 0, "buy_cluster_count": 0, "sell_cluster_count": 0, "total_buy_volume": 0, "total_sell_volume": 0},
-            "market_mood": {"buy_clusters": 0, "sell_clusters": 0, "buy_volume": 0, "sell_volume": 0, "ratio": 0, "label": "Neutral"},
+            "today": {"signal_count": 0, "buy_cluster_count": 0, "sell_cluster_count": 0, "compound_count": 0, "total_buy_volume": 0, "total_sell_volume": 0},
+            "market_mood": {"buy_clusters": 0, "sell_clusters": 0, "compound_signals": 0, "buy_volume": 0, "sell_volume": 0, "ratio": 0, "label": "Neutral"},
             "biggest_movers": {"top_gainer": None, "top_loser": None},
-            "week_scorecard": {"total_signals": 0, "buy_signals": 0, "sell_signals": 0, "buy_avg_return": None, "sell_avg_return": None},
+            "week_scorecard": {"total_signals": 0, "buy_signals": 0, "sell_signals": 0, "compound_signals": 0, "buy_avg_return": None, "sell_avg_return": None},
         }

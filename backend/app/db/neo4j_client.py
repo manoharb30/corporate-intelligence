@@ -37,6 +37,12 @@ class Neo4jClient:
             raise ConnectionError(f"Neo4j authentication failed: {e}")
 
     @classmethod
+    async def reconnect(cls) -> None:
+        """Force-close and re-establish the Neo4j driver connection."""
+        await cls.disconnect()
+        await cls.connect()
+
+    @classmethod
     async def disconnect(cls) -> None:
         """Close the Neo4j driver connection."""
         if cls._driver is not None:

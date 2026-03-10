@@ -34,6 +34,7 @@ export default function SignalCard({ signal, compact = false }: SignalCardProps)
   const buyType = signal.insider_context?.near_filing_buy_type
   const isCluster = signal.signal_type === 'insider_cluster'
   const isSellCluster = signal.signal_type === 'insider_sell_cluster'
+  const isCompound = signal.signal_type === 'compound'
   const isAnyCluster = isCluster || isSellCluster
   const buyers = signal.cluster_detail?.buyers || []
   const notableTrades = signal.insider_context?.notable_trades || []
@@ -59,7 +60,12 @@ export default function SignalCard({ signal, compact = false }: SignalCardProps)
                 SELL CLUSTER
               </span>
             )}
-            {insiderDir && insiderDir !== 'none' && !isAnyCluster && (
+            {isCompound && (
+              <span className="px-2 py-0.5 rounded text-xs font-bold bg-purple-700 text-white">
+                COMPOUND
+              </span>
+            )}
+            {insiderDir && insiderDir !== 'none' && !isAnyCluster && !isCompound && (
               <span className={`px-2 py-0.5 rounded text-xs font-medium border ${
                 insiderDir === 'buying' ? 'text-green-700 bg-green-50 border-green-200' :
                 insiderDir === 'selling' ? 'text-red-700 bg-red-50 border-red-200' :
@@ -119,7 +125,11 @@ export default function SignalCard({ signal, compact = false }: SignalCardProps)
           <p className="text-xs text-gray-400 font-mono">{signal.filing_date}</p>
           {!compact && (
             <div className="flex flex-wrap gap-1 mt-1 justify-end">
-              {isAnyCluster && signal.cluster_detail ? (
+              {isCompound ? (
+                <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-purple-50 border border-purple-200 text-purple-700">
+                  Multi-Source
+                </span>
+              ) : isAnyCluster && signal.cluster_detail ? (
                 <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
                   isSellCluster
                     ? 'bg-red-50 border border-red-200 text-red-700'

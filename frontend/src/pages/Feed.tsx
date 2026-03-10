@@ -1,21 +1,32 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
-import { feedApi, profileApi, SignalItem, ProfileSearchResult, MarketScanStatus, TopInsiderActivity, CompanyFilter } from '../services/api'
+import { feedApi, profileApi, anomaliesApi, SignalItem, ProfileSearchResult, MarketScanStatus, TopInsiderActivity, CompanyFilter, AnomalyItem } from '../services/api'
 import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import SignalCard from '../components/SignalCard'
 
 type SignalLevel = 'all' | 'critical' | 'high' | 'medium' | 'low'
+type FeedTab = 'trade' | 'intelligence'
+
+function formatVolume(v: number): string {
+  if (v >= 1_000_000_000) return `$${(v / 1_000_000_000).toFixed(1)}B`
+  if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`
+  if (v >= 1_000) return `$${(v / 1_000).toFixed(0)}K`
+  return `$${v.toFixed(0)}`
+}
 
 export default function Feed() {
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const cikFilter = searchParams.get('cik')
+  const tabParam = searchParams.get('tab') as FeedTab | null
+  const [activeTab, setActiveTab] = useState<FeedTab>(tabParam === 'intelligence' ? 'intelligence' : 'trade')
   const [signals, setSignals] = useState<SignalItem[]>([])
   const [loading, setLoading] = useState(true)
   const [filterLevel, setFilterLevel] = useState<SignalLevel>('all')
   const [days, setDays] = useState(cikFilter ? 90 : 30)
-  const [byLevel, setByLevel] = useState({ high: 0, medium: 0, low: 0 })
-  const [byCombined, setByCombined] = useState({ critical: 0, high_bearish: 0, high: 0, medium: 0, low: 0 })
+  const [, setByLevel] = useState({ high: 0, medium: 0, low: 0 })
+  const [, setByCombined] = useState({ critical: 0, high_bearish: 0, high: 0, medium: 0, low: 0 })
   const [companyFilter, setCompanyFilter] = useState<CompanyFilter | null>(null)
+  const [anomalies, setAnomalies] = useState<AnomalyItem[]>([])
 
   // Search state
   const [searchQuery, setSearchQuery] = useState('')
@@ -30,8 +41,47 @@ export default function Feed() {
   const [scanBanner, setScanBanner] = useState<string | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
+  // Sync tab with URL
   useEffect(() => {
-    loadFeed()
+    if (tabParam === 'intelligence' || tabParam === 'trade') {
+      setActiveTab(tabParam)
+    }
+  }, [tabParam])
+
+  const handleTabChange = (tab: FeedTab) => {
+    setActiveTab(tab)
+    const params = new URLSearchParams(searchParams)
+    params.set('tab', tab)
+    setSearchParams(params, { replace: true })
+  }
+
+  useEffect(() => {
+    let ignore = false
+    const fetchFeed = async () => {
+      setLoading(true)
+      try {
+        const [feedRes, insiderRes, anomalyRes] = await Promise.allSettled([
+          feedApi.getFeed(days, 100, 'low', cikFilter || undefined),
+          cikFilter ? Promise.resolve(null) : feedApi.getTopInsiderActivity(30, 10),
+          anomaliesApi.getTop(50),
+        ])
+        if (ignore) return
+        if (feedRes.status === 'fulfilled') {
+          setSignals(feedRes.value.data.signals)
+          setByLevel(feedRes.value.data.by_level)
+          if (feedRes.value.data.by_combined) setByCombined(feedRes.value.data.by_combined)
+          setCompanyFilter(feedRes.value.data.company_filter || null)
+        }
+        if (insiderRes.status === 'fulfilled' && insiderRes.value) setInsiderActivity((insiderRes.value as any).data)
+        if (anomalyRes.status === 'fulfilled') setAnomalies(anomalyRes.value.data.anomalies)
+      } catch (error) {
+        if (!ignore) console.error('Failed to load feed:', error)
+      } finally {
+        if (!ignore) setLoading(false)
+      }
+    }
+    fetchFeed()
+    return () => { ignore = true }
   }, [days, cikFilter])
 
   useEffect(() => {
@@ -61,7 +111,7 @@ export default function Feed() {
         if (status.status === 'completed') {
           stopPolling()
           setScanBanner(`Scan Complete - ${status.companies_scanned} companies, ${status.events_stored} events`)
-          loadFeed()
+          refreshFeed()
         } else if (status.status === 'error') {
           stopPolling()
           setScanBanner(`Scan Error: ${status.message}`)
@@ -80,7 +130,7 @@ export default function Feed() {
     } catch { setScanBanner('Failed to start scan') }
   }
 
-  const loadFeed = async () => {
+  const refreshFeed = async () => {
     setLoading(true)
     try {
       const [feedRes, insiderRes] = await Promise.allSettled([
@@ -111,18 +161,40 @@ export default function Feed() {
     }
   }
 
+  // Trade tab: cluster + sell cluster + compound-with-cluster
+  const tradeSignals = signals.filter(s =>
+    s.signal_type === 'insider_cluster' ||
+    s.signal_type === 'insider_sell_cluster' ||
+    s.signal_type === 'compound'
+  )
+
+  // Intelligence tab: 8-K based signals
+  const intelligenceSignals = signals.filter(s =>
+    s.signal_type === '8k' || (!s.signal_type)
+  )
+
+  const activeSignals = activeTab === 'trade' ? tradeSignals : intelligenceSignals
+
   const filteredSignals = filterLevel === 'all'
-    ? signals
+    ? activeSignals
     : filterLevel === 'critical'
-    ? signals.filter(s => s.combined_signal_level === 'critical')
-    : signals.filter(s => s.signal_level === filterLevel || s.combined_signal_level === filterLevel)
+    ? activeSignals.filter(s => s.combined_signal_level === 'critical')
+    : activeSignals.filter(s => s.signal_level === filterLevel || s.combined_signal_level === filterLevel)
+
+  // Recompute counts based on active tab signals
+  const tabByLevel = {
+    high: activeSignals.filter(s => s.signal_level === 'high').length,
+    medium: activeSignals.filter(s => s.signal_level === 'medium').length,
+    low: activeSignals.filter(s => s.signal_level === 'low').length,
+  }
+  const tabCritical = activeSignals.filter(s => s.combined_signal_level === 'critical').length
 
   const filterPills: { key: SignalLevel; label: string; count: number; color: string; activeColor: string }[] = [
-    { key: 'all', label: 'All', count: signals.length, color: 'bg-gray-100 text-gray-700', activeColor: 'bg-primary-600 text-white' },
-    { key: 'critical', label: 'Critical', count: byCombined.critical, color: 'bg-purple-50 text-purple-700', activeColor: 'bg-purple-600 text-white' },
-    { key: 'high', label: 'High', count: byLevel.high, color: 'bg-red-50 text-red-700', activeColor: 'bg-red-500 text-white' },
-    { key: 'medium', label: 'Medium', count: byLevel.medium, color: 'bg-yellow-50 text-yellow-700', activeColor: 'bg-yellow-500 text-white' },
-    { key: 'low', label: 'Low', count: byLevel.low, color: 'bg-blue-50 text-blue-700', activeColor: 'bg-blue-500 text-white' },
+    { key: 'all', label: 'All', count: activeSignals.length, color: 'bg-gray-100 text-gray-700', activeColor: 'bg-primary-600 text-white' },
+    { key: 'critical', label: 'Critical', count: tabCritical, color: 'bg-purple-50 text-purple-700', activeColor: 'bg-purple-600 text-white' },
+    { key: 'high', label: 'High', count: tabByLevel.high, color: 'bg-red-50 text-red-700', activeColor: 'bg-red-500 text-white' },
+    { key: 'medium', label: 'Medium', count: tabByLevel.medium, color: 'bg-yellow-50 text-yellow-700', activeColor: 'bg-yellow-500 text-white' },
+    { key: 'low', label: 'Low', count: tabByLevel.low, color: 'bg-blue-50 text-blue-700', activeColor: 'bg-blue-500 text-white' },
   ]
 
   return (
@@ -130,8 +202,14 @@ export default function Feed() {
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Signals</h1>
-          <p className="text-sm text-gray-600">M&A signals from SEC 8-K filings</p>
+          <h1 className="text-2xl font-bold text-gray-900">
+            {activeTab === 'trade' ? 'Trade Signals' : 'Event Intelligence'}
+          </h1>
+          <p className="text-sm text-gray-600">
+            {activeTab === 'trade'
+              ? 'Insider cluster alerts and compound signals'
+              : 'SEC 8-K filings with insider behavior analysis'}
+          </p>
         </div>
         <button
           onClick={handleMarketScan}
@@ -144,6 +222,36 @@ export default function Feed() {
           Scan Market
         </button>
       </div>
+
+      {/* Tab toggle */}
+      {!cikFilter && (
+        <div className="flex gap-1 mb-4 bg-gray-100 rounded-lg p-1 w-fit">
+          <button
+            onClick={() => handleTabChange('trade')}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${
+              activeTab === 'trade'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <span className={`w-2 h-2 rounded-full ${activeTab === 'trade' ? 'bg-green-500' : 'bg-gray-300'}`}></span>
+            Trade Signals
+            <span className="text-xs text-gray-400">({tradeSignals.length})</span>
+          </button>
+          <button
+            onClick={() => handleTabChange('intelligence')}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${
+              activeTab === 'intelligence'
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <span className={`w-2 h-2 rounded-full ${activeTab === 'intelligence' ? 'bg-purple-500' : 'bg-gray-300'}`}></span>
+            Event Intelligence
+            <span className="text-xs text-gray-400">({intelligenceSignals.length})</span>
+          </button>
+        </div>
+      )}
 
       {/* Scan Progress */}
       {scanStatus?.status === 'in_progress' && (
@@ -261,6 +369,81 @@ export default function Feed() {
         <div className="flex items-center justify-center py-12">
           <div className="animate-spin h-8 w-8 border-4 border-primary-500 border-t-transparent rounded-full"></div>
         </div>
+      ) : activeTab === 'intelligence' && !cikFilter ? (
+        /* Intelligence tab: signal cards + anomaly context */
+        <>
+          {filteredSignals.length === 0 ? (
+            <div className="text-center py-12 text-gray-500">No event intelligence signals found for the selected filters</div>
+          ) : (
+            <div className="space-y-3">
+              {filteredSignals.map((signal, idx) => (
+                <SignalCard key={`${signal.accession_number}-${idx}`} signal={signal} />
+              ))}
+            </div>
+          )}
+
+          {/* Anomaly summary at bottom of intelligence tab */}
+          {anomalies.length > 0 && (
+            <div className="mt-8 bg-purple-50 border border-purple-200 rounded-xl p-5">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Pre-Filing Insider Activity</h3>
+                  <p className="text-sm text-gray-600">Companies where insiders sold heavily before material SEC filings</p>
+                </div>
+                <a
+                  href={anomaliesApi.getDownloadUrl()}
+                  download
+                  className="px-3 py-1.5 text-xs font-medium text-purple-600 bg-white border border-purple-300 rounded-lg hover:bg-purple-50"
+                >
+                  Download CSV
+                </a>
+              </div>
+              <div className="bg-white rounded-lg border border-purple-100 overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-100 bg-purple-50/50">
+                      <th className="text-left px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Company</th>
+                      <th className="text-left px-3 py-2 text-xs font-semibold text-gray-500 uppercase">Event</th>
+                      <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 uppercase">Pre-Event Selling</th>
+                      <th className="text-right px-3 py-2 text-xs font-semibold text-gray-500 uppercase">Lead Time</th>
+                      <th className="text-right px-4 py-2 text-xs font-semibold text-gray-500 uppercase">Ratio</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {anomalies.slice(0, 10).map((a, idx) => {
+                      const eventLabel =
+                        a.event_type === 'material_agreement' ? 'Material Agmt' :
+                        a.event_type === 'executive_change' ? 'Exec Change' :
+                        a.event_type === 'governance_change' ? 'Governance' :
+                        a.event_type === 'acquisition_disposition' ? 'Acquisition' :
+                        a.event_type
+                      return (
+                        <tr
+                          key={`${a.cik}-${idx}`}
+                          onClick={() => navigate(`/signal/${encodeURIComponent(a.accession_number)}`)}
+                          className="border-b border-gray-50 hover:bg-purple-50/30 cursor-pointer"
+                        >
+                          <td className="px-4 py-2">
+                            <span className="font-bold text-gray-900">{a.ticker || '—'}</span>
+                            <span className="text-gray-500 ml-2 text-xs truncate">{a.company_name}</span>
+                          </td>
+                          <td className="px-3 py-2 text-xs text-gray-600">{eventLabel}</td>
+                          <td className="px-3 py-2 text-right font-semibold text-red-600">{formatVolume(a.pre_event_sell_value)}</td>
+                          <td className="px-3 py-2 text-right text-gray-600">
+                            {a.avg_days_before_event !== null ? `${Math.round(a.avg_days_before_event)}d` : '—'}
+                          </td>
+                          <td className="px-4 py-2 text-right">
+                            <span className="text-xs font-medium text-purple-700">{(a.ratio * 100).toFixed(0)}%</span>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </>
       ) : filteredSignals.length === 0 ? (
         <div className="text-center py-12 text-gray-500">No signals found for the selected filters</div>
       ) : (
@@ -272,7 +455,7 @@ export default function Feed() {
       )}
 
       {/* Top Insider Activity */}
-      {insiderActivity.length > 0 && (
+      {activeTab === 'trade' && insiderActivity.length > 0 && (
         <div className="mt-8 bg-white rounded-lg border border-gray-200 shadow-sm p-5">
           <h2 className="text-lg font-semibold text-gray-900 mb-3">Top Insider Activity (30d)</h2>
           <div className="space-y-2">

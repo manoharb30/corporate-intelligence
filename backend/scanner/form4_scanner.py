@@ -424,7 +424,12 @@ async def run_scanner() -> dict:
             await update_checkpoint(today, "success_empty", counts)
             return counts
 
-        # 2. Scan each company's Form 4s
+        # 2. Reconnect to Neo4j — the filtering phase can take 10+ minutes
+        #    and the Aura connection may have gone stale
+        logger.info("Refreshing Neo4j connection before scanning phase")
+        await Neo4jClient.reconnect()
+
+        # 3. Scan each company's Form 4s
         affected_ciks = set()
         for i, filer in enumerate(filers):
             cik = filer["cik"]
@@ -451,12 +456,12 @@ async def run_scanner() -> dict:
             if i < len(filers) - 1:
                 await asyncio.sleep(INTER_COMPANY_DELAY)
 
-        # 3. Detect clusters and create alerts
+        # 4. Detect clusters and create alerts
         if affected_ciks:
             alerts = await detect_and_alert(affected_ciks)
             counts["alerts_created"] = alerts
 
-        # 4. Update checkpoint
+        # 5. Update checkpoint
         status = "success" if counts["errors"] == 0 else "partial_success"
         await update_checkpoint(today, status, counts)
 

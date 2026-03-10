@@ -1,5 +1,5 @@
 import { ReactNode } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import AlertBell from './AlertBell'
 
 interface LayoutProps {
@@ -8,7 +8,9 @@ interface LayoutProps {
 
 const navigation = [
   { name: 'Dashboard', href: '/' },
-  { name: 'Signals', href: '/signals' },
+  { name: 'Trade Signals', href: '/signals?tab=trade' },
+  { name: 'Intelligence', href: '/signals?tab=intelligence' },
+  { name: 'Snapshot', href: '/snapshot' },
   { name: 'Track Record', href: '/accuracy' },
   { name: 'Companies', href: '/companies' },
   { name: 'Pricing', href: '/pricing' },
@@ -17,9 +19,22 @@ const navigation = [
 export default function Layout({ children }: LayoutProps) {
   const location = useLocation()
 
+  const [searchParams] = useSearchParams()
+
   const isActive = (href: string) => {
     if (href === '/') return location.pathname === '/'
-    return location.pathname.startsWith(href)
+    const [path, query] = href.split('?')
+    if (!location.pathname.startsWith(path)) return false
+    if (query) {
+      const params = new URLSearchParams(query)
+      for (const [key, value] of params) {
+        if (searchParams.get(key) !== value) return false
+      }
+      return true
+    }
+    // For plain paths like /accuracy, /companies — match if no tab param
+    if (path === '/signals') return false // /signals without tab shouldn't match
+    return true
   }
 
   return (

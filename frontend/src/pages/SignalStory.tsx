@@ -74,6 +74,7 @@ export default function SignalStory() {
   const insiderCtx = data.insider_context
   const isCluster = data.signal_type === 'insider_cluster'
   const isSellCluster = data.signal_type === 'insider_sell_cluster'
+  const isCompound = data.signal_type === 'compound'
   const isAnyCluster = isCluster || isSellCluster
 
   // Build chart markers from timeline
@@ -116,8 +117,8 @@ export default function SignalStory() {
   const sellTrades = tradeEntries.filter(e => e.trade_type === 'sell')
   const exerciseSellTrades = tradeEntries.filter(e => e.trade_type === 'exercise_sell')
 
-  // SEC EDGAR link (not applicable for cluster signals)
-  const edgarUrl = accessionNumber && !isAnyCluster
+  // SEC EDGAR link (not applicable for cluster or compound signals)
+  const edgarUrl = accessionNumber && !isAnyCluster && !isCompound
     ? `https://www.sec.gov/Archives/edgar/data/${company.cik}/${accessionNumber.replace(/-/g, '')}/${accessionNumber}-index.htm`
     : null
 
@@ -129,7 +130,7 @@ export default function SignalStory() {
       </Link>
 
       {/* ===== Decision Card ===== */}
-      {data.decision_card && <DecisionCard card={data.decision_card} isCluster={isAnyCluster} />}
+      {data.decision_card && <DecisionCard card={data.decision_card} isCluster={isAnyCluster || isCompound} />}
 
       {/* ===== Chapter 1: The Filing ===== */}
       <section className="mb-8">
@@ -149,7 +150,11 @@ export default function SignalStory() {
               {company.ticker && <span className="text-lg text-gray-500">({company.ticker})</span>}
             </div>
             <div className="flex items-center gap-3 mt-1 text-sm text-gray-600">
-              <span>{isAnyCluster ? `Cluster detected: ${event.filing_date}` : `Filed: ${event.filing_date}`}</span>
+              <span>{isAnyCluster
+                ? (event.first_detected && event.first_detected !== event.filing_date
+                  ? `First detected: ${event.first_detected} · Latest trade: ${event.filing_date}`
+                  : `Cluster detected: ${event.filing_date}`)
+                : isCompound ? `Signal date: ${event.filing_date}` : `Filed: ${event.filing_date}`}</span>
               <span className="text-gray-300">|</span>
               <span>{event.signal_summary}</span>
             </div>

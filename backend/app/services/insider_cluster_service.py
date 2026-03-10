@@ -446,6 +446,25 @@ class InsiderClusterService:
         is_sell = direction == "sell"
         tx_code = "S" if is_sell else "P"
 
+        # Find when this cluster was first detected (earliest alert)
+        alert_type = "insider_sell_cluster" if is_sell else "insider_cluster"
+        first_detected_query = """
+            MATCH (a:Alert)
+            WHERE a.company_cik = $cik
+              AND a.alert_type = $alert_type
+            RETURN a.created_at AS created_at
+            ORDER BY a.created_at ASC
+            LIMIT 1
+        """
+        first_detected_result = await Neo4jClient.execute_query(
+            first_detected_query, {"cik": cik, "alert_type": alert_type}
+        )
+        first_detected = None
+        if first_detected_result:
+            raw = first_detected_result[0].get("created_at", "")
+            if raw:
+                first_detected = raw[:10]  # YYYY-MM-DD
+
         # Get all trades for this company (broader window for timeline context)
         trades_query = """
             MATCH (c:Company {cik: $cik})-[:INSIDER_TRADE_OF]->(t:InsiderTransaction)<-[:TRADED_BY]-(p:Person)
@@ -680,19 +699,32 @@ class InsiderClusterService:
         first_trade_date = earliest_trade_date or window_start
         first_trade_dt = datetime.strptime(first_trade_date, "%Y-%m-%d")
 
+        # Use first_detected (alert date) for "days ago" if available,
+        # otherwise fall back to first trade date
+        if first_detected:
+            try:
+                detected_dt = datetime.strptime(first_detected, "%Y-%m-%d")
+                days_since = (datetime.now() - detected_dt).days
+            except ValueError:
+                days_since = (datetime.now() - first_trade_dt).days
+        else:
+            days_since = (datetime.now() - first_trade_dt).days
+
         decision_card = {
             "action": action,
             "conviction": conviction,
             "one_liner": one_liner,
             "insider_direction": net_dir,
             "insider_buy_type": "open_market",
-            "days_since_filing": (datetime.now() - first_trade_dt).days,
+            "days_since_filing": days_since,
         }
 
-        # Price change since first insider trade
+        # Price change since detection date (when our system flagged it)
+        # This shows the return a user could actually capture after our alert
+        price_date = first_detected or first_trade_date
         if ticker:
             try:
-                price_data = StockPriceService.get_price_at_date(ticker, first_trade_date)
+                price_data = StockPriceService.get_price_at_date(ticker, price_date)
                 if price_data and price_data["price_at_date"] > 0:
                     decision_card["price_at_filing"] = price_data["price_at_date"]
                     decision_card["price_current"] = price_data["price_current"]
@@ -703,13 +735,13 @@ class InsiderClusterService:
 
                     # Add context label for price measurement
                     if is_sell:
-                        decision_card["price_label"] = "since first sale"
+                        decision_card["price_label"] = "since detected"
                         if pct > 5:
                             decision_card["price_context"] = f"Insiders selling into +{pct}% rally"
                         elif pct < -5:
                             decision_card["price_context"] = f"Stock already down {abs(pct)}% — insiders heading for the exits"
                     else:
-                        decision_card["price_label"] = "since first purchase"
+                        decision_card["price_label"] = "since detected"
                         if pct < -10:
                             decision_card["price_context"] = f"Insiders buying into a {abs(pct)}% dip — contrarian signal"
             except Exception as e:
@@ -734,6 +766,7 @@ class InsiderClusterService:
             "event": {
                 "accession_number": cluster_id,
                 "filing_date": window_end,
+                "first_detected": first_detected,
                 "signal_level": signal_level,
                 "signal_summary": signal_summary,
                 "items": [],

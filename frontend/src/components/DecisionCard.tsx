@@ -33,7 +33,7 @@ function buyTypeLabel(buyType?: string): string {
 
 function formatDays(days: number | null, isCluster: boolean): string {
   if (days === null) return ''
-  const prefix = isCluster ? 'First trade' : 'Filed'
+  const prefix = isCluster ? 'First detected' : 'Filed'
   if (days === 0) return `${prefix} today`
   if (days === 1) return `${prefix} 1d ago`
   if (days < 30) return `${prefix} ${days}d ago`
@@ -80,7 +80,7 @@ export default function DecisionCard({ card, isCluster = false }: DecisionCardPr
               <span className={`text-lg font-bold ${priceUp ? 'text-green-600' : 'text-red-600'}`}>
                 {priceUp ? '\u25B2' : '\u25BC'} {priceUp ? '+' : ''}{card.price_change_pct}%
               </span>
-              <span className="text-sm text-gray-500">{card.price_label || (isCluster ? 'since first trade' : 'since filing')}</span>
+              <span className="text-sm text-gray-500">{card.price_label || (isCluster ? 'since first purchase' : 'since filing')}</span>
               {card.price_at_filing !== undefined && card.price_current !== undefined && (
                 <span className="text-xs text-gray-400">
                   ${card.price_at_filing.toFixed(2)} &rarr; ${card.price_current.toFixed(2)}

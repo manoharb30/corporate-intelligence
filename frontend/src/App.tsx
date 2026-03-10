@@ -9,6 +9,7 @@ import NetworkPage from './pages/NetworkPage'
 import Pricing from './pages/Pricing'
 import Alerts from './pages/Alerts'
 import Accuracy from './pages/Accuracy'
+import WeeklySnapshotPage from './pages/WeeklySnapshotPage'
 
 /** Redirect /company/:cik to /signals?cik=:cik */
 function CompanyRedirect() {
@@ -30,6 +31,7 @@ function App() {
         <Route path="/pricing" element={<Pricing />} />
         <Route path="/alerts" element={<Alerts />} />
         <Route path="/accuracy" element={<Accuracy />} />
+        <Route path="/snapshot" element={<WeeklySnapshotPage />} />
 
         {/* Redirects for old routes */}
         <Route path="/company/:cik" element={<CompanyRedirect />} />

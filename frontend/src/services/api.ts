@@ -246,7 +246,7 @@ export interface SignalItem {
   accession_number: string
   combined_signal_level: 'critical' | 'high_bearish' | 'high' | 'medium' | 'low'
   insider_context: InsiderContextData | null
-  signal_type?: 'insider_cluster' | 'insider_sell_cluster' | '8k'
+  signal_type?: 'insider_cluster' | 'insider_sell_cluster' | 'compound' | '8k'
   cluster_detail?: ClusterDetail
 }
 
@@ -615,6 +615,7 @@ export interface EventDetailResponse {
   event: {
     accession_number: string
     filing_date: string
+    first_detected?: string | null
     signal_level: string
     signal_summary: string
     items: EventDetailItem[]
@@ -633,7 +634,7 @@ export interface EventDetailResponse {
   insider_context?: InsiderContextData | null
   decision_card?: DecisionCard
   company_context?: CompanyContext | null
-  signal_type?: 'insider_cluster' | 'insider_sell_cluster' | '8k'
+  signal_type?: 'insider_cluster' | 'insider_sell_cluster' | 'compound' | '8k'
   cluster_detail?: ClusterDetail
 }
 
@@ -1044,12 +1045,14 @@ export interface DashboardPulse {
     signal_count: number
     buy_cluster_count: number
     sell_cluster_count: number
+    compound_count: number
     total_buy_volume: number
     total_sell_volume: number
   }
   market_mood: {
     buy_clusters: number
     sell_clusters: number
+    compound_signals: number
     buy_volume: number
     sell_volume: number
     ratio: number
@@ -1063,9 +1066,121 @@ export interface DashboardPulse {
     total_signals: number
     buy_signals: number
     sell_signals: number
+    compound_signals: number
     buy_avg_return: number | null
     sell_avg_return: number | null
   }
+}
+
+// Anomaly types
+export interface AnomalyItem {
+  cik: string
+  company_name: string
+  ticker: string | null
+  event_type: string
+  event_date: string
+  accession_number: string
+  edgar_url: string | null
+  num_insiders: number
+  insider_names_and_titles: string[]
+  pre_event_sell_value: number
+  post_event_sell_value: number
+  ratio: number
+  total_value: number
+  avg_days_before_event: number | null
+}
+
+export interface AnomaliesResponse {
+  total: number
+  anomalies: AnomalyItem[]
+}
+
+// Anomalies API
+export const anomaliesApi = {
+  getTop: (limit = 15) =>
+    api.get<AnomaliesResponse>('/anomalies/top', { params: { limit } }),
+  getDownloadUrl: () => '/api/anomalies/download',
+}
+
+// Snapshot types
+export interface SnapshotSignal {
+  ticker: string
+  company_name: string
+  cik: string
+  signal_type: 'insider_cluster' | 'insider_sell_cluster' | 'compound'
+  signal_date: string
+  signal_level: string
+  signal_action: 'BUY' | 'WATCH' | 'PASS'
+  num_insiders: number
+  total_value: number
+  accession_number: string
+  entry_price: number
+  current_price: number
+  return_pct: number
+  days_held: number
+  status: 'winning' | 'losing'
+}
+
+export interface WeeklySnapshot {
+  period_days: number
+  generated_at: string
+  total_signals: number
+  win_count: number
+  loss_count: number
+  avg_return: number
+  mature_total: number
+  mature_wins: number
+  mature_avg_return: number
+  spy_return: number | null
+  best_performer: { ticker: string; return_pct: number } | null
+  worst_performer: { ticker: string; return_pct: number } | null
+  signals: SnapshotSignal[]
+}
+
+// Snapshot page types
+export interface SnapshotCluster {
+  cik: string
+  company_name: string
+  ticker: string | null
+  direction: 'buy' | 'sell'
+  signal_level: string
+  signal_date: string
+  num_insiders: number
+  total_value: number
+  trade_count: number
+  insiders: string[]
+  accession_number: string
+  description: string
+}
+
+export interface SnapshotAnomaly {
+  cik: string
+  company_name: string
+  ticker: string | null
+  event_type: string
+  event_date: string
+  accession_number: string
+  pre_sell_value: number
+  num_insiders: number
+  insider_list: string[]
+  avg_days_before: number | null
+  description: string
+}
+
+export interface WeekSnapshotData {
+  week_start: string
+  week_end: string
+  clusters: SnapshotCluster[]
+  anomalies: SnapshotAnomaly[]
+}
+
+// Snapshot API
+export const snapshotApi = {
+  getWeekly: (days = 14) =>
+    api.get<WeeklySnapshot>('/snapshot/weekly', { params: { days } }),
+
+  getWeekSnapshot: (start = '2026-03-03', end = '2026-03-07') =>
+    api.get<WeekSnapshotData>('/snapshot/week', { params: { start, end } }),
 }
 
 // Dashboard API

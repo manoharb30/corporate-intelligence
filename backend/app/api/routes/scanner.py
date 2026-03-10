@@ -11,55 +11,81 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+async def _get_scanner_state(scanner_id: str, fields: list[str]) -> dict:
+    """Fetch ScannerState node for a given scanner."""
+    returns = ", ".join(f"s.{f} as {f}" for f in fields)
+    query = f"""
+        MATCH (s:ScannerState {{scanner_id: $scanner_id}})
+        RETURN {returns}
+    """
+    results = await Neo4jClient.execute_query(query, {"scanner_id": scanner_id})
+    if not results:
+        return None
+    return dict(results[0])
+
+
 @router.get("/health")
 async def scanner_health():
-    """Get scanner state: last run timestamp, status, counts."""
-    query = """
-        MATCH (s:ScannerState {scanner_id: 'form4_scanner'})
-        RETURN s.last_run_at as last_run_at,
-               s.last_status as last_status,
-               s.companies_scanned as companies_scanned,
-               s.transactions_stored as transactions_stored,
-               s.alerts_created as alerts_created,
-               s.total_runs as total_runs,
-               s.last_error as last_error
-    """
-    results = await Neo4jClient.execute_query(query)
-
-    if not results:
-        return {
-            "status": "never_run",
-            "last_run_at": None,
-            "companies_scanned": 0,
-            "transactions_stored": 0,
-            "alerts_created": 0,
-            "total_runs": 0,
-            "last_error": None,
+    """Get health status for all scanners."""
+    # Form 4 scanner
+    form4 = await _get_scanner_state("form4_scanner", [
+        "last_run_at", "last_status", "companies_scanned",
+        "transactions_stored", "alerts_created", "total_runs", "last_error",
+    ])
+    if not form4:
+        form4 = {
+            "last_run_at": None, "last_status": "never_run",
+            "companies_scanned": 0, "transactions_stored": 0,
+            "alerts_created": 0, "total_runs": 0, "last_error": None,
         }
 
-    r = results[0]
+    # Activist scanner
+    activist = await _get_scanner_state("activist_scanner", [
+        "last_run_at", "last_status", "filings_discovered",
+        "filings_stored", "filings_skipped", "alerts_created",
+        "total_runs", "last_error",
+    ])
+    if not activist:
+        activist = {
+            "last_run_at": None, "last_status": "never_run",
+            "filings_discovered": 0, "filings_stored": 0,
+            "filings_skipped": 0, "alerts_created": 0,
+            "total_runs": 0, "last_error": None,
+        }
+
     return {
-        "status": r.get("last_status") or "unknown",
-        "last_run_at": r.get("last_run_at"),
-        "companies_scanned": r.get("companies_scanned") or 0,
-        "transactions_stored": r.get("transactions_stored") or 0,
-        "alerts_created": r.get("alerts_created") or 0,
-        "total_runs": r.get("total_runs") or 0,
-        "last_error": r.get("last_error"),
+        "form4_scanner": form4,
+        "activist_scanner": activist,
     }
 
 
 async def _run_scanner():
-    """Run the scanner in-process (for manual trigger)."""
+    """Run the Form 4 scanner in-process."""
     try:
         from scanner.form4_scanner import run_scanner
         await run_scanner()
     except Exception as e:
-        logger.error(f"Manual scanner trigger failed: {e}")
+        logger.error(f"Manual Form 4 scanner trigger failed: {e}")
+
+
+async def _run_activist_scanner():
+    """Run the activist scanner in-process."""
+    try:
+        from scanner.activist_scanner import run_scanner
+        await run_scanner()
+    except Exception as e:
+        logger.error(f"Manual activist scanner trigger failed: {e}")
 
 
 @router.post("/trigger")
 async def trigger_scanner(background_tasks: BackgroundTasks):
-    """Manually trigger a scanner run via BackgroundTasks."""
+    """Manually trigger the Form 4 scanner."""
     background_tasks.add_task(_run_scanner)
-    return {"status": "triggered", "message": "Scanner run started in background"}
+    return {"status": "triggered", "message": "Form 4 scanner started in background"}
+
+
+@router.post("/trigger/activist")
+async def trigger_activist_scanner(background_tasks: BackgroundTasks):
+    """Manually trigger the activist scanner."""
+    background_tasks.add_task(_run_activist_scanner)
+    return {"status": "triggered", "message": "Activist scanner started in background"}

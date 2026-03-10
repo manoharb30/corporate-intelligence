@@ -291,9 +291,9 @@ export default function Accuracy() {
                       href={`/signal/CLUSTER-${s.cik}-${s.signal_date}`}
                       className="text-primary-600 hover:underline font-medium"
                     >
-                      {s.company_name.length > 30
-                        ? s.company_name.slice(0, 28) + '...'
-                        : s.company_name}
+                      {(s.company_name || s.ticker || s.cik).length > 30
+                        ? (s.company_name || s.ticker || s.cik).slice(0, 28) + '...'
+                        : (s.company_name || s.ticker || s.cik)}
                     </a>
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">{s.ticker || '--'}</td>

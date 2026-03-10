@@ -315,29 +315,39 @@ class FeedService:
         return "low", "SEC Filing"
 
     @staticmethod
-    def compute_combined_signal(signal_level: str, insider_ctx: Optional[InsiderContext]) -> str:
+    def compute_combined_signal(
+        signal_level: str,
+        insider_ctx: Optional[InsiderContext],
+        has_activist_overlap: bool = False,
+    ) -> str:
         """
         Layer insider trade data on top of 8-K signal level.
 
         Returns combined signal level: critical, high_bearish, high, medium, low
+
+        If has_activist_overlap is True, the company also has a 13D filing nearby,
+        which upgrades the signal one tier (high→critical, medium→high).
         """
-        if not insider_ctx or insider_ctx.trade_count == 0:
-            return signal_level
+        level = signal_level
 
-        # Only upgrade/downgrade based on near-filing trades (±90d)
-        # All-trades direction is informational context only
-        if insider_ctx.near_filing_count == 0:
-            return signal_level
+        if insider_ctx and insider_ctx.trade_count > 0 and insider_ctx.near_filing_count > 0:
+            if level == "high":
+                if insider_ctx.near_filing_direction == "buying":
+                    level = "critical"
+                elif insider_ctx.near_filing_direction == "selling":
+                    level = "high_bearish"
+            elif level == "medium":
+                if insider_ctx.near_filing_direction == "buying":
+                    level = "high"
 
-        if signal_level == "high":
-            if insider_ctx.near_filing_direction == "buying":
-                return "critical"
-            if insider_ctx.near_filing_direction == "selling":
-                return "high_bearish"
-        elif signal_level == "medium":
-            if insider_ctx.near_filing_direction == "buying":
-                return "high"
-        return signal_level
+        # Activist 13D overlap upgrades by one tier
+        if has_activist_overlap:
+            if level == "high":
+                level = "critical"
+            elif level == "medium":
+                level = "high"
+
+        return level
 
     @staticmethod
     async def get_db_stats() -> dict:
@@ -538,7 +548,7 @@ class FeedService:
                         except (ValueError, TypeError):
                             time_desc = ""
 
-                        label = title.split(",")[0].strip() if title else name.split()[-1]
+                        label = title.split(",")[0].strip() if title else name.split()[0].title()
                         action = "bought" if trade_type == "buy" else "exercised & held"
                         if val >= 10000:
                             notable.append(f"{label} {action} ${val:,.0f} {time_desc}")
@@ -677,6 +687,22 @@ class FeedService:
                 accession_number=data["accession_number"],
             ))
 
+        # Check which companies have activist 13D filings (for compound signal upgrade)
+        activist_ciks: set[str] = set()
+        try:
+            signal_ciks = list(set(s.cik for s in signals))
+            if signal_ciks:
+                activist_query = """
+                    MATCH (af:ActivistFiling)-[:TARGETS]->(c:Company)
+                    WHERE c.cik IN $ciks
+                      AND af.filing_date >= toString(date() - duration({days: 180}))
+                    RETURN DISTINCT c.cik AS cik
+                """
+                activist_results = await Neo4jClient.execute_query(activist_query, {"ciks": signal_ciks})
+                activist_ciks = {r["cik"] for r in activist_results}
+        except Exception as e:
+            logger.warning(f"Failed to check activist overlap: {e}")
+
         # Enrich with insider context
         try:
             insider_contexts = await FeedService.get_insider_context_batch(signals)
@@ -685,9 +711,13 @@ class FeedService:
                 ctx = insider_contexts.get(key)
                 if ctx:
                     s.insider_context = ctx
-                    s.combined_signal_level = FeedService.compute_combined_signal(s.signal_level, ctx)
+                    s.combined_signal_level = FeedService.compute_combined_signal(
+                        s.signal_level, ctx, has_activist_overlap=s.cik in activist_ciks,
+                    )
                 else:
-                    s.combined_signal_level = s.signal_level
+                    s.combined_signal_level = FeedService.compute_combined_signal(
+                        s.signal_level, None, has_activist_overlap=s.cik in activist_ciks,
+                    )
         except Exception as e:
             logger.warning(f"Failed to enrich signals with insider context: {e}")
             for s in signals:
@@ -762,6 +792,34 @@ class FeedService:
                     ))
             except Exception as e:
                 logger.warning(f"Failed to merge insider sell cluster signals: {e}")
+
+            # Merge compound signals (13D + insider clusters + 8-K overlap)
+            try:
+                from app.services.compound_signal_service import CompoundSignalService
+                compound_signals = await CompoundSignalService.detect_compound_signals(days=days)
+                existing_ciks = {s.cik for s in signals}
+                for cs in compound_signals:
+                    # Skip if we already have a higher-priority signal for this company
+                    if cs.cik in existing_ciks:
+                        continue
+                    signals.append(SignalItem(
+                        company_name=cs.company_name,
+                        cik=cs.cik,
+                        ticker=cs.ticker,
+                        filing_date=cs.signal_date,
+                        signal_level="high",
+                        signal_summary=cs.one_liner,
+                        items=[],
+                        item_names=[],
+                        persons_mentioned=[],
+                        accession_number=cs.accession_number,
+                        combined_signal_level="critical" if cs.score >= 80 else "high",
+                        insider_context=None,
+                        signal_type="compound",
+                        cluster_detail=None,
+                    ))
+            except Exception as e:
+                logger.warning(f"Failed to merge compound signals: {e}")
 
         # Sort by combined level then by date
         combined_order = {"critical": 0, "high_bearish": 1, "high": 2, "medium": 3, "low": 4}
@@ -1058,6 +1116,7 @@ class FeedService:
             scan_result.companies_discovered = len(filers)
             scan_result.message = f"Found {len(filers)} companies, starting scan..."
             logger.info(f"Market scan: discovered {len(filers)} unique 8-K filers")
+            print(f"[Market Scan] Discovered {len(filers)} 8-K filers", flush=True)
         except Exception as e:
             scan_result.status = "error"
             scan_result.message = f"Discovery failed: {e}"
@@ -1081,6 +1140,12 @@ class FeedService:
                     f"Market scan [{scan_result.companies_scanned}/{scan_result.companies_discovered}] "
                     f"{filer['name']}: {result['events_stored']} events"
                 )
+                if scan_result.companies_scanned % 10 == 0 or scan_result.companies_scanned == scan_result.companies_discovered:
+                    print(
+                        f"[Market Scan] [{scan_result.companies_scanned}/{scan_result.companies_discovered}] "
+                        f"{scan_result.events_stored} events, {len(scan_result.errors)} errors",
+                        flush=True,
+                    )
 
                 # Also scan for officer/director data (latest DEF 14A only)
                 try:
@@ -1105,6 +1170,7 @@ class FeedService:
             except Exception as e:
                 scan_result.errors.append({"company": filer["name"], "error": str(e)})
                 logger.error(f"Market scan error for {filer['name']}: {e}")
+                print(f"[Market Scan] ERROR: {filer['name']}: {e}", flush=True)
 
         scan_result.status = "completed"
         scan_result.message = (
@@ -1112,4 +1178,9 @@ class FeedService:
             f"{scan_result.events_stored} events found"
         )
         logger.info(scan_result.message)
+        print(
+            f"[Market Scan] COMPLETE — {scan_result.companies_scanned} companies, "
+            f"{scan_result.events_stored} events, {len(scan_result.errors)} errors",
+            flush=True,
+        )
         return scan_result

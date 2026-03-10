@@ -20,6 +20,17 @@ from app.services.trade_classifier import (
 logger = logging.getLogger(__name__)
 
 
+def _fmt_value(v: float) -> str:
+    """Format dollar value as $XXM or $XXB."""
+    if v >= 1_000_000_000:
+        return f"${v / 1_000_000_000:.1f}B"
+    if v >= 1_000_000:
+        return f"${v / 1_000_000:.1f}M"
+    if v >= 1_000:
+        return f"${v / 1_000:.0f}K"
+    return f"${v:.0f}"
+
+
 class EventDetailService:
     """Service for retrieving detailed event information with analysis."""
 
@@ -238,6 +249,13 @@ class EventDetailService:
             if confidence:
                 decision_card["confidence"] = confidence
 
+                # Confidence override (safety net for any signal type)
+                win_rate = confidence.get("win_rate", 100)
+                if win_rate < 35:
+                    decision_card["action"] = "PASS"
+                elif win_rate < 45 and decision_card["action"] == "BUY":
+                    decision_card["action"] = "WATCH"
+
         # Build company context (lightweight: top 5 officers, all directors, board connections)
         company_context = await EventDetailService._build_company_context(cik)
 
@@ -267,52 +285,89 @@ class EventDetailService:
         ticker: Optional[str],
         filing_date: str,
     ) -> dict:
-        """Build the 30-second decision card."""
+        """Build the 30-second decision card.
+
+        Hybrid logic:
+        - 8-K filing signals (material_agreement, exec_change, etc.) are lagging
+          indicators — max recommendation is WATCH (intelligence, not trade signal).
+        - Cluster signals are leading indicators — keep BUY/WATCH/PASS logic.
+        - Confidence override: win_rate < 45% → downgrade BUY to WATCH,
+          win_rate < 35% → downgrade to PASS.
+        """
         insider_direction = "none"
+        insider_trade_count = 0
+        insider_sell_value = 0
+        insider_buy_value = 0
         if insider_context_data:
             insider_direction = insider_context_data.get("net_direction", "none")
+            insider_trade_count = insider_context_data.get("trade_count", 0)
+            insider_sell_value = insider_context_data.get("total_sell_value", 0)
+            insider_buy_value = insider_context_data.get("total_buy_value", 0)
 
-        # Action mapping
+        # Determine if this is an 8-K filing signal (lagging indicator)
+        is_8k_signal = len(item_numbers) > 0
+
         level = combined_signal_level or signal_level
-        if level in ("critical", "high"):
-            if insider_direction == "buying":
-                action = "BUY"
+
+        if is_8k_signal:
+            # 8-K filings are lagging indicators — max WATCH
+            if level in ("high_bearish",):
+                action = "PASS"
             else:
                 action = "WATCH"
-        elif level == "high_bearish":
-            action = "PASS"
-        elif level == "medium":
-            if insider_direction == "buying":
-                action = "WATCH"
+            conviction = "MEDIUM" if level in ("critical", "high", "high_bearish") else "LOW"
+        else:
+            # Cluster signals — keep existing logic (these work)
+            if level in ("critical", "high"):
+                if insider_direction == "buying":
+                    action = "BUY"
+                else:
+                    action = "WATCH"
+            elif level == "high_bearish":
+                action = "PASS"
+            elif level == "medium":
+                if insider_direction == "buying":
+                    action = "WATCH"
+                else:
+                    action = "PASS"
             else:
                 action = "PASS"
-        else:
-            action = "PASS"
 
-        # Conviction from combined signal level
-        conviction_map = {
-            "critical": "HIGH",
-            "high": "HIGH",
-            "high_bearish": "HIGH",
-            "medium": "MEDIUM",
-            "low": "LOW",
-        }
-        conviction = conviction_map.get(level, "LOW")
+            conviction_map = {
+                "critical": "HIGH",
+                "high": "HIGH",
+                "high_bearish": "HIGH",
+                "medium": "MEDIUM",
+                "low": "LOW",
+            }
+            conviction = conviction_map.get(level, "LOW")
 
-        # One-liner: punchy version of signal + insider context
+        # One-liner: intelligence framing for 8-K, action framing for clusters
         parts = []
-        if "1.01" in item_numbers:
-            parts.append("Material Agreement")
-            if any(i in item_numbers for i in ("5.02", "5.03")):
-                parts.append("+ leadership changes")
+        if is_8k_signal:
+            if "1.01" in item_numbers:
+                parts.append("Material Agreement filed")
+                if any(i in item_numbers for i in ("5.02", "5.03")):
+                    parts.append("+ leadership changes")
+            else:
+                parts.append(signal_summary)
+
+            # Emphasize pre-filing insider activity
+            if insider_trade_count > 0:
+                if insider_sell_value > 0:
+                    parts.append(f"— insiders sold {_fmt_value(insider_sell_value)} near this filing")
+                elif insider_direction == "buying":
+                    parts.append("— insider buying detected near filing")
+                else:
+                    parts.append(f"— {insider_trade_count} insider trades near filing")
         else:
             parts.append(signal_summary)
+            if insider_context_data and insider_trade_count > 0:
+                if insider_context_data.get("cluster_activity"):
+                    parts.append(f"with insider cluster {insider_direction}")
+                elif insider_direction != "none":
+                    parts.append(f"with insider {insider_direction}")
 
-        if insider_context_data and insider_context_data.get("trade_count", 0) > 0:
-            if insider_context_data.get("cluster_activity"):
-                parts.append(f"with insider cluster {insider_direction}")
-            elif insider_direction != "none":
-                parts.append(f"with insider {insider_direction}")
         one_liner = " ".join(parts)
 
         # Days since filing

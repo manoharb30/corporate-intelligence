@@ -158,3 +158,16 @@ FOR (a:Alert) ON (a.dedup_key);
 
 CREATE INDEX alert_company_cik_idx IF NOT EXISTS
 FOR (a:Alert) ON (a.company_cik);
+
+// ActivistFiling indexes
+CREATE INDEX activist_filing_date_idx IF NOT EXISTS
+FOR (af:ActivistFiling) ON (af.filing_date);
+
+CREATE INDEX activist_filing_filer_cik_idx IF NOT EXISTS
+FOR (af:ActivistFiling) ON (af.filer_cik);
+
+CREATE INDEX activist_filing_signal_level_idx IF NOT EXISTS
+FOR (af:ActivistFiling) ON (af.signal_level);
+
+CREATE INDEX activist_filing_target_cik_idx IF NOT EXISTS
+FOR (af:ActivistFiling) ON (af.target_cik);

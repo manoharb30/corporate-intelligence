@@ -157,6 +157,12 @@ class Schedule13Record(BaseModel):
     confidence: float = Field(ge=0, le=1)
     raw_text: Optional[str] = None
 
+    # 13D-specific fields
+    filer_cik: Optional[str] = Field(None, description="CIK of the filer")
+    reporting_person_type: Optional[str] = Field(None, description="Type code from cover page row 14 (IA, IN, CO, etc.)")
+    purpose_text: Optional[str] = Field(None, description="Full Item 4 purpose text")
+    is_amendment: bool = Field(False, description="Whether this is a 13D/A amendment")
+
     # Citation fields
     source_section: Optional[str] = Field(None, description="Section where this was found")
     source_table: Optional[str] = Field(None, description="Table name if from a table")
