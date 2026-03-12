@@ -11,7 +11,7 @@ const features = [
   { text: 'Historical backtest data (Mar 2024 \u2013 present)', accent: 'gray' },
   { text: 'Signal metadata: insider names, titles, transaction amounts, timing', accent: 'gray' },
   { text: 'Company profiles with insider activity history', accent: 'gray' },
-  { text: 'Live scorecard with SPY benchmark', accent: 'gray' },
+  { text: 'Live performance tracker vs market benchmark', accent: 'gray' },
   { text: 'Coverage: 8,900+ US public companies', accent: 'gray' },
   { text: 'Update frequency: Daily scans', accent: 'gray' },
 ]
@@ -96,7 +96,7 @@ export default function Pricing() {
           </ul>
 
           <a
-            href="mailto:manohar@lookinsight.ai?subject=LookInsight%20AI%20%E2%80%94%20Institutional%20Access"
+            href="mailto:hello@lookinsight.ai?subject=LookInsight%20AI%20%E2%80%94%20Institutional%20Access"
             className="block w-full text-center py-3 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-semibold text-sm transition-colors"
           >
             Get Started
@@ -221,7 +221,7 @@ export default function Pricing() {
         </p>
         <div className="flex items-center justify-center gap-4 flex-wrap">
           <a
-            href="mailto:manohar@lookinsight.ai?subject=LookInsight%20AI%20%E2%80%94%20Institutional%20Access"
+            href="mailto:hello@lookinsight.ai?subject=LookInsight%20AI%20%E2%80%94%20Institutional%20Access"
             className="px-6 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 font-medium text-sm"
           >
             Get Started
