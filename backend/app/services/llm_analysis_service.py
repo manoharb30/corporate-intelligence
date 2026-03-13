@@ -169,7 +169,7 @@ class LLMAnalysisService:
             "item_number": item_number,
         })
 
-        if results and results[0].get("summary"):
+        if results and results[0].get("summary") and not str(results[0]["summary"]).startswith("Analysis failed"):
             r = results[0]
             return {
                 "agreement_type": r["agreement_type"] or "Unknown",
@@ -185,6 +185,11 @@ class LLMAnalysisService:
 
         # Run new analysis
         analysis = await LLMAnalysisService.analyze_filing(raw_text, item_number, company_name)
+
+        # Don't cache failed analyses
+        if analysis["summary"].startswith("Analysis failed"):
+            analysis["cached"] = False
+            return analysis
 
         # Cache on the Event node (v2 with citations)
         cache_store_query = """
