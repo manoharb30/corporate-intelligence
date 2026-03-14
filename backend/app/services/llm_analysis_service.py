@@ -3,6 +3,7 @@
 import json
 import logging
 from datetime import datetime
+from typing import Optional
 
 import anthropic
 
@@ -137,6 +138,43 @@ class LLMAnalysisService:
             logger.error(f"LLM analysis failed: {e}")
             empty_result["summary"] = f"Analysis failed: {str(e)}"
             return empty_result
+
+    @staticmethod
+    async def get_cached_only(
+        accession_number: str,
+        item_number: str,
+    ) -> Optional[dict]:
+        """Return cached analysis if available, otherwise None."""
+        cache_query = """
+            MATCH (e:Event {accession_number: $accession_number, item_number: $item_number})
+            WHERE e.llm_summary IS NOT NULL AND e.llm_version = 2
+            RETURN e.llm_summary as summary,
+                   e.llm_agreement_type as agreement_type,
+                   e.llm_parties as parties,
+                   e.llm_key_terms as key_terms,
+                   e.llm_forward_looking as forward_looking,
+                   e.llm_forward_looking_source as forward_looking_source,
+                   e.llm_market_implications as market_implications,
+                   e.llm_market_implications_source as market_implications_source
+        """
+        results = await Neo4jClient.execute_query(cache_query, {
+            "accession_number": accession_number,
+            "item_number": item_number,
+        })
+        if results and results[0].get("summary") and not str(results[0]["summary"]).startswith("Analysis failed"):
+            r = results[0]
+            return {
+                "agreement_type": r["agreement_type"] or "Unknown",
+                "summary": r["summary"],
+                "parties_involved": json.loads(r["parties"]) if r.get("parties") else [],
+                "key_terms": json.loads(r["key_terms"]) if r.get("key_terms") else [],
+                "forward_looking": r["forward_looking"] or "",
+                "forward_looking_source": r["forward_looking_source"] or "",
+                "market_implications": r["market_implications"] or "",
+                "market_implications_source": r["market_implications_source"] or "",
+                "cached": True,
+            }
+        return None
 
     @staticmethod
     async def get_or_analyze(

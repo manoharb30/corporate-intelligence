@@ -665,6 +665,20 @@ class AccuracyService:
         return stats
 
     @staticmethod
+    def get_confidence_stats_cached() -> Optional[dict]:
+        """Return cached confidence stats if available, or None.
+
+        Synchronous — never triggers the expensive computation.
+        Safe to call on every request without blocking.
+        """
+        cache_key = "confidence_stats"
+        if cache_key in _accuracy_cache:
+            ts, data = _accuracy_cache[cache_key]
+            if time.time() - ts < _CACHE_TTL:
+                return data
+        return None
+
+    @staticmethod
     async def get_top_hits(limit: int = 3) -> list[dict]:
         """Return the top N hits sorted by proof_score for the proof wall.
 

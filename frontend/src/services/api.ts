@@ -552,6 +552,7 @@ export interface EventDetailAnalysis {
   market_implications: string
   market_implications_source: string
   cached?: boolean
+  loading?: boolean
 }
 
 export interface EventTimelineEntry {
@@ -642,6 +643,8 @@ export interface EventDetailResponse {
 export const eventDetailApi = {
   getDetail: (accessionNumber: string) =>
     api.get<EventDetailResponse>(`/event-detail/${accessionNumber}`),
+  getAnalysis: (accessionNumber: string, signal?: AbortSignal) =>
+    api.get(`/event-detail/${accessionNumber}/analysis`, { signal }),
 }
 
 // Citation types

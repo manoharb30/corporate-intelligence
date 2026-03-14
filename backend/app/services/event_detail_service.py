@@ -1,6 +1,8 @@
 """Service for building event detail views with LLM analysis and timeline."""
 
+import asyncio
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -112,7 +114,40 @@ class EventDetailService:
         }
 
     @staticmethod
-    async def get_event_detail(accession_number: str, confidence_stats: Optional[dict] = None) -> Optional[dict]:
+    @staticmethod
+    async def get_analysis_only(accession_number: str) -> Optional[dict]:
+        """Get LLM analysis for an 8-K filing, running it if not cached."""
+        event_query = """
+            MATCH (c:Company)-[:FILED_EVENT]->(e:Event)
+            WHERE e.accession_number = $accession_number
+            RETURN c.name as company_name, e.item_number as item_number,
+                   e.raw_text as raw_text
+            ORDER BY size(coalesce(e.raw_text, '')) DESC
+            LIMIT 1
+        """
+        results = await Neo4jClient.execute_query(
+            event_query, {"accession_number": accession_number}
+        )
+        if not results:
+            return None
+
+        r = results[0]
+        analysis = await LLMAnalysisService.get_or_analyze(
+            accession_number=accession_number,
+            item_number=r["item_number"],
+            raw_text=r["raw_text"] or "",
+            company_name=r["company_name"],
+        )
+
+        # Auto-link extracted parties
+        if not analysis.get("cached"):
+            await PartyLinkerService.link_event_parties(
+                accession_number, r["item_number"]
+            )
+
+        return analysis
+
+    async def get_event_detail(accession_number: str, confidence_stats: Optional[dict] = None, skip_llm: bool = False) -> Optional[dict]:
         """
         Get full event detail including LLM analysis and company timeline.
 
@@ -180,18 +215,38 @@ class EventDetailService:
         # Get LLM analysis for the primary item (first/most significant)
         # Use the item with the most text, or the first one
         primary_item = max(items, key=lambda x: len(x.get("raw_text", "")))
-        analysis = await LLMAnalysisService.get_or_analyze(
-            accession_number=accession_number,
-            item_number=primary_item["item_number"],
-            raw_text=primary_item["raw_text"],
-            company_name=company_name,
-        )
 
-        # Auto-link extracted parties to Company nodes (creates DEAL_WITH edges)
-        if not analysis.get("cached"):
-            await PartyLinkerService.link_event_parties(
-                accession_number, primary_item["item_number"]
+        if skip_llm:
+            # Return cached analysis if available, otherwise a loading placeholder
+            analysis = await LLMAnalysisService.get_cached_only(
+                accession_number=accession_number,
+                item_number=primary_item["item_number"],
             )
+            if not analysis:
+                analysis = {
+                    "agreement_type": "Loading...",
+                    "summary": "",
+                    "parties_involved": [],
+                    "key_terms": [],
+                    "forward_looking": "",
+                    "forward_looking_source": "",
+                    "market_implications": "",
+                    "market_implications_source": "",
+                    "loading": True,
+                }
+        else:
+            analysis = await LLMAnalysisService.get_or_analyze(
+                accession_number=accession_number,
+                item_number=primary_item["item_number"],
+                raw_text=primary_item["raw_text"],
+                company_name=company_name,
+            )
+
+            # Auto-link extracted parties to Company nodes (creates DEAL_WITH edges)
+            if not analysis.get("cached"):
+                await PartyLinkerService.link_event_parties(
+                    accession_number, primary_item["item_number"]
+                )
 
         # Get deal connections for this company
         deals = await PartyLinkerService.get_company_deals(cik)
@@ -229,15 +284,18 @@ class EventDetailService:
         except Exception as e:
             logger.warning(f"Failed to compute insider context for event detail: {e}")
 
-        # Build decision card
-        decision_card = EventDetailService._build_decision_card(
-            combined_signal_level=combined_signal_level,
-            signal_level=signal_level,
-            signal_summary=signal_summary,
-            insider_context_data=insider_context_data,
-            item_numbers=item_numbers,
-            ticker=ticker,
-            filing_date=first["filing_date"],
+        # Build decision card (runs in thread to avoid yfinance blocking event loop)
+        loop = asyncio.get_event_loop()
+        decision_card = await loop.run_in_executor(
+            None,
+            EventDetailService._build_decision_card,
+            combined_signal_level,
+            signal_level,
+            signal_summary,
+            insider_context_data,
+            item_numbers,
+            ticker,
+            first["filing_date"],
         )
 
         # Add confidence badge from precomputed stats

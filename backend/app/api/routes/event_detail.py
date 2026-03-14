@@ -48,12 +48,16 @@ async def get_event_detail(accession_number: str):
     Returns the event, LLM analysis (cached or freshly generated),
     and an interleaved timeline of events + insider trades.
 
+    For 8-K signals, if LLM analysis is not cached, the analysis field
+    will contain a placeholder. Use the /analysis endpoint to fetch it.
+
     Example:
         GET /api/event-detail/0001193125-23-237963
     """
     # Fetch confidence stats (cached 4h) for decision card badges
+    # Use cached value only — don't block page load on cold computation
     try:
-        confidence_stats = await AccuracyService.get_confidence_stats()
+        confidence_stats = AccuracyService.get_confidence_stats_cached()
     except Exception as e:
         logger.warning(f"Failed to fetch confidence stats: {e}")
         confidence_stats = None
@@ -63,9 +67,24 @@ async def get_event_detail(accession_number: str):
     elif accession_number.startswith("CLUSTER-") or accession_number.startswith("SELL-CLUSTER-"):
         result = await InsiderClusterService.get_cluster_detail(accession_number, confidence_stats=confidence_stats)
     else:
-        result = await EventDetailService.get_event_detail(accession_number, confidence_stats=confidence_stats)
+        result = await EventDetailService.get_event_detail(accession_number, confidence_stats=confidence_stats, skip_llm=True)
 
     if not result:
         raise HTTPException(status_code=404, detail="Event not found")
 
+    return result
+
+
+@router.get("/{accession_number}/analysis")
+async def get_event_analysis(accession_number: str):
+    """
+    Get LLM analysis for an 8-K filing. Called separately so the main
+    event detail page can load instantly while this runs in background.
+
+    Example:
+        GET /api/event-detail/0001193125-23-237963/analysis
+    """
+    result = await EventDetailService.get_analysis_only(accession_number)
+    if not result:
+        raise HTTPException(status_code=404, detail="Event not found")
     return result

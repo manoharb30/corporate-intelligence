@@ -37,6 +37,8 @@ export default function SignalStory() {
   const [expandWatch, setExpandWatch] = useState(false)
   const [expandCompanyContext, setExpandCompanyContext] = useState(false)
   const [highlightDate, setHighlightDate] = useState<string | null>(null)
+  const [analysisLoading, setAnalysisLoading] = useState(false)
+  const [abortController, setAbortController] = useState<AbortController | null>(null)
 
   useEffect(() => {
     if (accessionNumber) {
@@ -47,7 +49,27 @@ export default function SignalStory() {
         .catch(err => setError(err instanceof Error ? err.message : 'Failed to load'))
         .finally(() => setLoading(false))
     }
+    // Cancel any in-flight analysis call on navigation
+    return () => {
+      if (abortController) abortController.abort()
+    }
   }, [accessionNumber])
+
+  const fetchAnalysis = () => {
+    if (!accessionNumber || analysisLoading) return
+    const controller = new AbortController()
+    setAbortController(controller)
+    setAnalysisLoading(true)
+    eventDetailApi.getAnalysis(accessionNumber, controller.signal)
+      .then(res => {
+        setData(prev => prev ? { ...prev, analysis: res.data } : prev)
+      })
+      .catch(() => {})
+      .finally(() => {
+        setAnalysisLoading(false)
+        setAbortController(null)
+      })
+  }
 
   if (loading) {
     return (
@@ -364,11 +386,32 @@ export default function SignalStory() {
           <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-lg font-semibold text-gray-900">The Filing</h2>
-              <span className="px-3 py-1 bg-indigo-100 text-indigo-800 rounded-full text-sm font-medium">
-                {analysis.agreement_type}
-              </span>
+              {!analysisLoading && (
+                <span className="px-3 py-1 bg-indigo-100 text-indigo-800 rounded-full text-sm font-medium">
+                  {analysis.agreement_type}
+                </span>
+              )}
             </div>
 
+            {analysis.loading ? (
+              analysisLoading ? (
+                <div className="flex items-center gap-3 py-6">
+                  <div className="animate-spin h-5 w-5 border-2 border-primary-500 border-t-transparent rounded-full"></div>
+                  <p className="text-gray-500 text-sm">Analyzing filing with AI... this may take a moment</p>
+                </div>
+              ) : (
+                <div className="py-4">
+                  <button
+                    onClick={fetchAnalysis}
+                    className="px-4 py-2 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg text-sm font-medium hover:bg-indigo-100 transition-colors"
+                  >
+                    View Filing Analysis
+                  </button>
+                  <p className="text-xs text-gray-400 mt-2">AI-powered analysis of this SEC filing. First analysis may take up to a minute.</p>
+                </div>
+              )
+            ) : (
+            <>
             <p className="text-gray-700 leading-relaxed mb-4">{analysis.summary}</p>
 
             {/* Parties */}
@@ -438,6 +481,8 @@ export default function SignalStory() {
               >
                 View on SEC EDGAR &rarr;
               </a>
+            )}
+            </>
             )}
           </div>
         )}

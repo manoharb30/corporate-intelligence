@@ -1,7 +1,9 @@
 """Service for generating the signal feed."""
 
+import asyncio
 import logging
 import re
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Optional
@@ -18,6 +20,10 @@ from ingestion.sec_edgar.edgar_client import SECEdgarClient
 from ingestion.sec_edgar.parsers.event_parser import EventParser, Filing8KResult
 
 logger = logging.getLogger(__name__)
+
+# Feed cache — data only changes when scanners run (daily)
+_feed_cache: dict[str, tuple[float, tuple]] = {}
+_FEED_CACHE_TTL = 4 * 60 * 60  # 4 hours
 
 # Suffixes that indicate non-common-stock tickers (warrants, units, rights)
 _NON_COMMON_SUFFIXES = ("W", "WS", "U", "R")
@@ -611,6 +617,13 @@ class FeedService:
         Returns:
             Tuple of (list of SignalItem sorted by date and importance, company_filter dict or None)
         """
+        # Check cache (skip for single-company queries)
+        cache_key = f"feed_{days}_{min_level}"
+        if not cik and cache_key in _feed_cache:
+            ts, cached_data = _feed_cache[cache_key]
+            if time.time() - ts < _FEED_CACHE_TTL:
+                return cached_data
+
         # Query stored events
         cik_clause = "AND c.cik = $cik" if cik else ""
         query = f"""
@@ -723,103 +736,114 @@ class FeedService:
             for s in signals:
                 s.combined_signal_level = s.signal_level
 
-        # Merge standalone insider cluster signals (no 8-K required)
+        # Merge standalone cluster + compound signals in parallel
         if not cik:
-            try:
-                from app.services.insider_cluster_service import InsiderClusterService
-                cluster_signals = await InsiderClusterService.detect_clusters_excluding_8k(
-                    days=days, window_days=30, min_level=min_level,
-                )
-                for cs in cluster_signals:
-                    d = cs.to_signal_dict()
-                    signals.append(SignalItem(
-                        company_name=d["company_name"],
-                        cik=d["cik"],
-                        ticker=d["ticker"],
-                        filing_date=d["filing_date"],
-                        signal_level=d["signal_level"],
-                        signal_summary=d["signal_summary"],
-                        items=d["items"],
-                        item_names=d["item_names"],
-                        persons_mentioned=d["persons_mentioned"],
-                        accession_number=d["accession_number"],
-                        combined_signal_level="critical" if cs.signal_level == "high" and cs.num_buyers >= 3 else d["combined_signal_level"],
-                        insider_context=InsiderContext(
-                            net_direction="buying",
-                            total_buy_value=cs.total_buy_value,
-                            total_sell_value=0,
-                            notable_trades=[f"{b.name} bought ${b.total_value:,.0f}" for b in cs.buyers[:5]],
-                            cluster_activity=cs.num_buyers >= 3,
-                            trade_count=sum(b.trade_count for b in cs.buyers),
-                            near_filing_buy_type="open_market",
-                        ),
-                        signal_type="insider_cluster",
-                        cluster_detail=d.get("cluster_detail"),
-                    ))
-            except Exception as e:
-                logger.warning(f"Failed to merge insider cluster signals: {e}")
+            from app.services.insider_cluster_service import InsiderClusterService
+            from app.services.compound_signal_service import CompoundSignalService
 
-            # Merge standalone insider SELL cluster signals
-            try:
-                sell_cluster_signals = await InsiderClusterService.detect_sell_clusters_excluding_8k(
-                    days=days, window_days=30, min_level=min_level,
-                )
-                for cs in sell_cluster_signals:
-                    d = cs.to_signal_dict()
-                    signals.append(SignalItem(
-                        company_name=d["company_name"],
-                        cik=d["cik"],
-                        ticker=d["ticker"],
-                        filing_date=d["filing_date"],
-                        signal_level=d["signal_level"],
-                        signal_summary=d["signal_summary"],
-                        items=d["items"],
-                        item_names=d["item_names"],
-                        persons_mentioned=d["persons_mentioned"],
-                        accession_number=d["accession_number"],
-                        combined_signal_level="high_bearish" if cs.signal_level == "high" else d["combined_signal_level"],
-                        insider_context=InsiderContext(
-                            net_direction="selling",
-                            total_buy_value=0,
-                            total_sell_value=cs.total_buy_value,
-                            notable_trades=[f"{b.name} sold ${b.total_value:,.0f}" for b in cs.buyers[:5]],
-                            cluster_activity=cs.num_buyers >= 3,
-                            trade_count=sum(b.trade_count for b in cs.buyers),
-                            near_filing_buy_type="none",
-                        ),
-                        signal_type="insider_sell_cluster",
-                        cluster_detail=d.get("cluster_detail"),
-                    ))
-            except Exception as e:
-                logger.warning(f"Failed to merge insider sell cluster signals: {e}")
+            async def _fetch_buy_clusters():
+                try:
+                    return await InsiderClusterService.detect_clusters_excluding_8k(
+                        days=days, window_days=30, min_level=min_level,
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to fetch buy clusters: {e}")
+                    return []
 
-            # Merge compound signals (13D + insider clusters + 8-K overlap)
-            try:
-                from app.services.compound_signal_service import CompoundSignalService
-                compound_signals = await CompoundSignalService.detect_compound_signals(days=days)
-                existing_ciks = {s.cik for s in signals}
-                for cs in compound_signals:
-                    # Skip if we already have a higher-priority signal for this company
-                    if cs.cik in existing_ciks:
-                        continue
-                    signals.append(SignalItem(
-                        company_name=cs.company_name,
-                        cik=cs.cik,
-                        ticker=cs.ticker,
-                        filing_date=cs.signal_date,
-                        signal_level="high",
-                        signal_summary=cs.one_liner,
-                        items=[],
-                        item_names=[],
-                        persons_mentioned=[],
-                        accession_number=cs.accession_number,
-                        combined_signal_level="critical" if cs.score >= 80 else "high",
-                        insider_context=None,
-                        signal_type="compound",
-                        cluster_detail=None,
-                    ))
-            except Exception as e:
-                logger.warning(f"Failed to merge compound signals: {e}")
+            async def _fetch_sell_clusters():
+                try:
+                    return await InsiderClusterService.detect_sell_clusters_excluding_8k(
+                        days=days, window_days=30, min_level=min_level,
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to fetch sell clusters: {e}")
+                    return []
+
+            async def _fetch_compounds():
+                try:
+                    return await CompoundSignalService.detect_compound_signals(days=days)
+                except Exception as e:
+                    logger.warning(f"Failed to fetch compound signals: {e}")
+                    return []
+
+            cluster_signals, sell_cluster_signals, compound_signals = await asyncio.gather(
+                _fetch_buy_clusters(), _fetch_sell_clusters(), _fetch_compounds()
+            )
+
+            for cs in cluster_signals:
+                d = cs.to_signal_dict()
+                signals.append(SignalItem(
+                    company_name=d["company_name"],
+                    cik=d["cik"],
+                    ticker=d["ticker"],
+                    filing_date=d["filing_date"],
+                    signal_level=d["signal_level"],
+                    signal_summary=d["signal_summary"],
+                    items=d["items"],
+                    item_names=d["item_names"],
+                    persons_mentioned=d["persons_mentioned"],
+                    accession_number=d["accession_number"],
+                    combined_signal_level="critical" if cs.signal_level == "high" and cs.num_buyers >= 3 else d["combined_signal_level"],
+                    insider_context=InsiderContext(
+                        net_direction="buying",
+                        total_buy_value=cs.total_buy_value,
+                        total_sell_value=0,
+                        notable_trades=[f"{b.name} bought ${b.total_value:,.0f}" for b in cs.buyers[:5]],
+                        cluster_activity=cs.num_buyers >= 3,
+                        trade_count=sum(b.trade_count for b in cs.buyers),
+                        near_filing_buy_type="open_market",
+                    ),
+                    signal_type="insider_cluster",
+                    cluster_detail=d.get("cluster_detail"),
+                ))
+
+            for cs in sell_cluster_signals:
+                d = cs.to_signal_dict()
+                signals.append(SignalItem(
+                    company_name=d["company_name"],
+                    cik=d["cik"],
+                    ticker=d["ticker"],
+                    filing_date=d["filing_date"],
+                    signal_level=d["signal_level"],
+                    signal_summary=d["signal_summary"],
+                    items=d["items"],
+                    item_names=d["item_names"],
+                    persons_mentioned=d["persons_mentioned"],
+                    accession_number=d["accession_number"],
+                    combined_signal_level="high_bearish" if cs.signal_level == "high" else d["combined_signal_level"],
+                    insider_context=InsiderContext(
+                        net_direction="selling",
+                        total_buy_value=0,
+                        total_sell_value=cs.total_buy_value,
+                        notable_trades=[f"{b.name} sold ${b.total_value:,.0f}" for b in cs.buyers[:5]],
+                        cluster_activity=cs.num_buyers >= 3,
+                        trade_count=sum(b.trade_count for b in cs.buyers),
+                        near_filing_buy_type="none",
+                    ),
+                    signal_type="insider_sell_cluster",
+                    cluster_detail=d.get("cluster_detail"),
+                ))
+
+            existing_ciks = {s.cik for s in signals}
+            for cs in compound_signals:
+                if cs.cik in existing_ciks:
+                    continue
+                signals.append(SignalItem(
+                    company_name=cs.company_name,
+                    cik=cs.cik,
+                    ticker=cs.ticker,
+                    filing_date=cs.signal_date,
+                    signal_level="high",
+                    signal_summary=cs.one_liner,
+                    items=[],
+                    item_names=[],
+                    persons_mentioned=[],
+                    accession_number=cs.accession_number,
+                    combined_signal_level="critical" if cs.score >= 80 else "high",
+                    insider_context=None,
+                    signal_type="compound",
+                    cluster_detail=None,
+                ))
 
         # Sort by combined level then by date
         combined_order = {"critical": 0, "high_bearish": 1, "high": 2, "medium": 3, "low": 4}
@@ -849,7 +873,13 @@ class FeedService:
                     "ticker": pick_ticker(r.get("tickers")),
                 }
 
-        return signals, company_filter
+        result = (signals, company_filter)
+
+        # Cache full feed results (skip single-company queries)
+        if not cik:
+            _feed_cache[cache_key] = (time.time(), result)
+
+        return result
 
     @staticmethod
     async def get_feed_summary() -> dict:
