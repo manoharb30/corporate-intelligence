@@ -8,6 +8,7 @@ from app.services.insider_cluster_service import (
     InsiderClusterService,
     InsiderClusterSignal,
     BuyerDetail,
+    classify_insider_role,
 )
 
 
@@ -28,6 +29,62 @@ def _make_trade(name, code, value, date, title=""):
 
 def _today_minus(days):
     return (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+
+
+class TestClassifyInsiderRole:
+    """Tests for classify_insider_role()."""
+
+    def test_ceo(self):
+        assert classify_insider_role("CEO") == "officer"
+
+    def test_chief_executive_officer(self):
+        assert classify_insider_role("Chief Executive Officer") == "officer"
+
+    def test_cfo(self):
+        assert classify_insider_role("CFO") == "officer"
+
+    def test_president(self):
+        assert classify_insider_role("President and CEO") == "officer"
+
+    def test_vp(self):
+        assert classify_insider_role("VP of Engineering") == "officer"
+
+    def test_vice_president(self):
+        assert classify_insider_role("Senior Vice President") == "officer"
+
+    def test_evp(self):
+        assert classify_insider_role("EVP, General Counsel") == "officer"
+
+    def test_treasurer(self):
+        assert classify_insider_role("Treasurer") == "officer"
+
+    def test_general_counsel(self):
+        assert classify_insider_role("VP, General Counsel and Secretary") == "officer"
+
+    def test_director(self):
+        assert classify_insider_role("Director") == "director"
+
+    def test_director_complex(self):
+        assert classify_insider_role("Independent Director") == "director"
+
+    def test_ten_percent_owner(self):
+        assert classify_insider_role("10% Owner") == "owner_10pct"
+
+    def test_ten_percent_with_director(self):
+        # "10%" takes precedence
+        assert classify_insider_role("10% Owner, Director") == "owner_10pct"
+
+    def test_beneficial_owner(self):
+        assert classify_insider_role("Beneficial Owner") == "owner_10pct"
+
+    def test_empty_string(self):
+        assert classify_insider_role("") == "other"
+
+    def test_none_input(self):
+        assert classify_insider_role("") == "other"
+
+    def test_unknown_title(self):
+        assert classify_insider_role("Consultant") == "other"
 
 
 class TestDetectClusters:
@@ -68,8 +125,8 @@ class TestDetectClusters:
         assert result[0].num_buyers == 2
 
     @pytest.mark.asyncio
-    async def test_one_buyer_large_value_is_medium(self):
-        """1 buyer with >$500K total -> MEDIUM signal."""
+    async def test_one_buyer_large_value_is_low(self):
+        """1 buyer with >$500K total -> LOW signal (single-buyer noise filtered)."""
         trades = [
             _make_trade("Alice", "P", 300000, _today_minus(5)),
             _make_trade("Alice", "P", 300000, _today_minus(10)),
@@ -80,7 +137,7 @@ class TestDetectClusters:
             result = await InsiderClusterService.detect_clusters(days=90, min_level="low")
 
         assert len(result) == 1
-        assert result[0].signal_level == "medium"
+        assert result[0].signal_level == "low"
         assert result[0].num_buyers == 1
         assert result[0].total_buy_value == 600000
 
@@ -160,6 +217,175 @@ class TestDetectClusters:
         assert result == []
 
 
+class TestOfficerPromotion:
+    """Tests for officer-based signal promotion (Change 2)."""
+
+    @pytest.mark.asyncio
+    async def test_two_officers_promoted_to_high(self):
+        """2 officers buying with >$200K total -> promoted to HIGH."""
+        trades = [
+            _make_trade("Alice", "P", 150000, _today_minus(5), "CEO"),
+            _make_trade("Bob", "P", 100000, _today_minus(10), "CFO"),
+        ]
+
+        with patch("app.services.insider_cluster_service.Neo4jClient") as mock_db:
+            mock_db.execute_query = AsyncMock(return_value=trades)
+            result = await InsiderClusterService.detect_clusters(days=90, min_level="low")
+
+        assert len(result) == 1
+        assert result[0].signal_level == "high"
+        assert "Officer Cluster" in result[0].signal_summary
+
+    @pytest.mark.asyncio
+    async def test_two_officers_low_value_stays_medium(self):
+        """2 officers buying with <$200K total -> stays MEDIUM (no promotion)."""
+        trades = [
+            _make_trade("Alice", "P", 50000, _today_minus(5), "CEO"),
+            _make_trade("Bob", "P", 50000, _today_minus(10), "CFO"),
+        ]
+
+        with patch("app.services.insider_cluster_service.Neo4jClient") as mock_db:
+            mock_db.execute_query = AsyncMock(return_value=trades)
+            result = await InsiderClusterService.detect_clusters(days=90, min_level="low")
+
+        assert len(result) == 1
+        assert result[0].signal_level == "medium"  # <$200K, no promotion
+
+    @pytest.mark.asyncio
+    async def test_director_and_owner_not_promoted(self):
+        """Director + 10% Owner buying -> stays MEDIUM (not officers)."""
+        trades = [
+            _make_trade("Alice", "P", 200000, _today_minus(5), "Director"),
+            _make_trade("Bob", "P", 200000, _today_minus(10), "10% Owner"),
+        ]
+
+        with patch("app.services.insider_cluster_service.Neo4jClient") as mock_db:
+            mock_db.execute_query = AsyncMock(return_value=trades)
+            result = await InsiderClusterService.detect_clusters(days=90, min_level="low")
+
+        assert len(result) == 1
+        assert result[0].signal_level == "medium"
+
+    @pytest.mark.asyncio
+    async def test_buyer_roles_populated(self):
+        """Buyer details should have role field populated."""
+        trades = [
+            _make_trade("Alice", "P", 100000, _today_minus(5), "CEO"),
+            _make_trade("Bob", "P", 50000, _today_minus(10), "Director"),
+            _make_trade("Charlie", "P", 75000, _today_minus(15), "10% Owner"),
+        ]
+
+        with patch("app.services.insider_cluster_service.Neo4jClient") as mock_db:
+            mock_db.execute_query = AsyncMock(return_value=trades)
+            result = await InsiderClusterService.detect_clusters(days=90, min_level="low")
+
+        roles = {b.name: b.role for b in result[0].buyers}
+        assert roles["Alice"] == "officer"
+        assert roles["Bob"] == "director"
+        assert roles["Charlie"] == "owner_10pct"
+
+
+class TestConvictionTiers:
+    """Tests for conviction tier classification (Change 6)."""
+
+    @pytest.mark.asyncio
+    async def test_three_buyers_two_officers_strong_buy(self):
+        """3+ buyers with 2+ officers -> strong_buy."""
+        trades = [
+            _make_trade("Alice", "P", 100000, _today_minus(5), "CEO"),
+            _make_trade("Bob", "P", 50000, _today_minus(10), "CFO"),
+            _make_trade("Charlie", "P", 75000, _today_minus(15), "COO"),
+        ]
+
+        with patch("app.services.insider_cluster_service.Neo4jClient") as mock_db:
+            mock_db.execute_query = AsyncMock(return_value=trades)
+            result = await InsiderClusterService.detect_clusters(days=90, min_level="low")
+
+        assert result[0].conviction_tier == "strong_buy"
+
+    @pytest.mark.asyncio
+    async def test_three_buyers_no_officers_buy(self):
+        """3+ buyers but no officers -> buy (not strong_buy)."""
+        trades = [
+            _make_trade("Alice", "P", 100000, _today_minus(5), "Director"),
+            _make_trade("Bob", "P", 50000, _today_minus(10), "Director"),
+            _make_trade("Charlie", "P", 75000, _today_minus(15), "10% Owner"),
+        ]
+
+        with patch("app.services.insider_cluster_service.Neo4jClient") as mock_db:
+            mock_db.execute_query = AsyncMock(return_value=trades)
+            result = await InsiderClusterService.detect_clusters(days=90, min_level="low")
+
+        assert result[0].conviction_tier == "buy"
+
+    @pytest.mark.asyncio
+    async def test_two_buyers_one_officer_buy(self):
+        """2 buyers with 1 officer -> buy."""
+        trades = [
+            _make_trade("Alice", "P", 100000, _today_minus(5), "CEO"),
+            _make_trade("Bob", "P", 50000, _today_minus(10), "Director"),
+        ]
+
+        with patch("app.services.insider_cluster_service.Neo4jClient") as mock_db:
+            mock_db.execute_query = AsyncMock(return_value=trades)
+            result = await InsiderClusterService.detect_clusters(days=90, min_level="low")
+
+        assert result[0].conviction_tier == "buy"
+
+    @pytest.mark.asyncio
+    async def test_two_buyers_no_officers_watch(self):
+        """2 buyers with no officers -> watch."""
+        trades = [
+            _make_trade("Alice", "P", 100000, _today_minus(5), "Director"),
+            _make_trade("Bob", "P", 50000, _today_minus(10), "10% Owner"),
+        ]
+
+        with patch("app.services.insider_cluster_service.Neo4jClient") as mock_db:
+            mock_db.execute_query = AsyncMock(return_value=trades)
+            result = await InsiderClusterService.detect_clusters(days=90, min_level="low")
+
+        assert result[0].conviction_tier == "watch"
+
+    @pytest.mark.asyncio
+    async def test_sell_cluster_always_watch(self):
+        """Sell clusters should always have conviction_tier='watch'."""
+        trades = [
+            _make_trade("Alice", "S", 50000, _today_minus(5), "CEO"),
+            _make_trade("Bob", "S", 30000, _today_minus(10), "CFO"),
+            _make_trade("Charlie", "S", 25000, _today_minus(15), "COO"),
+            _make_trade("Dave", "S", 20000, _today_minus(20), "VP"),
+        ]
+
+        with patch("app.services.insider_cluster_service.Neo4jClient") as mock_db:
+            mock_db.execute_query = AsyncMock(return_value=trades)
+            result = await InsiderClusterService.detect_sell_clusters(days=90, min_level="medium")
+
+        assert len(result) == 1
+        assert result[0].conviction_tier == "watch"
+
+    def test_conviction_tier_in_signal_dict(self):
+        """conviction_tier should appear in to_signal_dict() output."""
+        signal = InsiderClusterSignal(
+            cik="0001234567",
+            company_name="Test Corp",
+            ticker="TEST",
+            window_start="2026-01-01",
+            window_end="2026-01-31",
+            signal_level="high",
+            signal_summary="Open Market Cluster: 3 insiders buying",
+            num_buyers=3,
+            total_buy_value=225000,
+            buyers=[
+                BuyerDetail(name="Alice", title="CEO", total_value=100000, trade_count=1, role="officer"),
+            ],
+            conviction_tier="strong_buy",
+        )
+
+        d = signal.to_signal_dict()
+        assert d["conviction_tier"] == "strong_buy"
+        assert d["cluster_detail"]["conviction_tier"] == "strong_buy"
+
+
 class TestDetectClustersExcluding8K:
     """Tests for InsiderClusterService.detect_clusters_excluding_8k()."""
 
@@ -223,9 +449,9 @@ class TestSignalDict:
             num_buyers=3,
             total_buy_value=225000,
             buyers=[
-                BuyerDetail(name="Alice", title="CEO", total_value=100000, trade_count=1),
-                BuyerDetail(name="Bob", title="CFO", total_value=75000, trade_count=1),
-                BuyerDetail(name="Charlie", title="COO", total_value=50000, trade_count=1),
+                BuyerDetail(name="Alice", title="CEO", total_value=100000, trade_count=1, role="officer"),
+                BuyerDetail(name="Bob", title="CFO", total_value=75000, trade_count=1, role="officer"),
+                BuyerDetail(name="Charlie", title="COO", total_value=50000, trade_count=1, role="officer"),
             ],
         )
 
@@ -246,6 +472,9 @@ class TestSignalDict:
         # Cluster-specific fields
         assert d["cluster_detail"]["num_buyers"] == 3
         assert len(d["cluster_detail"]["buyers"]) == 3
+
+        # Role in buyer dicts
+        assert d["cluster_detail"]["buyers"][0]["role"] == "officer"
 
     def test_accession_number_format(self):
         """accession_number should follow CLUSTER-{cik}-{window_end} format."""

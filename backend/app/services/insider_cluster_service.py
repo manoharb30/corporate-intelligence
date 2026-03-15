@@ -22,6 +22,54 @@ from app.services.stock_price_service import StockPriceService
 logger = logging.getLogger(__name__)
 
 
+def classify_insider_role(title: str) -> str:
+    """Classify insider title into role category for signal weighting.
+
+    Officers (CEO/CFO/etc.) have the most information asymmetry,
+    followed by directors, then 10%+ institutional holders.
+
+    Returns: 'officer', 'director', 'owner_10pct', or 'other'
+    """
+    if not title:
+        return "other"
+    t = title.lower()
+    # Check 10%/beneficial owner first — most specific
+    if "10%" in t or "10 percent" in t or "beneficial owner" in t:
+        return "owner_10pct"
+    # Check for director before officer acronyms (since "cto" is a
+    # substring of "director", we need to handle this first)
+    if "director" in t:
+        # But "Director and CEO" should still be officer — check for
+        # officer keywords in the same title
+        officer_long = [
+            "chief", "president", "treasurer", "controller",
+            "general counsel", "secretary",
+        ]
+        if any(kw in t for kw in officer_long):
+            return "officer"
+        # Check C-suite acronyms as whole words
+        words = set(t.replace(",", " ").replace(";", " ").split())
+        csuite = {"ceo", "cfo", "coo", "cto", "cio", "cmo", "cso", "evp", "svp", "vp"}
+        if words & csuite:
+            return "officer"
+        return "director"
+    # Officer keywords — longer strings safe for substring matching
+    officer_long = [
+        "chief", "president", "treasurer", "controller",
+        "general counsel", "secretary",
+    ]
+    if any(kw in t for kw in officer_long):
+        return "officer"
+    # C-suite acronyms — must be whole words to avoid "cto" in "director"
+    words = set(t.replace(",", " ").replace(";", " ").split())
+    csuite = {"ceo", "cfo", "coo", "cto", "cio", "cmo", "cso", "evp", "svp", "vp"}
+    if words & csuite:
+        return "officer"
+    if "vice president" in t:
+        return "officer"
+    return "other"
+
+
 @dataclass
 class BuyerDetail:
     """Detail about a single insider buyer in a cluster."""
@@ -36,6 +84,7 @@ class BuyerDetail:
     filing_accession: str = ""
     primary_document: str = ""
     form4_url: str = ""
+    role: str = "other"  # officer, director, owner_10pct, other
 
     @property
     def avg_price_per_share(self) -> Optional[float]:
@@ -53,6 +102,7 @@ class BuyerDetail:
             "avg_price_per_share": self.avg_price_per_share,
             "trade_dates": sorted(set(self.trade_dates)),
             "form4_url": self.form4_url,
+            "role": self.role,
         }
         return d
 
@@ -72,6 +122,7 @@ class InsiderClusterSignal:
     total_buy_value: float
     buyers: list[BuyerDetail] = field(default_factory=list)
     direction: str = "buy"  # "buy" or "sell"
+    conviction_tier: str = "watch"  # strong_buy, buy, watch
 
     @property
     def accession_number(self) -> str:
@@ -113,12 +164,14 @@ class InsiderClusterSignal:
                 "near_filing_direction": net_dir,
             },
             "signal_type": sig_type,
+            "conviction_tier": self.conviction_tier,
             "cluster_detail": {
                 "window_start": self.window_start,
                 "window_end": self.window_end,
                 "num_buyers": self.num_buyers,
                 "buyers": [b.to_dict() for b in self.buyers],
                 "direction": self.direction,
+                "conviction_tier": self.conviction_tier,
             },
         }
 
@@ -264,6 +317,7 @@ class InsiderClusterService:
                         insider_cik=t.get("insider_cik") or "",
                         filing_accession=t.get("accession_number") or "",
                         primary_document=t.get("primary_document") or "",
+                        role=classify_insider_role(t.get("insider_title") or ""),
                     )
                 buyer_agg[name].total_value += val
                 buyer_agg[name].trade_count += 1
@@ -299,19 +353,34 @@ class InsiderClusterService:
                 else:
                     continue  # <3 sellers = skip entirely
             else:
-                # Buy: existing thresholds
+                # Buy: cluster thresholds — require multiple buyers
+                # Count officer buyers for role-based weighting
+                officer_count = sum(1 for b in buyers if b.role == "officer")
+
                 if num_buyers >= 3:
                     level = "high"
                     summary = f"Open Market Cluster: {num_buyers} insiders buying"
-                elif num_buyers >= 2 or total_buy_value >= 500_000:
+                elif num_buyers >= 2 and officer_count >= 2 and total_buy_value >= 200_000:
+                    # Two officers buying is highly informational — promote to HIGH
+                    level = "high"
+                    summary = f"Officer Cluster: {num_buyers} insiders buying (inc. {officer_count} officers)"
+                elif num_buyers >= 2:
                     level = "medium"
-                    if num_buyers >= 2:
-                        summary = f"Open Market Cluster: {num_buyers} insiders buying"
-                    else:
-                        summary = f"Insider Buying: ${total_buy_value:,.0f} total"
+                    summary = f"Open Market Cluster: {num_buyers} insiders buying"
                 else:
                     level = "low"
                     summary = f"Insider Purchase: {buyers[0].name}" if buyers else "Insider Purchase"
+
+            # Conviction tiers (buy direction only)
+            if direction == "buy" and level in ("high", "medium"):
+                if num_buyers >= 3 and officer_count >= 2:
+                    conviction_tier = "strong_buy"
+                elif num_buyers >= 3 or (num_buyers >= 2 and officer_count >= 1):
+                    conviction_tier = "buy"
+                else:
+                    conviction_tier = "watch"
+            else:
+                conviction_tier = "watch"
 
             # Filter by min level
             if level_order.get(level, 2) > min_level_order:
@@ -330,6 +399,7 @@ class InsiderClusterService:
                 total_buy_value=total_buy_value,
                 buyers=buyers,
                 direction=direction,
+                conviction_tier=conviction_tier,
             ))
 
         # Sort by level then date
@@ -384,6 +454,46 @@ class InsiderClusterService:
     ) -> list[InsiderClusterSignal]:
         """Detect sell clusters, excluding companies with recent 8-K signals."""
         return await InsiderClusterService.detect_clusters_excluding_8k(days, window_days, min_level, direction="sell")
+
+    @staticmethod
+    def apply_market_cap_filter(
+        clusters: list[InsiderClusterSignal],
+        min_pct: float = 0.01,
+    ) -> list[InsiderClusterSignal]:
+        """Remove clusters where purchase value is insignificant relative to market cap.
+
+        A $1M purchase at a $100B company (0.001%) is noise.
+        A $100K purchase at a $100M company (0.1%) is meaningful.
+
+        Args:
+            clusters: list of detected clusters
+            min_pct: minimum purchase-as-%-of-market-cap to keep (default 0.01%)
+
+        Returns:
+            Filtered list of clusters
+        """
+        if not clusters:
+            return clusters
+
+        filtered = []
+        for c in clusters:
+            if not c.ticker:
+                filtered.append(c)
+                continue
+            try:
+                market_cap = StockPriceService.get_market_cap(c.ticker)
+                if market_cap and market_cap > 0:
+                    pct_of_cap = (c.total_buy_value / market_cap) * 100
+                    if pct_of_cap < min_pct:
+                        logger.debug(
+                            f"Market cap filter: {c.ticker} purchase ${c.total_buy_value:,.0f} "
+                            f"is {pct_of_cap:.4f}% of ${market_cap:,.0f} mkt cap — skipping"
+                        )
+                        continue
+                filtered.append(c)
+            except Exception:
+                filtered.append(c)  # Keep on error
+        return filtered
 
     @staticmethod
     async def get_cluster_detail(cluster_id: str, confidence_stats: Optional[dict] = None) -> Optional[dict]:
@@ -521,6 +631,7 @@ class InsiderClusterService:
                     insider_cik=t.get("insider_cik") or "",
                     filing_accession=t.get("accession_number") or "",
                     primary_document=t.get("primary_document") or "",
+                    role=classify_insider_role(t.get("insider_title") or ""),
                 )
             buyer_agg[name].total_value += val
             buyer_agg[name].trade_count += 1
@@ -556,18 +667,31 @@ class InsiderClusterService:
                 signal_level = "low"
                 signal_summary = f"Insider Selling: {buyers[0].name}" if buyers else "Insider Selling"
         else:
+            officer_count = sum(1 for b in buyers if b.role == "officer")
             if num_traders >= 3:
                 signal_level = "high"
                 signal_summary = f"Open Market Cluster: {num_traders} insiders buying"
-            elif num_traders >= 2 or total_trade_value >= 500_000:
+            elif num_traders >= 2 and officer_count >= 2 and total_trade_value >= 200_000:
+                signal_level = "high"
+                signal_summary = f"Officer Cluster: {num_traders} insiders buying (inc. {officer_count} officers)"
+            elif num_traders >= 2:
                 signal_level = "medium"
-                if num_traders >= 2:
-                    signal_summary = f"Open Market Cluster: {num_traders} insiders buying"
-                else:
-                    signal_summary = f"Insider Buying: ${total_trade_value:,.0f} total"
+                signal_summary = f"Open Market Cluster: {num_traders} insiders buying"
             else:
                 signal_level = "low"
                 signal_summary = f"Insider Purchase: {buyers[0].name}" if buyers else "Insider Purchase"
+
+        # Conviction tiers (buy direction only)
+        if direction == "buy" and signal_level in ("high", "medium"):
+            if num_traders >= 3 and officer_count >= 2:
+                conviction_tier = "strong_buy"
+            elif num_traders >= 3 or (num_traders >= 2 and officer_count >= 1):
+                conviction_tier = "buy"
+            else:
+                conviction_tier = "watch"
+        else:
+            officer_count = 0
+            conviction_tier = "watch"
 
         # Build timeline entries — only open market buys (P) and sells (S)
         timeline = []
@@ -806,11 +930,13 @@ class InsiderClusterService:
                 "subsidiaries_count": 0,
             },
             "signal_type": signal_type,
+            "conviction_tier": conviction_tier,
             "cluster_detail": {
                 "window_start": window_start,
                 "window_end": window_end,
                 "num_buyers": num_traders,
                 "buyers": [b.to_dict() for b in buyers],
                 "direction": direction,
+                "conviction_tier": conviction_tier,
             },
         }

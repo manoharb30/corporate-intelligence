@@ -13,6 +13,10 @@ logger = logging.getLogger(__name__)
 _cache: dict[str, tuple[float, list[dict]]] = {}
 _CACHE_TTL = 3600  # 1 hour
 
+# Market cap cache: {ticker: (timestamp, market_cap)}
+_market_cap_cache: dict[str, tuple[float, Optional[float]]] = {}
+_MARKET_CAP_TTL = 4 * 3600  # 4 hours — market cap doesn't change fast
+
 
 class StockPriceService:
     """Fetches and caches stock price data."""
@@ -105,3 +109,25 @@ class StockPriceService:
             "price_current": latest["close"],
             "current_date": latest["date"],
         }
+
+    @staticmethod
+    def get_market_cap(ticker: str) -> Optional[float]:
+        """Fetch market cap from yfinance. Returns value in dollars or None."""
+        key = ticker.upper()
+        if key in _market_cap_cache:
+            ts, cap = _market_cap_cache[key]
+            if time.time() - ts < _MARKET_CAP_TTL:
+                return cap
+
+        try:
+            info = yf.Ticker(ticker).info
+            cap = info.get("marketCap")
+            if cap and cap > 0:
+                _market_cap_cache[key] = (time.time(), float(cap))
+                return float(cap)
+            _market_cap_cache[key] = (time.time(), None)
+            return None
+        except Exception as e:
+            logger.warning(f"Failed to fetch market cap for {ticker}: {e}")
+            _market_cap_cache[key] = (time.time(), None)
+            return None

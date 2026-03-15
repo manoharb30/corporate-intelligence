@@ -11,8 +11,8 @@ const navigation = [
   { name: 'Trade Signals', href: '/signals?tab=trade' },
   { name: 'Intelligence', href: '/signals?tab=intelligence' },
   { name: 'Snapshot', href: '/snapshot' },
-  { name: 'Track Record', href: '/accuracy' },
-  { name: 'Companies', href: '/companies' },
+  { name: 'Accuracy', href: '/accuracy' },
+  { name: 'Track Record', href: '/track-record' },
   { name: 'Pricing', href: '/pricing' },
 ]
 

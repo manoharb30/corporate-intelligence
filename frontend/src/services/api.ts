@@ -1117,11 +1117,16 @@ export interface SnapshotSignal {
   num_insiders: number
   total_value: number
   accession_number: string
+  conviction_tier?: 'strong_buy' | 'buy' | 'watch'
   entry_price: number
   current_price: number
   return_pct: number
+  spy_return_pct?: number | null
+  alpha_pct?: number | null
   days_held: number
   status: 'winning' | 'losing'
+  pass_correct?: boolean
+  avoided_loss_pct?: number | null
 }
 
 export interface WeeklySnapshot {
@@ -1131,10 +1136,20 @@ export interface WeeklySnapshot {
   win_count: number
   loss_count: number
   avg_return: number
+  avg_alpha: number | null
   mature_total: number
   mature_wins: number
   mature_avg_return: number
+  mature_avg_alpha: number | null
+  mature_days: number
   spy_return: number | null
+  pass_stats: {
+    total: number
+    mature: number
+    correct: number
+    correct_rate: number | null
+    avg_avoided_loss: number | null
+  } | null
   best_performer: { ticker: string; return_pct: number } | null
   worst_performer: { ticker: string; return_pct: number } | null
   signals: SnapshotSignal[]
@@ -1179,7 +1194,7 @@ export interface WeekSnapshotData {
 
 // Snapshot API
 export const snapshotApi = {
-  getWeekly: (days = 14) =>
+  getWeekly: (days = 30) =>
     api.get<WeeklySnapshot>('/snapshot/weekly', { params: { days } }),
 
   getWeekSnapshot: (start = '2026-03-03', end = '2026-03-07') =>
@@ -1189,6 +1204,108 @@ export const snapshotApi = {
 // Dashboard API
 export const dashboardApi = {
   getPulse: () => api.get<DashboardPulse>('/dashboard/pulse'),
+}
+
+// Signal Performance (Track Record) types
+export interface SignalPerf {
+  signal_id: string
+  ticker: string
+  company_name: string
+  cik: string
+  signal_date: string
+  direction: 'buy' | 'sell'
+  signal_level: string
+  num_insiders: number
+  total_value: number
+  conviction_tier: string
+  industry: string | null
+  price_day0: number | null
+  price_day1: number | null
+  price_day2: number | null
+  price_day3: number | null
+  price_day5: number | null
+  price_day7: number | null
+  price_day30: number | null
+  return_day0: number | null
+  return_day1: number | null
+  return_day2: number | null
+  return_day3: number | null
+  return_day5: number | null
+  return_day7: number | null
+  spy_return_30d: number | null
+  followed_by_8k: boolean | null
+  days_to_8k: number | null
+  is_mature: boolean
+  market_cap: number | null
+  pct_of_mcap: number | null
+}
+
+export interface SignalPerfSummary {
+  total_mature: number
+  buy_count: number
+  sell_count: number
+  buy_avg_return_30d: number | null
+  buy_win_rate: number | null
+  sell_avg_short_return: number | null
+  sell_correct_rate: number | null
+  avg_spy_return: number | null
+  eight_k_follow_rate: number | null
+}
+
+export interface DelayedEntryStats {
+  buy?: {
+    entries: Record<string, { avg_return: number; alpha: number | null }>
+    n: number
+    avg_spy_return: number | null
+  }
+  sell?: {
+    entries: Record<string, { avg_return: number; alpha: number | null }>
+    n: number
+    avg_spy_return: number | null
+  }
+}
+
+export interface ConvictionLadderEntry {
+  threshold: string
+  total: number
+  correct: number
+  correct_rate: number | null
+  avg_short_return: number
+}
+
+export interface IndustryBreakdown {
+  industry: string
+  total: number
+  wins: number
+  win_rate: number | null
+  avg_return: number | null
+}
+
+export const signalPerfApi = {
+  compute: (days = 365) =>
+    api.post('/signal-performance/compute', null, { params: { days } }),
+  getAll: (direction?: string, matureOnly = false, meaningfulOnly = true, limit = 500) =>
+    api.get<SignalPerf[]>('/signal-performance', {
+      params: { direction, mature_only: matureOnly, meaningful_only: meaningfulOnly, limit },
+    }),
+  getSummary: (meaningfulOnly = true) =>
+    api.get<SignalPerfSummary>('/signal-performance/summary', {
+      params: { meaningful_only: meaningfulOnly },
+    }),
+  getDelayedEntry: (meaningfulOnly = true) =>
+    api.get<DelayedEntryStats>('/signal-performance/delayed-entry', {
+      params: { meaningful_only: meaningfulOnly },
+    }),
+  getConvictionLadder: (meaningfulOnly = true) =>
+    api.get<ConvictionLadderEntry[]>('/signal-performance/conviction-ladder', {
+      params: { meaningful_only: meaningfulOnly },
+    }),
+  getIndustry: (meaningfulOnly = true) =>
+    api.get<IndustryBreakdown[]>('/signal-performance/industry', {
+      params: { meaningful_only: meaningfulOnly },
+    }),
+  getDownloadUrl: (direction?: string, meaningfulOnly = true) =>
+    `/api/signal-performance/download?mature_only=true&meaningful_only=${meaningfulOnly}${direction ? '&direction=' + direction : ''}`,
 }
 
 export default api

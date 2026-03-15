@@ -25,8 +25,8 @@ logger = logging.getLogger(__name__)
 _feed_cache: dict[str, tuple[float, tuple]] = {}
 _FEED_CACHE_TTL = 4 * 60 * 60  # 4 hours
 
-# Suffixes that indicate non-common-stock tickers (warrants, units, rights)
-_NON_COMMON_SUFFIXES = ("W", "WS", "U", "R")
+# Suffixes that indicate non-common-stock tickers (warrants, units, rights, preferred)
+_NON_COMMON_SUFFIXES = ("W", "WS", "U", "R", "-PD", "-PA", "-PB", "-PC", "-PE")
 
 
 def pick_ticker(tickers: list[str] | None) -> str | None:

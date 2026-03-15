@@ -10,6 +10,7 @@ import Pricing from './pages/Pricing'
 import Alerts from './pages/Alerts'
 import Accuracy from './pages/Accuracy'
 import WeeklySnapshotPage from './pages/WeeklySnapshotPage'
+import TrackRecord from './pages/TrackRecord'
 
 /** Redirect /company/:cik to /signals?cik=:cik */
 function CompanyRedirect() {
@@ -32,6 +33,7 @@ function App() {
         <Route path="/alerts" element={<Alerts />} />
         <Route path="/accuracy" element={<Accuracy />} />
         <Route path="/snapshot" element={<WeeklySnapshotPage />} />
+        <Route path="/track-record" element={<TrackRecord />} />
 
         {/* Redirects for old routes */}
         <Route path="/company/:cik" element={<CompanyRedirect />} />

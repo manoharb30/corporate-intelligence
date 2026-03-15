@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { feedApi, profileApi, accuracyApi, dashboardApi, anomaliesApi, snapshotApi, DbStats, SignalItem, ProfileSearchResult, AccuracySummary, DashboardPulse, AnomalyItem, WeeklySnapshot } from '../services/api'
 import SignalCard from '../components/SignalCard'
-import ProofWall from '../components/ProofWall'
 
 function formatVolume(v: number): string {
   if (v >= 1_000_000_000) return `$${(v / 1_000_000_000).toFixed(1)}B`
@@ -90,7 +89,7 @@ export default function Dashboard() {
         if (entry.isIntersecting) {
           observer.disconnect()
           setSnapshotLoading(true)
-          snapshotApi.getWeekly(14)
+          snapshotApi.getWeekly(30)
             .then(res => setSnapshot(res.data))
             .catch(() => {})
             .finally(() => setSnapshotLoading(false))
@@ -422,19 +421,23 @@ export default function Dashboard() {
         const watchSignals = snapshot.signals.filter(s => s.signal_action === 'WATCH')
         const passSignals = snapshot.signals.filter(s => s.signal_action === 'PASS')
 
-        // Mature = 5+ days held — only these count in headline stats
-        const matureBuy = buySignals.filter(s => s.days_held >= 5)
+        const matureDays = snapshot.mature_days || 21
+        // Mature = 21+ days held — only these count in headline stats
+        const matureBuy = buySignals.filter(s => s.days_held >= matureDays)
         const matureBuyWins = matureBuy.filter(s => s.return_pct > 0).length
         const matureBuyAvg = matureBuy.length > 0 ? matureBuy.reduce((a, s) => a + s.return_pct, 0) / matureBuy.length : 0
-        const matureAll = snapshot.signals.filter(s => s.days_held >= 5)
+        const matureBuyAlpha = matureBuy.length > 0 ? matureBuy.reduce((a, s) => a + (s.alpha_pct ?? s.return_pct), 0) / matureBuy.length : 0
+        const matureAll = snapshot.signals.filter(s => s.days_held >= matureDays)
         const matureAllWins = matureAll.filter(s => s.return_pct > 0).length
         const matureAllAvg = matureAll.length > 0 ? matureAll.reduce((a, s) => a + s.return_pct, 0) / matureAll.length : 0
+        const matureAllAlpha = matureAll.length > 0 ? matureAll.reduce((a, s) => a + (s.alpha_pct ?? s.return_pct), 0) / matureAll.length : 0
 
-        const watchWins = watchSignals.filter(s => s.days_held >= 5 && s.return_pct > 0).length
-        const matureWatch = watchSignals.filter(s => s.days_held >= 5)
+        const watchWins = watchSignals.filter(s => s.days_held >= matureDays && s.return_pct > 0).length
+        const matureWatch = watchSignals.filter(s => s.days_held >= matureDays)
         const watchAvg = matureWatch.length > 0 ? matureWatch.reduce((a, s) => a + s.return_pct, 0) / matureWatch.length : 0
-        const maturePass = passSignals.filter(s => s.days_held >= 5)
+        const maturePass = passSignals.filter(s => s.days_held >= matureDays)
         const passCorrect = maturePass.filter(s => s.return_pct <= 0).length
+        const passAvgAvoided = snapshot.pass_stats?.avg_avoided_loss
 
         const bestBuy = matureBuy.length > 0 ? matureBuy.reduce((a, b) => a.return_pct > b.return_pct ? a : b) : null
         const worstBuy = matureBuy.length > 0 ? matureBuy.reduce((a, b) => a.return_pct < b.return_pct ? a : b) : null
@@ -445,7 +448,7 @@ export default function Dashboard() {
         const headlineWins = scorecardTab === 'buy' ? matureBuyWins : matureAllWins
         const headlineTotal = scorecardTab === 'buy' ? matureBuy.length : matureAll.length
         const headlineAvg = scorecardTab === 'buy' ? matureBuyAvg : matureAllAvg
-        const headlineAlpha = spyReturn !== null ? headlineAvg - spyReturn : null
+        const headlineAlpha = scorecardTab === 'buy' ? matureBuyAlpha : matureAllAlpha
 
         return (
         <section className="mb-12">
@@ -454,7 +457,7 @@ export default function Dashboard() {
             <h2 className="text-xl font-bold text-gray-900">Live Scorecard</h2>
           </div>
           <p className="text-sm text-gray-500 ml-5 mb-5">
-            Signals from the last 14 days — tracked in real time
+            Signals from the last {snapshot.period_days} days — tracked in real time
           </p>
 
           {/* Headline stats */}
@@ -462,26 +465,21 @@ export default function Dashboard() {
             <div className="bg-gray-900 rounded-xl p-5 mb-4">
               <div className="text-sm text-gray-300 mb-3">
                 <span className="text-white font-bold">{headlineWins} of {headlineTotal}</span>
-                {' '}mature signals winning (5+ days held)
+                {' '}mature signals winning ({matureDays}+ days held)
+                {' · Alpha vs SPY: '}
+                <span className={headlineAlpha >= 0 ? 'text-green-400 font-bold' : 'text-red-400 font-bold'}>
+                  {headlineAlpha >= 0 ? '+' : ''}{headlineAlpha.toFixed(1)}%
+                </span>
                 {' · Avg return: '}
-                <span className={headlineAvg >= 0 ? 'text-green-400 font-bold' : 'text-red-400 font-bold'}>
+                <span className={headlineAvg >= 0 ? 'text-green-400' : 'text-red-400'}>
                   {headlineAvg >= 0 ? '+' : ''}{headlineAvg.toFixed(1)}%
                 </span>
                 {spyReturn !== null && (
                   <>
-                    {' · Market: '}
+                    {' · SPY: '}
                     <span className={spyReturn >= 0 ? 'text-gray-300' : 'text-red-400'}>
                       {spyReturn >= 0 ? '+' : ''}{spyReturn.toFixed(1)}%
                     </span>
-                    {headlineAlpha !== null && (
-                      <>
-                        {' (alpha: '}
-                        <span className={headlineAlpha >= 0 ? 'text-green-400 font-bold' : 'text-red-400 font-bold'}>
-                          {headlineAlpha >= 0 ? '+' : ''}{headlineAlpha.toFixed(1)}%
-                        </span>
-                        {')'}
-                      </>
-                    )}
                   </>
                 )}
               </div>
@@ -500,7 +498,14 @@ export default function Dashboard() {
                   </div>
                   <div className="h-10 w-px bg-gray-700"></div>
                   <div>
-                    <div className={`text-2xl font-bold ${headlineAvg >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    <div className={`text-2xl font-bold ${headlineAlpha >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {headlineAlpha >= 0 ? '+' : ''}{headlineAlpha.toFixed(2)}%
+                    </div>
+                    <div className="text-xs text-gray-400 mt-0.5">alpha vs SPY</div>
+                  </div>
+                  <div className="h-10 w-px bg-gray-700"></div>
+                  <div>
+                    <div className={`text-lg font-bold ${headlineAvg >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                       {headlineAvg >= 0 ? '+' : ''}{headlineAvg.toFixed(2)}%
                     </div>
                     <div className="text-xs text-gray-400 mt-0.5">avg return</div>
@@ -582,7 +587,11 @@ export default function Dashboard() {
                     <span className="text-lg font-bold text-gray-900">{passCorrect}/{maturePass.length}</span>
                     <span className="text-xs text-gray-500 ml-1">called correctly</span>
                   </div>
-                  <span className="text-xs text-gray-500">Stock dropped after we said PASS</span>
+                  {passAvgAvoided ? (
+                    <span className="text-xs text-green-700 font-medium">Avg avoided loss: -{passAvgAvoided.toFixed(1)}%</span>
+                  ) : (
+                    <span className="text-xs text-gray-500">Stock dropped after we said PASS</span>
+                  )}
                 </div>
               </div>
             )}
@@ -623,9 +632,8 @@ export default function Dashboard() {
                     <th className="text-left px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Age</th>
                     <th className="text-right px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Entry</th>
                     <th className="text-right px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Current</th>
-                    <th className="text-right px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                      {scorecardTab === 'buy' ? 'Return' : 'Result'}
-                    </th>
+                    <th className="text-right px-3 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Return</th>
+                    <th className="text-right px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Alpha</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -643,7 +651,7 @@ export default function Dashboard() {
                       s.signal_type === 'insider_sell_cluster' ? 'text-red-600' :
                       'text-purple-600'
 
-                    const isMaturing = s.days_held < 5
+                    const isMaturing = s.days_held < matureDays
                     const isPass = s.signal_action === 'PASS'
                     const passCorrectCall = isPass && s.return_pct <= 0
 
@@ -677,23 +685,32 @@ export default function Dashboard() {
                         <td className="px-3 py-3 text-right text-gray-900 font-mono text-xs font-medium">
                           ${s.current_price.toFixed(2)}
                         </td>
-                        <td className="px-4 py-3 text-right">
+                        <td className="px-3 py-3 text-right">
                           {isMaturing ? (
                             <span className="text-xs text-gray-400 italic">
-                              {s.return_pct >= 0 ? '+' : ''}{s.return_pct.toFixed(2)}%
+                              {s.return_pct >= 0 ? '+' : ''}{s.return_pct.toFixed(1)}%
                             </span>
                           ) : isPass ? (
                             <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
                               passCorrectCall ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-500'
                             }`}>
                               {passCorrectCall
-                                ? `Correct (${s.return_pct.toFixed(1)}%)`
-                                : `Missed (+${s.return_pct.toFixed(1)}%)`}
+                                ? `${s.return_pct.toFixed(1)}%`
+                                : `+${s.return_pct.toFixed(1)}%`}
                             </span>
                           ) : (
                             <span className={`font-bold ${s.return_pct >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                              {s.return_pct >= 0 ? '+' : ''}{s.return_pct.toFixed(2)}%
+                              {s.return_pct >= 0 ? '+' : ''}{s.return_pct.toFixed(1)}%
                             </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          {s.alpha_pct != null ? (
+                            <span className={`text-xs font-bold ${s.alpha_pct >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {s.alpha_pct >= 0 ? '+' : ''}{s.alpha_pct.toFixed(1)}%
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-300">—</span>
                           )}
                         </td>
                       </tr>
@@ -932,9 +949,6 @@ export default function Dashboard() {
           </p>
         </Link>
       </section>
-
-      {/* ===== Proof Wall ===== */}
-      <ProofWall variant="dark" />
 
       {/* ===== CTA ===== */}
       <section className="text-center py-10 mb-8 border-t border-gray-200">
