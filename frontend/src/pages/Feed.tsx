@@ -61,7 +61,7 @@ export default function Feed() {
       setLoading(true)
       try {
         const [feedRes, insiderRes, anomalyRes] = await Promise.allSettled([
-          feedApi.getFeed(days, 100, 'low', cikFilter || undefined),
+          feedApi.getFeed(days, 100, 'medium', cikFilter || undefined),
           cikFilter ? Promise.resolve(null) : feedApi.getTopInsiderActivity(30, 10),
           anomaliesApi.getTop(50),
         ])
