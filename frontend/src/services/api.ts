@@ -1201,9 +1201,26 @@ export const snapshotApi = {
     api.get<WeekSnapshotData>('/snapshot/week', { params: { start, end } }),
 }
 
+// Dashboard precomputed data
+export interface DashboardPrecomputed {
+  stats: DbStats | null
+  signals: SignalItem[]
+  signal_count: number
+  by_level: Record<string, number>
+  by_combined: Record<string, number>
+  accuracy: AccuracySummary | null
+  pulse: DashboardPulse | null
+  anomalies: AnomalyItem[]
+  top_hits: unknown[]
+  computed_at: string
+  compute_seconds: number
+}
+
 // Dashboard API
 export const dashboardApi = {
   getPulse: () => api.get<DashboardPulse>('/dashboard/pulse'),
+  getPrecomputed: () => api.get<DashboardPrecomputed>('/dashboard/precomputed'),
+  compute: () => api.post('/dashboard/compute'),
 }
 
 // Signal Performance (Track Record) types

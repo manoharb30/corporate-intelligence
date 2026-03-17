@@ -1,0 +1,248 @@
+"""Service for pre-computing and storing the dashboard data in Neo4j.
+
+Instead of computing feed, pulse, accuracy, anomalies on every dashboard visit,
+this service runs once after each scanner run and stores the results as a
+DashboardSnapshot node in Neo4j. The dashboard endpoint then reads this node
+instantly — no computation, no yfinance calls, survives restarts.
+"""
+
+import asyncio
+import json
+import logging
+import time
+from datetime import datetime
+
+from app.db.neo4j_client import Neo4jClient
+from app.services.feed_service import FeedService
+from app.services.dashboard_service import DashboardService
+from app.services.accuracy_service import AccuracyService
+
+logger = logging.getLogger(__name__)
+
+
+class DashboardPrecomputeService:
+    """Pre-computes dashboard data and stores in Neo4j."""
+
+    @staticmethod
+    async def compute_and_store() -> dict:
+        """Run all dashboard computations and store as DashboardSnapshot in Neo4j.
+
+        Returns summary of what was computed.
+        """
+        start = time.time()
+        snapshot = {}
+
+        # 1. Stats (node counts)
+        try:
+            stats_query = """
+                CALL {
+                    MATCH (c:Company) WHERE c.cik IS NOT NULL RETURN 'companies' as label, count(c) as cnt
+                    UNION ALL
+                    MATCH (e:Event) RETURN 'events' as label, count(e) as cnt
+                    UNION ALL
+                    MATCH (p:Person) RETURN 'persons' as label, count(p) as cnt
+                    UNION ALL
+                    MATCH (t:InsiderTransaction) RETURN 'insider_transactions' as label, count(t) as cnt
+                    UNION ALL
+                    MATCH (j:Jurisdiction) RETURN 'jurisdictions' as label, count(j) as cnt
+                }
+                RETURN label, cnt
+            """
+            stats_results = await Neo4jClient.execute_query(stats_query, {})
+            stats = {r["label"]: r["cnt"] for r in stats_results}
+            stats["total_nodes"] = sum(stats.values())
+            snapshot["stats"] = stats
+            logger.info(f"Dashboard precompute: stats done")
+        except Exception as e:
+            logger.error(f"Dashboard precompute: stats failed: {e}")
+            snapshot["stats"] = None
+
+        # 2. Feed (top signals with insider context, clusters, compounds)
+        try:
+            signals, _ = await FeedService.get_feed(days=30, min_level="medium")
+            signals_list = []
+            for s in signals[:100]:
+                signals_list.append(s.to_dict())
+            snapshot["signals"] = signals_list
+            snapshot["signal_count"] = len(signals)
+
+            # By level counts
+            by_level = {"high": 0, "medium": 0, "low": 0}
+            by_combined = {}
+            for s in signals:
+                by_level[s.signal_level] = by_level.get(s.signal_level, 0) + 1
+                cl = s.combined_signal_level or s.signal_level
+                by_combined[cl] = by_combined.get(cl, 0) + 1
+            snapshot["by_level"] = by_level
+            snapshot["by_combined"] = by_combined
+            logger.info(f"Dashboard precompute: feed done ({len(signals)} signals)")
+        except Exception as e:
+            logger.error(f"Dashboard precompute: feed failed: {e}")
+            snapshot["signals"] = []
+            snapshot["signal_count"] = 0
+            snapshot["by_level"] = {}
+            snapshot["by_combined"] = {}
+
+        # 3. Accuracy summary
+        try:
+            accuracy = await AccuracyService.get_accuracy_summary(
+                lookback_days=365, min_signal_age_days=30, min_level="medium"
+            )
+            snapshot["accuracy"] = accuracy
+            logger.info(f"Dashboard precompute: accuracy done")
+        except Exception as e:
+            logger.error(f"Dashboard precompute: accuracy failed: {e}")
+            snapshot["accuracy"] = None
+
+        # 4. Pulse (last signal, mood, movers, scorecard)
+        try:
+            pulse = await DashboardService.get_pulse()
+            snapshot["pulse"] = pulse
+            logger.info(f"Dashboard precompute: pulse done")
+        except Exception as e:
+            logger.error(f"Dashboard precompute: pulse failed: {e}")
+            snapshot["pulse"] = None
+
+        # 5. Anomalies (pre-event insider selling)
+        try:
+            anomaly_query = """
+                MATCH (c:Company)-[:FILED_EVENT]->(e:Event)
+                WHERE e.is_ma_signal = true AND e.filing_date IS NOT NULL
+                MATCH (c)-[:INSIDER_TRADE_OF]->(t:InsiderTransaction)
+                WHERE t.transaction_code = 'S'
+                  AND t.total_value > 0
+                  AND t.transaction_date IS NOT NULL
+                  AND t.transaction_date < e.filing_date
+                  AND t.transaction_date >= toString(date(substring(e.filing_date, 0, 10)) - duration('P90D'))
+                  AND toLower(t.insider_name) <> toLower(c.name)
+                WITH c, e,
+                     count(DISTINCT t.insider_name) as seller_count,
+                     sum(t.total_value) as pre_sell_value,
+                     collect(DISTINCT t.insider_name) as sellers,
+                     avg(duration.between(date(substring(t.transaction_date, 0, 10)), date(substring(e.filing_date, 0, 10))).days) as avg_days_before
+                WHERE seller_count >= 2 AND pre_sell_value > 10000
+                WITH c, e, seller_count, pre_sell_value, sellers, avg_days_before,
+                     pre_sell_value / CASE WHEN seller_count > 0 THEN seller_count ELSE 1 END as value_per_seller
+                ORDER BY pre_sell_value DESC
+                LIMIT 15
+                RETURN c.cik as cik, c.name as company_name, c.tickers as tickers,
+                       e.item_number as event_type, e.filing_date as event_date,
+                       e.accession_number as accession_number,
+                       seller_count as num_insiders, pre_sell_value,
+                       sellers as insider_list, avg_days_before as avg_days_before_event
+            """
+            anomaly_results = await Neo4jClient.execute_query(anomaly_query, {})
+            anomalies = []
+            for r in anomaly_results:
+                tickers = r.get("tickers") or []
+                ticker = tickers[0] if tickers else None
+                anomalies.append({
+                    "cik": r["cik"],
+                    "company_name": r["company_name"],
+                    "ticker": ticker,
+                    "event_type": r["event_type"],
+                    "event_date": r["event_date"],
+                    "accession_number": r["accession_number"],
+                    "num_insiders": r["num_insiders"],
+                    "pre_event_sell_value": r["pre_sell_value"],
+                    "insider_list": r["insider_list"][:5] if r["insider_list"] else [],
+                    "avg_days_before_event": round(r["avg_days_before_event"]) if r["avg_days_before_event"] else None,
+                })
+            snapshot["anomalies"] = anomalies
+            logger.info(f"Dashboard precompute: anomalies done ({len(anomalies)})")
+        except Exception as e:
+            logger.error(f"Dashboard precompute: anomalies failed: {e}")
+            snapshot["anomalies"] = []
+
+        # 6. Proof wall (top hits) — used on pricing page
+        try:
+            top_hits = await AccuracyService.get_top_hits(limit=10)
+            snapshot["top_hits"] = top_hits
+            logger.info(f"Dashboard precompute: top hits done ({len(top_hits)})")
+        except Exception as e:
+            logger.error(f"Dashboard precompute: top hits failed: {e}")
+            snapshot["top_hits"] = []
+
+        snapshot["computed_at"] = datetime.now().isoformat()
+        elapsed = round(time.time() - start, 1)
+        snapshot["compute_seconds"] = elapsed
+
+        # Store in Neo4j
+        try:
+            store_query = """
+                MERGE (d:DashboardSnapshot {snapshot_key: 'latest'})
+                SET d.stats_json = $stats_json,
+                    d.signals_json = $signals_json,
+                    d.signal_count = $signal_count,
+                    d.by_level_json = $by_level_json,
+                    d.by_combined_json = $by_combined_json,
+                    d.accuracy_json = $accuracy_json,
+                    d.pulse_json = $pulse_json,
+                    d.anomalies_json = $anomalies_json,
+                    d.top_hits_json = $top_hits_json,
+                    d.computed_at = $computed_at,
+                    d.compute_seconds = $compute_seconds
+            """
+            await Neo4jClient.execute_write(store_query, {
+                "stats_json": json.dumps(snapshot.get("stats")),
+                "signals_json": json.dumps(snapshot.get("signals", [])[:100]),
+                "signal_count": snapshot.get("signal_count", 0),
+                "by_level_json": json.dumps(snapshot.get("by_level", {})),
+                "by_combined_json": json.dumps(snapshot.get("by_combined", {})),
+                "accuracy_json": json.dumps(snapshot.get("accuracy")),
+                "pulse_json": json.dumps(snapshot.get("pulse")),
+                "anomalies_json": json.dumps(snapshot.get("anomalies", [])),
+                "top_hits_json": json.dumps(snapshot.get("top_hits", [])),
+                "computed_at": snapshot["computed_at"],
+                "compute_seconds": elapsed,
+            })
+            logger.info(f"Dashboard precompute: stored in Neo4j ({elapsed}s)")
+        except Exception as e:
+            logger.error(f"Dashboard precompute: failed to store in Neo4j: {e}")
+
+        return {
+            "status": "completed",
+            "computed_at": snapshot["computed_at"],
+            "elapsed_seconds": elapsed,
+            "signal_count": snapshot.get("signal_count", 0),
+            "anomaly_count": len(snapshot.get("anomalies", [])),
+        }
+
+    @staticmethod
+    async def get_cached() -> dict | None:
+        """Read the pre-computed dashboard snapshot from Neo4j.
+
+        Returns the full dashboard data or None if not yet computed.
+        """
+        query = """
+            MATCH (d:DashboardSnapshot {snapshot_key: 'latest'})
+            RETURN d.stats_json as stats,
+                   d.signals_json as signals,
+                   d.signal_count as signal_count,
+                   d.by_level_json as by_level,
+                   d.by_combined_json as by_combined,
+                   d.accuracy_json as accuracy,
+                   d.pulse_json as pulse,
+                   d.anomalies_json as anomalies,
+                   d.top_hits_json as top_hits,
+                   d.computed_at as computed_at,
+                   d.compute_seconds as compute_seconds
+        """
+        results = await Neo4jClient.execute_query(query, {})
+        if not results:
+            return None
+
+        r = results[0]
+        return {
+            "stats": json.loads(r["stats"]) if r["stats"] else None,
+            "signals": json.loads(r["signals"]) if r["signals"] else [],
+            "signal_count": r["signal_count"],
+            "by_level": json.loads(r["by_level"]) if r["by_level"] else {},
+            "by_combined": json.loads(r["by_combined"]) if r["by_combined"] else {},
+            "accuracy": json.loads(r["accuracy"]) if r["accuracy"] else None,
+            "pulse": json.loads(r["pulse"]) if r["pulse"] else None,
+            "anomalies": json.loads(r["anomalies"]) if r["anomalies"] else [],
+            "top_hits": json.loads(r["top_hits"]) if r["top_hits"] else [],
+            "computed_at": r["computed_at"],
+            "compute_seconds": r["compute_seconds"],
+        }

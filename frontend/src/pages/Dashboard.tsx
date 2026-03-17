@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { feedApi, profileApi, accuracyApi, dashboardApi, anomaliesApi, snapshotApi, DbStats, SignalItem, ProfileSearchResult, AccuracySummary, DashboardPulse, AnomalyItem, WeeklySnapshot } from '../services/api'
+import { feedApi, profileApi, dashboardApi, anomaliesApi, snapshotApi, DbStats, SignalItem, ProfileSearchResult, AccuracySummary, DashboardPulse, AnomalyItem, WeeklySnapshot } from '../services/api'
 import SignalCard from '../components/SignalCard'
 
 function formatVolume(v: number): string {
@@ -37,21 +37,31 @@ export default function Dashboard() {
     const fetchData = async () => {
       setLoading(true)
       try {
-        const [statsRes, feedRes, accRes, pulseRes, anomalyRes] = await Promise.allSettled([
-          feedApi.getStats(),
-          feedApi.getFeed(30, 100, 'medium'),
-          accuracyApi.getSummary(),
-          dashboardApi.getPulse(),
-          anomaliesApi.getTop(15),
-        ])
+        // Try pre-computed data first (instant, single Neo4j read)
+        const preRes = await dashboardApi.getPrecomputed()
         if (ignore) return
-        if (statsRes.status === 'fulfilled') setStats(statsRes.value.data)
-        if (feedRes.status === 'fulfilled') setTopSignals(feedRes.value.data.signals)
-        if (accRes.status === 'fulfilled') setAccuracy(accRes.value.data)
-        if (pulseRes.status === 'fulfilled') setPulse(pulseRes.value.data)
-        if (anomalyRes.status === 'fulfilled') setAnomalies(anomalyRes.value.data.anomalies)
-      } catch (error) {
-        if (!ignore) console.error('Failed to load:', error)
+        const data = preRes.data
+        if (data.stats) setStats(data.stats as DbStats)
+        if (data.signals) setTopSignals(data.signals)
+        if (data.accuracy) setAccuracy(data.accuracy)
+        if (data.pulse) setPulse(data.pulse)
+        if (data.anomalies) setAnomalies(data.anomalies)
+      } catch {
+        // Fallback: pre-computed data not available, fetch live
+        if (ignore) return
+        try {
+          const [statsRes, feedRes, pulseRes] = await Promise.allSettled([
+            feedApi.getStats(),
+            feedApi.getFeed(30, 100, 'medium'),
+            dashboardApi.getPulse(),
+          ])
+          if (ignore) return
+          if (statsRes.status === 'fulfilled') setStats(statsRes.value.data)
+          if (feedRes.status === 'fulfilled') setTopSignals(feedRes.value.data.signals)
+          if (pulseRes.status === 'fulfilled') setPulse(pulseRes.value.data)
+        } catch (error) {
+          if (!ignore) console.error('Failed to load:', error)
+        }
       } finally {
         if (!ignore) setLoading(false)
       }
