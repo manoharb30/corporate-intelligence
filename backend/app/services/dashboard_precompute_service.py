@@ -167,21 +167,26 @@ class DashboardPrecomputeService:
         elapsed = round(time.time() - start, 1)
         snapshot["compute_seconds"] = elapsed
 
-        # Store in Neo4j
+        # Store in Neo4j — delete old snapshot first so no stale properties linger
         try:
+            await Neo4jClient.execute_write(
+                "MATCH (d:DashboardSnapshot {snapshot_key: 'latest'}) DELETE d", {}
+            )
             store_query = """
-                MERGE (d:DashboardSnapshot {snapshot_key: 'latest'})
-                SET d.stats_json = $stats_json,
-                    d.signals_json = $signals_json,
-                    d.signal_count = $signal_count,
-                    d.by_level_json = $by_level_json,
-                    d.by_combined_json = $by_combined_json,
-                    d.accuracy_json = $accuracy_json,
-                    d.pulse_json = $pulse_json,
-                    d.anomalies_json = $anomalies_json,
-                    d.top_hits_json = $top_hits_json,
-                    d.computed_at = $computed_at,
-                    d.compute_seconds = $compute_seconds
+                CREATE (d:DashboardSnapshot {
+                    snapshot_key: 'latest',
+                    stats_json: $stats_json,
+                    signals_json: $signals_json,
+                    signal_count: $signal_count,
+                    by_level_json: $by_level_json,
+                    by_combined_json: $by_combined_json,
+                    accuracy_json: $accuracy_json,
+                    pulse_json: $pulse_json,
+                    anomalies_json: $anomalies_json,
+                    top_hits_json: $top_hits_json,
+                    computed_at: $computed_at,
+                    compute_seconds: $compute_seconds
+                })
             """
             await Neo4jClient.execute_write(store_query, {
                 "stats_json": json.dumps(snapshot.get("stats")),

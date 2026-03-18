@@ -964,32 +964,42 @@ class FeedService:
         cik: str,
         company_name: str,
         limit: int = 20,
+        known_company_info: dict | None = None,
     ) -> dict:
         """
         Scan a company's 8-K filings and store the events.
 
         Returns summary of what was found and stored.
+        If known_company_info is provided (from market_scan pre-fetch),
+        skips the redundant get_company_info() EDGAR call.
         """
         client = SECEdgarClient()
         parser = EventParser()
 
         try:
-            # Fetch company info for tickers and other metadata
-            try:
-                company_info = await client.get_company_info(cik)
-                tickers = company_info.tickers
-                sic = company_info.sic
-                sic_description = company_info.sic_description
-                state = company_info.state_of_incorporation
-                # Use SEC name if available
-                if company_info.name:
-                    company_name = company_info.name
-            except Exception as e:
-                logger.warning(f"Could not fetch company info for {cik}: {e}")
-                tickers = []
-                sic = None
-                sic_description = None
-                state = None
+            # Use pre-fetched company info if available, otherwise fetch
+            if known_company_info is not None:
+                tickers = known_company_info.get("tickers") or []
+                sic = known_company_info.get("sic")
+                sic_description = known_company_info.get("sic_description")
+                state = known_company_info.get("state_of_incorporation")
+                if known_company_info.get("name"):
+                    company_name = known_company_info["name"]
+            else:
+                try:
+                    company_info = await client.get_company_info(cik)
+                    tickers = company_info.tickers
+                    sic = company_info.sic
+                    sic_description = company_info.sic_description
+                    state = company_info.state_of_incorporation
+                    if company_info.name:
+                        company_name = company_info.name
+                except Exception as e:
+                    logger.warning(f"Could not fetch company info for {cik}: {e}")
+                    tickers = []
+                    sic = None
+                    sic_description = None
+                    state = None
 
             # Update company node with full metadata
             update_query = """
@@ -1011,6 +1021,26 @@ class FeedService:
             })
 
             filings = await client.get_8k_filings(cik, limit=limit)
+
+            # Filter out filings we already have in Neo4j (avoid wasted document fetches)
+            if filings:
+                accession_numbers = [f.accession_number for f in filings]
+                existing = await Neo4jClient.execute_query(
+                    """
+                    UNWIND $accession_numbers AS acc
+                    MATCH (e:Event {accession_number: acc})
+                    RETURN DISTINCT e.accession_number as accession_number
+                    """,
+                    {"accession_numbers": accession_numbers},
+                )
+                existing_set = {r["accession_number"] for r in existing}
+                new_filings = [f for f in filings if f.accession_number not in existing_set]
+                if existing_set:
+                    logger.debug(
+                        f"{cik}: skipping {len(existing_set)} already-stored filings, "
+                        f"{len(new_filings)} new to fetch"
+                    )
+                filings = new_filings
 
             results = []
             for filing in filings:
@@ -1155,24 +1185,87 @@ class FeedService:
         finally:
             await client.close()
 
-        # Step 2: Scan each company
+        # Step 2: Pre-fetch company info once per company, cache to Neo4j
+        # NOTE: Company-level filtering is NOT safe for 8-K scans because a company
+        # can file multiple 8-Ks in the scan window. Instead, dedup happens at the
+        # individual filing level inside scan_and_store_company (accession number check).
+        company_info_cache: dict[str, dict] = {}
+        pre_fetch_client = SECEdgarClient()
+        try:
+            # Check Neo4j cache first
+            known_results = await Neo4jClient.execute_query(
+                """
+                UNWIND $ciks AS cik
+                OPTIONAL MATCH (c:Company {cik: cik})
+                RETURN cik, c.name as name, c.tickers as tickers, c.sic as sic,
+                       c.sic_description as sic_description, c.entity_type as entity_type,
+                       c.state_of_incorporation as state_of_incorporation
+                """,
+                {"ciks": [f["cik"] for f in filers]},
+            )
+            for r in known_results:
+                if r.get("sic") is not None and r.get("entity_type") is not None:
+                    company_info_cache[r["cik"]] = {
+                        "name": r.get("name"),
+                        "tickers": r.get("tickers") or [],
+                        "sic": r.get("sic"),
+                        "sic_description": r.get("sic_description"),
+                        "entity_type": r.get("entity_type"),
+                        "state_of_incorporation": r.get("state_of_incorporation"),
+                    }
+
+            # Fetch from EDGAR for unknowns and cache
+            unknown_filers = [f for f in filers if f["cik"] not in company_info_cache]
+            for filer in unknown_filers:
+                try:
+                    info = await pre_fetch_client.get_company_info(filer["cik"])
+                    cached = {
+                        "name": info.name,
+                        "tickers": info.tickers or [],
+                        "sic": info.sic,
+                        "sic_description": info.sic_description,
+                        "entity_type": info.entity_type,
+                        "state_of_incorporation": info.state_of_incorporation,
+                    }
+                    company_info_cache[filer["cik"]] = cached
+                    # Cache to Neo4j for future runs
+                    await Neo4jClient.execute_query(
+                        """
+                        MERGE (c:Company {cik: $cik})
+                        SET c.sic = COALESCE($sic, c.sic),
+                            c.entity_type = COALESCE($entity_type, c.entity_type),
+                            c.tickers = COALESCE($tickers, c.tickers)
+                        """,
+                        {"cik": filer["cik"], "sic": info.sic, "entity_type": info.entity_type, "tickers": info.tickers or []},
+                    )
+                except Exception:
+                    pass  # Will fall back to per-service fetch
+            logger.info(f"Market scan: {len(company_info_cache)} companies pre-fetched ({len(unknown_filers)} from EDGAR)")
+        except Exception as e:
+            logger.warning(f"Company info pre-fetch failed: {e}")
+        finally:
+            await pre_fetch_client.close()
+
+        # Step 4: Scan each company
         for i, filer in enumerate(filers):
             try:
+                info = company_info_cache.get(filer["cik"])
                 result = await FeedService.scan_and_store_company(
                     cik=filer["cik"],
                     company_name=filer["name"],
                     limit=5,
+                    known_company_info=info,
                 )
                 scan_result.companies_scanned += 1
                 scan_result.events_stored += result["events_stored"]
-                scan_result.message = f"Scanning... {scan_result.companies_scanned}/{scan_result.companies_discovered} companies"
+                scan_result.message = f"Scanning... {scan_result.companies_scanned}/{len(filers)} companies"
                 logger.info(
-                    f"Market scan [{scan_result.companies_scanned}/{scan_result.companies_discovered}] "
+                    f"Market scan [{scan_result.companies_scanned}/{len(filers)}] "
                     f"{filer['name']}: {result['events_stored']} events"
                 )
-                if scan_result.companies_scanned % 10 == 0 or scan_result.companies_scanned == scan_result.companies_discovered:
+                if scan_result.companies_scanned % 10 == 0 or scan_result.companies_scanned == len(filers):
                     print(
-                        f"[Market Scan] [{scan_result.companies_scanned}/{scan_result.companies_discovered}] "
+                        f"[Market Scan] [{scan_result.companies_scanned}/{len(filers)}] "
                         f"{scan_result.events_stored} events, {len(scan_result.errors)} errors",
                         flush=True,
                     )
@@ -1189,10 +1282,14 @@ class FeedService:
 
                 # Also scan for insider trades (Form 4)
                 try:
+                    tickers = info.get("tickers", []) if info else None
+                    entity_type = info.get("entity_type") if info else None
                     insider_result = await InsiderTradingService.scan_and_store_company(
                         cik=filer["cik"],
                         company_name=filer["name"],
                         limit=10,
+                        known_tickers=tickers if tickers is not None else None,
+                        known_entity_type=entity_type,
                     )
                     scan_result.insider_transactions_stored += insider_result.get("transactions_stored", 0)
                 except Exception as insider_err:

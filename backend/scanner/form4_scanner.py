@@ -90,128 +90,117 @@ async def update_checkpoint(checkpoint: str, status: str, counts: dict) -> None:
     })
 
 
-async def filter_investment_vehicles(filers: list[dict]) -> list[dict]:
+async def filter_and_classify_filers(filers: list[dict]) -> tuple[list[dict], dict]:
     """
-    Remove investment funds/vehicles using SIC codes.
+    Filter out investment vehicles and non-companies using a single EDGAR call
+    per unknown company. Caches both SIC and entity_type to Neo4j so future
+    runs resolve from cache (the "dynamic programming" optimisation).
 
-    Checks Neo4j first for companies we already know. For unknown companies,
-    fetches SIC from EDGAR. Skips any with SIC in EXCLUDED_SIC_CODES.
+    Returns:
+        - filtered list of filers (operating companies with non-excluded SIC)
+        - dict mapping cik -> {"tickers": [...], "entity_type": str, "sic": str}
+          for passing to the scan phase (avoids redundant EDGAR calls later)
     """
     if not filers:
-        return []
+        return [], {}
 
     ciks = [f["cik"] for f in filers]
 
-    # Batch lookup SIC codes from Neo4j for known companies
+    # --- Step 1: Batch lookup from Neo4j (instant, zero EDGAR calls) ---
     query = """
         UNWIND $ciks AS cik
-        MATCH (c:Company {cik: cik})
-        WHERE c.sic IS NOT NULL
-        RETURN c.cik as cik, c.sic as sic
+        OPTIONAL MATCH (c:Company {cik: cik})
+        RETURN cik, c.sic as sic, c.entity_type as entity_type, c.tickers as tickers
     """
     results = await Neo4jClient.execute_query(query, {"ciks": ciks})
-    known_sics = {r["cik"]: r["sic"] for r in results}
+    known = {r["cik"]: {
+        "sic": r.get("sic"),
+        "entity_type": r.get("entity_type"),
+        "tickers": r.get("tickers") or [],
+    } for r in results if r.get("sic") is not None or r.get("entity_type") is not None}
 
-    # For unknown companies, fetch SIC from EDGAR (batched with rate limiting)
-    unknown_ciks = [f for f in filers if f["cik"] not in known_sics]
-    if unknown_ciks:
+    # --- Step 2: Classify known companies from cache ---
+    filtered = []
+    company_info = {}  # cik -> metadata, passed to scan phase
+    unknown_filers = []
+    rejected_cached = 0
+
+    for filer in filers:
+        cik = filer["cik"]
+        info = known.get(cik)
+
+        if info and info["sic"] is not None and info["entity_type"] is not None:
+            # Fully known — apply reject rules
+            if info["entity_type"] != "operating":
+                rejected_cached += 1
+                continue
+            if info["sic"] in EXCLUDED_SIC_CODES:
+                rejected_cached += 1
+                continue
+            # Good company — pass through
+            filtered.append(filer)
+            company_info[cik] = info
+        else:
+            # Unknown or partially known — needs EDGAR
+            unknown_filers.append(filer)
+
+    if rejected_cached:
+        logger.info(f"Skipped {rejected_cached} known non-companies/investment vehicles from Neo4j cache")
+
+    # --- Step 3: ONE EDGAR call per unknown company, cache results ---
+    rejected_new = 0
+    if unknown_filers:
         client = SECEdgarClient()
         try:
-            for filer in unknown_ciks:
+            for filer in unknown_filers:
+                cik = filer["cik"]
                 try:
-                    info = await client.get_company_info(filer["cik"])
-                    if info.sic:
-                        known_sics[filer["cik"]] = info.sic
+                    info = await client.get_company_info(cik)
+                    sic = info.sic
+                    entity_type = info.entity_type
+                    tickers = info.tickers or []
+
+                    # Cache both SIC and entity_type to Neo4j for future runs
+                    await Neo4jClient.execute_query(
+                        """
+                        MERGE (c:Company {cik: $cik})
+                        SET c.sic = COALESCE($sic, c.sic),
+                            c.entity_type = COALESCE($entity_type, c.entity_type),
+                            c.tickers = COALESCE($tickers, c.tickers)
+                        """,
+                        {"cik": cik, "sic": sic, "entity_type": entity_type, "tickers": tickers},
+                    )
+
+                    # Apply reject rules
+                    if entity_type and entity_type != "operating":
+                        rejected_new += 1
+                        continue
+                    if sic and sic in EXCLUDED_SIC_CODES:
+                        rejected_new += 1
+                        continue
+
+                    filtered.append(filer)
+                    company_info[cik] = {
+                        "sic": sic,
+                        "entity_type": entity_type,
+                        "tickers": tickers,
+                    }
                 except Exception:
-                    pass  # Can't determine SIC — allow through
+                    # Can't determine — allow through without cached info
+                    filtered.append(filer)
         finally:
             await client.close()
 
-    # Filter out excluded SIC codes
-    filtered = []
-    excluded_count = 0
-    for filer in filers:
-        sic = known_sics.get(filer["cik"])
-        if sic and sic in EXCLUDED_SIC_CODES:
-            excluded_count += 1
-            logger.debug(f"Skipping investment vehicle: {filer['name']} (SIC {sic})")
-        else:
-            filtered.append(filer)
+    if rejected_new:
+        logger.info(f"Filtered out {rejected_new} new non-companies/investment vehicles via EDGAR")
 
-    if excluded_count:
-        logger.info(f"Filtered out {excluded_count} investment vehicles by SIC code")
+    logger.info(
+        f"Classification complete: {len(filtered)} companies to scan "
+        f"({rejected_cached} cached rejects, {len(unknown_filers)} checked via EDGAR, "
+        f"{rejected_new} new rejects)"
+    )
 
-    return filtered
-
-
-async def filter_non_companies(filers: list[dict]) -> list[dict]:
-    """
-    Remove non-company filers (individuals, funds, trusts) using SEC EDGAR's
-    entityType field. Only filers with entityType == "operating" are real
-    companies; individuals and investment vehicles are classified as "other".
-
-    Checks Neo4j first for cached entity_type. For unknown filers, fetches
-    from the EDGAR submissions API.
-    """
-    if not filers:
-        return []
-
-    ciks = [f["cik"] for f in filers]
-
-    # Batch lookup entity_type from Neo4j for known companies
-    query = """
-        UNWIND $ciks AS cik
-        MATCH (c:Company {cik: cik})
-        WHERE c.entity_type IS NOT NULL
-        RETURN c.cik as cik, c.entity_type as entity_type
-    """
-    results = await Neo4jClient.execute_query(query, {"ciks": ciks})
-    known_types = {r["cik"]: r["entity_type"] for r in results}
-
-    # For unknown filers, fetch entityType from EDGAR
-    unknown = [f for f in filers if f["cik"] not in known_types]
-    if unknown:
-        client = SECEdgarClient()
-        try:
-            for filer in unknown:
-                try:
-                    info = await client.get_company_info(filer["cik"])
-                    if info.entity_type:
-                        known_types[filer["cik"]] = info.entity_type
-                        # Cache in Neo4j for future runs
-                        await Neo4jClient.execute_query(
-                            """
-                            MERGE (c:Company {cik: $cik})
-                            SET c.entity_type = $entity_type
-                            """,
-                            {"cik": filer["cik"], "entity_type": info.entity_type},
-                        )
-                except Exception:
-                    pass  # Can't determine type — allow through
-        finally:
-            await client.close()
-
-    # Only keep filers with entityType == "operating"
-    filtered = []
-    excluded_count = 0
-    for filer in filers:
-        entity_type = known_types.get(filer["cik"])
-        if entity_type and entity_type != "operating":
-            excluded_count += 1
-            logger.debug(
-                f"Skipping non-company filer: {filer['name']} "
-                f"(entityType={entity_type})"
-            )
-        else:
-            filtered.append(filer)
-
-    if excluded_count:
-        logger.info(
-            f"Filtered out {excluded_count} non-company filers "
-            f"(individuals/funds) by EDGAR entityType"
-        )
-
-    return filtered
+    return filtered, company_info
 
 
 async def discover_form4_filers(since_date: str) -> list[dict]:
@@ -261,13 +250,18 @@ async def filter_already_scanned(filers: list[dict], since_date: str) -> list[di
     return filtered
 
 
-async def scan_company_form4s(cik: str, name: str) -> dict:
+async def scan_company_form4s(cik: str, name: str, info: dict | None = None) -> dict:
     """Fetch and store recent Form 4 filings for one company."""
-    return await InsiderTradingService.scan_and_store_company(
-        cik=cik,
-        company_name=name,
-        limit=FORM4_LIMIT_PER_COMPANY,
-    )
+    kwargs = {
+        "cik": cik,
+        "company_name": name,
+        "limit": FORM4_LIMIT_PER_COMPANY,
+    }
+    # Pass pre-fetched metadata to skip redundant EDGAR get_company_info call
+    if info:
+        kwargs["known_tickers"] = info.get("tickers", [])
+        kwargs["known_entity_type"] = info.get("entity_type")
+    return await InsiderTradingService.scan_and_store_company(**kwargs)
 
 
 async def detect_and_alert(affected_ciks: set[str]) -> int:
@@ -410,14 +404,12 @@ async def run_scanner() -> dict:
             await update_checkpoint(today, "success_empty", counts)
             return counts
 
-        # 1b. Filter out investment vehicles (funds, trusts, etc.)
-        all_filers = await filter_investment_vehicles(all_filers)
+        # 1b. Filter out companies we already scanned since checkpoint (Neo4j only, instant)
+        all_filers = await filter_already_scanned(all_filers, checkpoint)
 
-        # 1c. Filter out non-companies (individuals, funds) by EDGAR entityType
-        all_filers = await filter_non_companies(all_filers)
-
-        # 1d. Filter out companies we already scanned since checkpoint
-        filers = await filter_already_scanned(all_filers, checkpoint)
+        # 1c. Filter + classify: reject non-companies/investment vehicles,
+        #     cache SIC + entity_type to Neo4j, collect company_info for scan phase
+        filers, company_info = await filter_and_classify_filers(all_filers)
 
         if not filers:
             logger.info("All companies already scanned. Updating checkpoint and exiting.")
@@ -436,7 +428,7 @@ async def run_scanner() -> dict:
             name = filer["name"]
 
             try:
-                result = await scan_company_form4s(cik, name)
+                result = await scan_company_form4s(cik, name, company_info.get(cik))
                 stored = result.get("transactions_stored", 0)
                 counts["transactions_stored"] += stored
                 counts["companies_scanned"] += 1

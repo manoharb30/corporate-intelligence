@@ -215,6 +215,7 @@ class InsiderClusterService:
             MATCH (c:Company)-[:INSIDER_TRADE_OF]->(t:InsiderTransaction)<-[:TRADED_BY]-(p:Person)
             WHERE t.transaction_date >= $since_date
               AND t.transaction_code = $tx_code
+              AND (t.is_derivative IS NULL OR t.is_derivative = false)
               AND c.tickers IS NOT NULL AND size(c.tickers) > 0
             RETURN c.cik as cik,
                    c.name as company_name,
@@ -612,6 +613,8 @@ class InsiderClusterService:
             if t.get("transaction_code") != tx_code:
                 continue
             if (t.get("total_value") or 0) <= 0:
+                continue
+            if t.get("is_derivative", False):
                 continue
             if not t["transaction_date"] or t["transaction_date"] < window_start or t["transaction_date"] > window_end:
                 continue

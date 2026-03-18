@@ -18,6 +18,7 @@ from scanner.form4_scanner import (
 def mock_neo4j():
     with patch("scanner.form4_scanner.Neo4jClient") as mock:
         mock.connect = AsyncMock()
+        mock.reconnect = AsyncMock()
         mock.execute_query = AsyncMock(return_value=[])
         yield mock
 
@@ -172,17 +173,13 @@ class TestRunScanner:
             new_callable=AsyncMock,
             return_value=filers,
         ), patch(
-            "scanner.form4_scanner.filter_investment_vehicles",
-            new_callable=AsyncMock,
-            side_effect=lambda x: x,
-        ), patch(
-            "scanner.form4_scanner.filter_non_companies",
-            new_callable=AsyncMock,
-            side_effect=lambda x: x,
-        ), patch(
             "scanner.form4_scanner.filter_already_scanned",
             new_callable=AsyncMock,
             side_effect=lambda f, _: f,
+        ), patch(
+            "scanner.form4_scanner.filter_and_classify_filers",
+            new_callable=AsyncMock,
+            return_value=(filers, {}),
         ), patch(
             "scanner.form4_scanner.scan_company_form4s",
             new_callable=AsyncMock,
@@ -213,17 +210,13 @@ class TestRunScanner:
             new_callable=AsyncMock,
             return_value=filers,
         ), patch(
-            "scanner.form4_scanner.filter_investment_vehicles",
-            new_callable=AsyncMock,
-            side_effect=lambda x: x,
-        ), patch(
-            "scanner.form4_scanner.filter_non_companies",
-            new_callable=AsyncMock,
-            side_effect=lambda x: x,
-        ), patch(
             "scanner.form4_scanner.filter_already_scanned",
             new_callable=AsyncMock,
             side_effect=lambda f, _: f,
+        ), patch(
+            "scanner.form4_scanner.filter_and_classify_filers",
+            new_callable=AsyncMock,
+            return_value=(filers, {}),
         ), patch(
             "scanner.form4_scanner.scan_company_form4s",
             new_callable=AsyncMock,

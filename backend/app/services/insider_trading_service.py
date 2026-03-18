@@ -87,25 +87,33 @@ class InsiderTradingService:
         cik: str,
         company_name: str,
         limit: int = 50,
+        known_tickers: list[str] | None = None,
+        known_entity_type: str | None = None,
     ) -> dict:
         """
         Fetch Form 4 filings, parse XML, and store transactions in Neo4j.
 
         Returns summary of what was found and stored.
+        If known_tickers/known_entity_type are provided (e.g. from scanner
+        filter phase), skips the redundant get_company_info() EDGAR call.
         """
         client = SECEdgarClient()
         parser = Form4Parser()
 
         try:
-            # Fetch company metadata (tickers, entity_type) for enrichment
-            tickers = []
-            entity_type = None
-            try:
-                info = await client.get_company_info(cik)
-                tickers = info.tickers or []
-                entity_type = info.entity_type
-            except Exception:
-                pass  # Non-critical — proceed without tickers
+            # Use pre-fetched company metadata if available, otherwise fetch
+            if known_tickers is not None and known_entity_type is not None:
+                tickers = known_tickers
+                entity_type = known_entity_type
+            else:
+                tickers = []
+                entity_type = None
+                try:
+                    info = await client.get_company_info(cik)
+                    tickers = info.tickers or []
+                    entity_type = info.entity_type
+                except Exception:
+                    pass  # Non-critical — proceed without tickers
 
             filings = await client.get_form4_filings(cik, limit=limit)
 
