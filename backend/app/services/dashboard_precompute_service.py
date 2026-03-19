@@ -16,6 +16,7 @@ from app.db.neo4j_client import Neo4jClient
 from app.services.feed_service import FeedService
 from app.services.dashboard_service import DashboardService
 from app.services.accuracy_service import AccuracyService
+from app.services.snapshot_service import SnapshotService
 
 logger = logging.getLogger(__name__)
 
@@ -163,6 +164,15 @@ class DashboardPrecomputeService:
             logger.error(f"Dashboard precompute: top hits failed: {e}")
             snapshot["top_hits"] = []
 
+        # 7. Scorecard (live signal performance — buy + sell stats with prices)
+        try:
+            scorecard = await SnapshotService.get_weekly_snapshot(days=30)
+            snapshot["scorecard"] = scorecard
+            logger.info(f"Dashboard precompute: scorecard done ({scorecard.get('total_signals', 0)} buy, {scorecard.get('sell_stats', {}).get('total', 0)} sell)")
+        except Exception as e:
+            logger.error(f"Dashboard precompute: scorecard failed: {e}")
+            snapshot["scorecard"] = None
+
         snapshot["computed_at"] = datetime.now().isoformat()
         elapsed = round(time.time() - start, 1)
         snapshot["compute_seconds"] = elapsed
@@ -184,6 +194,7 @@ class DashboardPrecomputeService:
                     pulse_json: $pulse_json,
                     anomalies_json: $anomalies_json,
                     top_hits_json: $top_hits_json,
+                    scorecard_json: $scorecard_json,
                     computed_at: $computed_at,
                     compute_seconds: $compute_seconds
                 })
@@ -198,6 +209,7 @@ class DashboardPrecomputeService:
                 "pulse_json": json.dumps(snapshot.get("pulse")),
                 "anomalies_json": json.dumps(snapshot.get("anomalies", [])),
                 "top_hits_json": json.dumps(snapshot.get("top_hits", [])),
+                "scorecard_json": json.dumps(snapshot.get("scorecard")),
                 "computed_at": snapshot["computed_at"],
                 "compute_seconds": elapsed,
             })
@@ -230,6 +242,7 @@ class DashboardPrecomputeService:
                    d.pulse_json as pulse,
                    d.anomalies_json as anomalies,
                    d.top_hits_json as top_hits,
+                   d.scorecard_json as scorecard,
                    d.computed_at as computed_at,
                    d.compute_seconds as compute_seconds
         """
@@ -248,6 +261,7 @@ class DashboardPrecomputeService:
             "pulse": json.loads(r["pulse"]) if r["pulse"] else None,
             "anomalies": json.loads(r["anomalies"]) if r["anomalies"] else [],
             "top_hits": json.loads(r["top_hits"]) if r["top_hits"] else [],
+            "scorecard": json.loads(r["scorecard"]) if r.get("scorecard") else None,
             "computed_at": r["computed_at"],
             "compute_seconds": r["compute_seconds"],
         }

@@ -444,6 +444,11 @@ async def run_scanner() -> dict:
                 counts["last_error"] = str(e)
                 logger.error(f"Error scanning {name} ({cik}): {e}")
 
+            # Reconnect every 50 companies to avoid Aura idle timeout
+            if (i + 1) % 50 == 0:
+                logger.info(f"Reconnecting Neo4j after {i + 1} companies")
+                await Neo4jClient.reconnect()
+
             # Rate limiting
             if i < len(filers) - 1:
                 await asyncio.sleep(INTER_COMPANY_DELAY)

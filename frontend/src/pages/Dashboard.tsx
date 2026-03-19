@@ -46,6 +46,7 @@ export default function Dashboard() {
         if (data.accuracy) setAccuracy(data.accuracy)
         if (data.pulse) setPulse(data.pulse)
         if (data.anomalies) setAnomalies(data.anomalies)
+        if (data.scorecard) setSnapshot(data.scorecard)
       } catch {
         // Fallback: pre-computed data not available, fetch live
         if (ignore) return
@@ -89,26 +90,14 @@ export default function Dashboard() {
     return () => clearTimeout(timeout)
   }, [searchQuery])
 
-  // Lazy-load snapshot when scorecard section scrolls into view
+  // Fallback: if precomputed blob didn't include scorecard, fetch live
   useEffect(() => {
-    if (snapshot || snapshotLoading) return
-    const el = scorecardRef.current
-    if (!el) return
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          observer.disconnect()
-          setSnapshotLoading(true)
-          snapshotApi.getWeekly(30)
-            .then(res => setSnapshot(res.data))
-            .catch(() => {})
-            .finally(() => setSnapshotLoading(false))
-        }
-      },
-      { rootMargin: '200px' }
-    )
-    observer.observe(el)
-    return () => observer.disconnect()
+    if (snapshot || snapshotLoading || loading) return
+    setSnapshotLoading(true)
+    snapshotApi.getWeekly(30)
+      .then(res => setSnapshot(res.data))
+      .catch(() => {})
+      .finally(() => setSnapshotLoading(false))
   }, [snapshot, snapshotLoading, loading])
 
   const hitRate = accuracy?.overall_hit_rate ?? null
@@ -426,39 +415,13 @@ export default function Dashboard() {
           <div className="text-center py-8 text-gray-400 text-sm">Loading scorecard...</div>
         </section>
       )}
-      {snapshot && snapshot.total_signals > 0 && (() => {
-        const buySignals = snapshot.signals.filter(s => s.signal_action === 'BUY')
-        const watchSignals = snapshot.signals.filter(s => s.signal_action === 'WATCH')
-        const passSignals = snapshot.signals.filter(s => s.signal_action === 'PASS')
+      {snapshot && (snapshot.buy_stats?.total > 0 || snapshot.sell_stats?.total > 0) && (() => {
+        const buySignals = snapshot.signals.filter(s => s.signal_action !== 'PASS')
 
-        const matureDays = snapshot.mature_days || 21
-        // Mature = 21+ days held — only these count in headline stats
-        const matureBuy = buySignals.filter(s => s.days_held >= matureDays)
-        const matureBuyWins = matureBuy.filter(s => s.return_pct > 0).length
-        const matureBuyAvg = matureBuy.length > 0 ? matureBuy.reduce((a, s) => a + s.return_pct, 0) / matureBuy.length : 0
-        const matureBuyAlpha = matureBuy.length > 0 ? matureBuy.reduce((a, s) => a + (s.alpha_pct ?? s.return_pct), 0) / matureBuy.length : 0
-        const matureAll = snapshot.signals.filter(s => s.days_held >= matureDays)
-        const matureAllWins = matureAll.filter(s => s.return_pct > 0).length
-        const matureAllAvg = matureAll.length > 0 ? matureAll.reduce((a, s) => a + s.return_pct, 0) / matureAll.length : 0
-        const matureAllAlpha = matureAll.length > 0 ? matureAll.reduce((a, s) => a + (s.alpha_pct ?? s.return_pct), 0) / matureAll.length : 0
-
-        const watchWins = watchSignals.filter(s => s.days_held >= matureDays && s.return_pct > 0).length
-        const matureWatch = watchSignals.filter(s => s.days_held >= matureDays)
-        const watchAvg = matureWatch.length > 0 ? matureWatch.reduce((a, s) => a + s.return_pct, 0) / matureWatch.length : 0
-        const maturePass = passSignals.filter(s => s.days_held >= matureDays)
-        const passCorrect = maturePass.filter(s => s.return_pct <= 0).length
-        const passAvgAvoided = snapshot.pass_stats?.avg_avoided_loss
-
-        const bestBuy = matureBuy.length > 0 ? matureBuy.reduce((a, b) => a.return_pct > b.return_pct ? a : b) : null
-        const worstBuy = matureBuy.length > 0 ? matureBuy.reduce((a, b) => a.return_pct < b.return_pct ? a : b) : null
-
+        const matureDays = snapshot.mature_days || 14
+        const bs = snapshot.buy_stats
+        const ss = snapshot.sell_stats
         const spyReturn = snapshot.spy_return
-
-        // For headline: use mature BUY in buy tab, mature all in all tab
-        const headlineWins = scorecardTab === 'buy' ? matureBuyWins : matureAllWins
-        const headlineTotal = scorecardTab === 'buy' ? matureBuy.length : matureAll.length
-        const headlineAvg = scorecardTab === 'buy' ? matureBuyAvg : matureAllAvg
-        const headlineAlpha = scorecardTab === 'buy' ? matureBuyAlpha : matureAllAlpha
 
         return (
         <section className="mb-12">
@@ -470,53 +433,41 @@ export default function Dashboard() {
             Signals from the last {snapshot.period_days} days — tracked in real time
           </p>
 
-          {/* Headline stats */}
-          {headlineTotal > 0 && (
+          {/* Buy-side headline (strong_buy only) */}
+          {bs && bs.total > 0 && (
             <div className="bg-gray-900 rounded-xl p-5 mb-4">
               <div className="text-sm text-gray-300 mb-3">
-                <span className="text-white font-bold">{headlineWins} of {headlineTotal}</span>
-                {' '}mature signals winning ({matureDays}+ days held)
-                {' · Alpha vs SPY: '}
-                <span className={headlineAlpha >= 0 ? 'text-green-400 font-bold' : 'text-red-400 font-bold'}>
-                  {headlineAlpha >= 0 ? '+' : ''}{headlineAlpha.toFixed(1)}%
-                </span>
-                {' · Avg return: '}
-                <span className={headlineAvg >= 0 ? 'text-green-400' : 'text-red-400'}>
-                  {headlineAvg >= 0 ? '+' : ''}{headlineAvg.toFixed(1)}%
-                </span>
+                <span className="text-green-400 font-bold">BUY SIGNALS</span>
+                {' — '}<span className="text-white font-bold">{bs.total}</span> strong-conviction signals
+                {bs.beat_spy_count > 0 && (
+                  <>{' · '}<span className="text-green-400 font-bold">{bs.beat_spy_count}/{bs.total}</span> beating SPY</>
+                )}
                 {spyReturn !== null && (
-                  <>
-                    {' · SPY: '}
-                    <span className={spyReturn >= 0 ? 'text-gray-300' : 'text-red-400'}>
-                      {spyReturn >= 0 ? '+' : ''}{spyReturn.toFixed(1)}%
-                    </span>
-                  </>
+                  <>{' · SPY: '}<span className={spyReturn >= 0 ? 'text-gray-300' : 'text-red-400'}>{spyReturn >= 0 ? '+' : ''}{spyReturn.toFixed(1)}%</span></>
                 )}
               </div>
               <div className="flex items-center justify-between flex-wrap gap-4">
                 <div className="flex items-center gap-6">
                   <div>
-                    <div className="text-xs text-green-400 font-semibold uppercase tracking-wide mb-1">
-                      {scorecardTab === 'buy' ? 'BUY Signals' : 'All Signals'} (mature)
-                    </div>
+                    <div className="text-xs text-green-400 font-semibold uppercase tracking-wide mb-1">Win Rate</div>
                     <div className="flex items-baseline gap-1">
-                      <span className="text-2xl font-bold text-white">{headlineWins}</span>
+                      <span className="text-2xl font-bold text-white">{bs.win_count}</span>
                       <span className="text-gray-400">/</span>
-                      <span className="text-2xl font-bold text-white">{headlineTotal}</span>
+                      <span className="text-2xl font-bold text-white">{bs.total}</span>
                       <span className="text-sm text-gray-400 ml-1">winning</span>
                     </div>
                   </div>
                   <div className="h-10 w-px bg-gray-700"></div>
                   <div>
-                    <div className={`text-2xl font-bold ${headlineAlpha >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                      {headlineAlpha >= 0 ? '+' : ''}{headlineAlpha.toFixed(2)}%
+                    <div className={`text-2xl font-bold ${(bs.avg_alpha ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {(bs.avg_alpha ?? 0) >= 0 ? '+' : ''}{(bs.avg_alpha ?? 0).toFixed(2)}%
                     </div>
                     <div className="text-xs text-gray-400 mt-0.5">alpha vs SPY</div>
                   </div>
                   <div className="h-10 w-px bg-gray-700"></div>
                   <div>
-                    <div className={`text-lg font-bold ${headlineAvg >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                      {headlineAvg >= 0 ? '+' : ''}{headlineAvg.toFixed(2)}%
+                    <div className={`text-lg font-bold ${bs.avg_return >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {bs.avg_return >= 0 ? '+' : ''}{bs.avg_return.toFixed(2)}%
                     </div>
                     <div className="text-xs text-gray-400 mt-0.5">avg return</div>
                   </div>
@@ -531,81 +482,100 @@ export default function Dashboard() {
                       </div>
                     </>
                   )}
-                  {bestBuy && scorecardTab === 'buy' && (
+                  {bs.best && (
                     <>
                       <div className="h-10 w-px bg-gray-700"></div>
                       <div>
                         <div className="text-sm font-bold text-green-400">
-                          {bestBuy.ticker} {bestBuy.return_pct >= 0 ? '+' : ''}{bestBuy.return_pct.toFixed(1)}%
+                          {bs.best.ticker} {bs.best.return_pct >= 0 ? '+' : ''}{bs.best.return_pct.toFixed(1)}%
                         </div>
-                        <div className="text-xs text-gray-400 mt-0.5">best BUY</div>
-                      </div>
-                    </>
-                  )}
-                  {worstBuy && scorecardTab === 'buy' && (
-                    <>
-                      <div className="h-10 w-px bg-gray-700"></div>
-                      <div>
-                        <div className="text-sm font-bold text-red-400">
-                          {worstBuy.ticker} {worstBuy.return_pct >= 0 ? '+' : ''}{worstBuy.return_pct.toFixed(1)}%
-                        </div>
-                        <div className="text-xs text-gray-400 mt-0.5">worst BUY</div>
+                        <div className="text-xs text-gray-400 mt-0.5">best</div>
                       </div>
                     </>
                   )}
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-32 h-2 bg-gray-700 rounded-full overflow-hidden flex">
-                    <div className="bg-green-500 h-full rounded-l-full" style={{ width: `${(headlineWins / headlineTotal) * 100}%` }}></div>
-                    <div className="bg-red-500 h-full rounded-r-full" style={{ width: `${((headlineTotal - headlineWins) / headlineTotal) * 100}%` }}></div>
+                {bs.total > 0 && (
+                  <div className="flex items-center gap-2">
+                    <div className="w-32 h-2 bg-gray-700 rounded-full overflow-hidden flex">
+                      <div className="bg-green-500 h-full rounded-l-full" style={{ width: `${(bs.win_count / bs.total) * 100}%` }}></div>
+                      <div className="bg-red-500 h-full rounded-r-full" style={{ width: `${(bs.loss_count / bs.total) * 100}%` }}></div>
+                    </div>
+                    <span className="text-xs text-gray-400">{((bs.win_count / bs.total) * 100).toFixed(0)}% win</span>
                   </div>
-                  <span className="text-xs text-gray-400">{((headlineWins / headlineTotal) * 100).toFixed(0)}% win</span>
-                </div>
+                )}
               </div>
             </div>
           )}
 
-          {/* Stat bars for WATCH and PASS */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
-            {watchSignals.length > 0 && (
-              <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-yellow-100 text-yellow-700">WATCH</span>
-                  <span className="text-xs text-gray-400">{matureWatch.length} mature / {watchSignals.length} total</span>
-                </div>
-                <div className="flex items-center gap-4">
+          {/* Sell-side accuracy bar */}
+          {ss && ss.total > 0 && (
+            <div className="bg-red-950 rounded-xl p-5 mb-5">
+              <div className="text-sm text-red-200 mb-3">
+                <span className="text-red-400 font-bold">SELL SIGNALS</span>
+                {' — '}<span className="text-white font-bold">{ss.total}</span> insider sell clusters detected
+              </div>
+              <div className="flex items-center justify-between flex-wrap gap-4">
+                <div className="flex items-center gap-6">
                   <div>
-                    <span className="text-lg font-bold text-gray-900">{watchWins}/{matureWatch.length}</span>
-                    <span className="text-xs text-gray-500 ml-1">winning</span>
-                  </div>
-                  {matureWatch.length > 0 && (
-                    <div className={`text-lg font-bold ${watchAvg >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {watchAvg >= 0 ? '+' : ''}{watchAvg.toFixed(2)}%
+                    <div className="text-xs text-red-400 font-semibold uppercase tracking-wide mb-1">Accuracy</div>
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-2xl font-bold text-white">{ss.correct}</span>
+                      <span className="text-gray-400">/</span>
+                      <span className="text-2xl font-bold text-white">{ss.total}</span>
+                      <span className="text-sm text-gray-400 ml-1">correct</span>
                     </div>
-                  )}
-                </div>
-              </div>
-            )}
-            {passSignals.length > 0 && (
-              <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-gray-100 text-gray-600">PASS</span>
-                  <span className="text-xs text-gray-400">{maturePass.length} mature / {passSignals.length} total</span>
-                </div>
-                <div className="flex items-center gap-4">
-                  <div>
-                    <span className="text-lg font-bold text-gray-900">{passCorrect}/{maturePass.length}</span>
-                    <span className="text-xs text-gray-500 ml-1">called correctly</span>
                   </div>
-                  {passAvgAvoided ? (
-                    <span className="text-xs text-green-700 font-medium">Avg avoided loss: -{passAvgAvoided.toFixed(1)}%</span>
-                  ) : (
-                    <span className="text-xs text-gray-500">Stock dropped after we said PASS</span>
+                  {ss.correct_rate !== null && (
+                    <>
+                      <div className="h-10 w-px bg-red-800"></div>
+                      <div>
+                        <div className="text-2xl font-bold text-red-400">{ss.correct_rate.toFixed(0)}%</div>
+                        <div className="text-xs text-red-300/60 mt-0.5">accuracy rate</div>
+                      </div>
+                    </>
+                  )}
+                  {ss.avg_avoided_loss !== null && (
+                    <>
+                      <div className="h-10 w-px bg-red-800"></div>
+                      <div>
+                        <div className="text-lg font-bold text-green-400">-{ss.avg_avoided_loss.toFixed(1)}%</div>
+                        <div className="text-xs text-red-300/60 mt-0.5">avg avoided loss</div>
+                      </div>
+                    </>
+                  )}
+                  {ss.mature_correct_rate !== null && ss.mature_total > 0 && (
+                    <>
+                      <div className="h-10 w-px bg-red-800"></div>
+                      <div>
+                        <div className="text-lg font-bold text-white">{ss.mature_correct_rate.toFixed(0)}%</div>
+                        <div className="text-xs text-red-300/60 mt-0.5">mature ({matureDays}d+) accuracy</div>
+                      </div>
+                    </>
+                  )}
+                  {ss.biggest_avoided && ss.biggest_avoided.length > 0 && (
+                    <>
+                      <div className="h-10 w-px bg-red-800"></div>
+                      <div>
+                        <div className="text-sm font-bold text-red-400">
+                          {ss.biggest_avoided[0].ticker} {ss.biggest_avoided[0].drop_pct.toFixed(1)}%
+                        </div>
+                        <div className="text-xs text-red-300/60 mt-0.5">biggest avoided</div>
+                      </div>
+                    </>
                   )}
                 </div>
+                {ss.total > 0 && ss.correct_rate !== null && (
+                  <div className="flex items-center gap-2">
+                    <div className="w-32 h-2 bg-red-900 rounded-full overflow-hidden flex">
+                      <div className="bg-green-500 h-full rounded-l-full" style={{ width: `${ss.correct_rate}%` }}></div>
+                      <div className="bg-red-500 h-full rounded-r-full" style={{ width: `${100 - ss.correct_rate}%` }}></div>
+                    </div>
+                    <span className="text-xs text-red-300/60">{ss.correct_rate.toFixed(0)}% correct</span>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* Tab toggle */}
           <div className="flex gap-1 mb-4 bg-gray-100 rounded-lg p-1 w-fit">
@@ -615,7 +585,7 @@ export default function Dashboard() {
                 scorecardTab === 'buy' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
               }`}
             >
-              BUY Signals ({buySignals.length})
+              Buy Signals ({buySignals.length})
             </button>
             <button
               onClick={() => setScorecardTab('all')}
@@ -623,7 +593,7 @@ export default function Dashboard() {
                 scorecardTab === 'all' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
               }`}
             >
-              All Signals ({snapshot.total_signals})
+              All Signals ({snapshot.signals.length})
             </button>
           </div>
 

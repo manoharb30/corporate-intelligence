@@ -2,6 +2,7 @@
 
 Shows how signals from the last 30 days are performing right now,
 with live price comparisons, alpha vs SPY, and win/loss tracking.
+Buy side: strong_buy conviction only. Sell side: high clusters, separate stats.
 """
 
 import asyncio
@@ -44,14 +45,17 @@ class SnapshotService:
 
         # 1. Get recent buy clusters, sell clusters, and compound signals
         buy_clusters = await InsiderClusterService.detect_clusters(
-            days=days, min_level="medium", direction="buy"
+            days=days, min_level="high", direction="buy"
         )
-        # Apply market cap filter to remove noise from mega-cap single buys
         buy_clusters = InsiderClusterService.apply_market_cap_filter(buy_clusters)
+        # Only strong_buy conviction for the scorecard
+        buy_clusters = [c for c in buy_clusters if c.conviction_tier == "strong_buy"]
 
         sell_clusters = await InsiderClusterService.detect_clusters(
-            days=days, min_level="medium", direction="sell"
+            days=days, min_level="high", direction="sell"
         )
+        sell_clusters = InsiderClusterService.apply_market_cap_filter(sell_clusters)
+
         compounds = await CompoundSignalService.detect_compound_signals(days=days)
 
         # Filter compounds to only those with cluster (insider_activist, triple_convergence)
@@ -74,7 +78,7 @@ class SnapshotService:
                 "num_insiders": c.num_buyers,
                 "total_value": c.total_buy_value,
                 "accession_number": c.accession_number,
-                "signal_action": "BUY" if c.signal_level == "high" else "WATCH",
+                "signal_action": "BUY",
                 "conviction_tier": c.conviction_tier,
             })
 
@@ -108,23 +112,23 @@ class SnapshotService:
                 "conviction_tier": "buy",
             })
 
-        # 3. Deduplicate by ticker (keep highest-level signal per ticker)
+        # 3. Deduplicate by ticker+action (keep highest-level signal per ticker per side)
         level_rank = {"high": 0, "medium": 1, "low": 2}
         seen: dict[str, dict] = {}
         for sig in raw_signals:
             ticker = sig.get("ticker")
             if not ticker or not sig.get("signal_date"):
                 continue
-            existing = seen.get(ticker)
+            key = f"{ticker}_{sig['signal_action']}"
+            existing = seen.get(key)
             if not existing or level_rank.get(sig["signal_level"], 2) < level_rank.get(existing["signal_level"], 2):
-                seen[ticker] = sig
+                seen[key] = sig
         deduped_signals = list(seen.values())
 
-        # Cap at 50 signals to avoid blocking the server
+        # Sort by level then value
         deduped_signals.sort(
             key=lambda s: (level_rank.get(s["signal_level"], 2), -(s.get("total_value") or 0))
         )
-        capped_signals = deduped_signals[:50]
 
         # Fetch SPY price history once for per-signal alpha computation
         def _fetch_spy_history() -> list[dict]:
@@ -137,15 +141,17 @@ class SnapshotService:
                     end=end_dt.strftime("%Y-%m-%d"),
                     progress=False,
                 )
-                if hasattr(spy_df.columns, "levels"):
+                # Handle MultiIndex columns from yfinance
+                if hasattr(spy_df.columns, "nlevels") and spy_df.columns.nlevels > 1:
                     spy_df.columns = spy_df.columns.get_level_values(0)
                 if len(spy_df) < 2:
                     return []
                 result = []
                 for date, row in spy_df.iterrows():
+                    close = row.iloc[0] if "Close" not in spy_df.columns else row["Close"]
                     result.append({
                         "date": date.strftime("%Y-%m-%d"),
-                        "close": float(row["Close"]),
+                        "close": float(close),
                     })
                 return result
             except Exception as e:
@@ -160,11 +166,11 @@ class SnapshotService:
         spy_latest = spy_history[-1]["close"] if spy_history else None
 
         def _find_spy_price_near(target_date: str) -> Optional[float]:
-            """Find SPY close on or nearest to target_date, within 5 trading days."""
+            """Find SPY close on or nearest to target_date, within 7 days."""
             if not spy_history:
                 return None
             try:
-                target = datetime.strptime(target_date, "%Y-%m-%d")
+                target = datetime.strptime(target_date[:10], "%Y-%m-%d")
             except (ValueError, TypeError):
                 return None
             best_price = None
@@ -240,7 +246,7 @@ class SnapshotService:
 
         tasks = [
             loop.run_in_executor(_price_executor, _fetch_price, sig)
-            for sig in capped_signals
+            for sig in deduped_signals
         ]
         results = await asyncio.gather(*tasks)
         scored_signals = [r for r in results if r is not None]
@@ -248,33 +254,93 @@ class SnapshotService:
         # Sort by return descending
         scored_signals.sort(key=lambda s: s["return_pct"], reverse=True)
 
-        # 4. Compute aggregates (all signals)
-        total = len(scored_signals)
-        wins = [s for s in scored_signals if s["return_pct"] > 0]
-        losses = [s for s in scored_signals if s["return_pct"] <= 0]
-        returns = [s["return_pct"] for s in scored_signals]
-        avg_return = round(sum(returns) / total, 2) if total > 0 else 0
+        # Split into buy and sell
+        buy_signals = [s for s in scored_signals if s["signal_action"] != "PASS"]
+        sell_signals = [s for s in scored_signals if s["signal_action"] == "PASS"]
 
-        best = scored_signals[0] if scored_signals else None
-        worst = scored_signals[-1] if scored_signals else None
+        # === BUY STATS (strong_buy only) ===
+        def _compute_buy_stats(signals: list[dict]) -> dict:
+            total = len(signals)
+            if total == 0:
+                return {"total": 0, "win_count": 0, "loss_count": 0, "avg_return": 0,
+                        "avg_alpha": None, "beat_spy_count": 0, "mature_total": 0,
+                        "mature_wins": 0, "mature_avg_return": 0, "mature_avg_alpha": None,
+                        "best": None, "worst": None}
+            wins = [s for s in signals if s["return_pct"] > 0]
+            alphas = [s["alpha_pct"] for s in signals if s["alpha_pct"] is not None]
+            beat_spy = [a for a in alphas if a > 0]
+            avg_ret = round(sum(s["return_pct"] for s in signals) / total, 2)
+            avg_alpha = round(sum(alphas) / len(alphas), 2) if alphas else None
 
-        # 5. Mature signals only (21+ days held)
-        mature = [s for s in scored_signals if s["days_held"] >= MATURE_DAYS]
-        mature_total = len(mature)
-        mature_wins = len([s for s in mature if s["return_pct"] > 0])
-        mature_returns = [s["return_pct"] for s in mature]
-        mature_avg_return = (
-            round(sum(mature_returns) / mature_total, 2)
-            if mature_total > 0 else 0
-        )
+            mature = [s for s in signals if s["days_held"] >= MATURE_DAYS]
+            m_wins = [s for s in mature if s["return_pct"] > 0]
+            m_alphas = [s["alpha_pct"] for s in mature if s["alpha_pct"] is not None]
+            m_avg_ret = round(sum(s["return_pct"] for s in mature) / len(mature), 2) if mature else 0
+            m_avg_alpha = round(sum(m_alphas) / len(m_alphas), 2) if m_alphas else None
 
-        # Aggregate alpha
-        alphas = [s["alpha_pct"] for s in scored_signals if s["alpha_pct"] is not None]
-        avg_alpha = round(sum(alphas) / len(alphas), 2) if alphas else None
-        mature_alphas = [s["alpha_pct"] for s in mature if s["alpha_pct"] is not None]
-        mature_avg_alpha = round(sum(mature_alphas) / len(mature_alphas), 2) if mature_alphas else None
+            sorted_by_ret = sorted(signals, key=lambda s: s["return_pct"], reverse=True)
+            best = {"ticker": sorted_by_ret[0]["ticker"], "return_pct": sorted_by_ret[0]["return_pct"]}
+            worst = {"ticker": sorted_by_ret[-1]["ticker"], "return_pct": sorted_by_ret[-1]["return_pct"]}
 
-        # 6. SPY benchmark return over the full period
+            return {
+                "total": total,
+                "win_count": len(wins),
+                "loss_count": total - len(wins),
+                "avg_return": avg_ret,
+                "avg_alpha": avg_alpha,
+                "beat_spy_count": len(beat_spy),
+                "mature_total": len(mature),
+                "mature_wins": len(m_wins),
+                "mature_avg_return": m_avg_ret,
+                "mature_avg_alpha": m_avg_alpha,
+                "best": best,
+                "worst": worst,
+            }
+
+        # === SELL STATS (high sell clusters) ===
+        def _compute_sell_stats(signals: list[dict]) -> dict:
+            total = len(signals)
+            if total == 0:
+                return {"total": 0, "correct": 0, "correct_rate": None,
+                        "avg_price_change": 0, "avg_avoided_loss": None,
+                        "mature_total": 0, "mature_correct": 0, "mature_correct_rate": None,
+                        "mature_avg_drop": None, "biggest_avoided": []}
+            correct = [s for s in signals if s["return_pct"] < 0]
+            correct_rate = round(len(correct) / total * 100, 1)
+            avg_change = round(sum(s["return_pct"] for s in signals) / total, 2)
+            avg_avoided = round(
+                sum(abs(s["return_pct"]) for s in correct) / len(correct), 2
+            ) if correct else None
+
+            mature = [s for s in signals if s["days_held"] >= MATURE_DAYS]
+            m_correct = [s for s in mature if s["return_pct"] < 0]
+            m_rate = round(len(m_correct) / len(mature) * 100, 1) if mature else None
+            m_avg_drop = round(
+                sum(s["return_pct"] for s in m_correct) / len(m_correct), 2
+            ) if m_correct else None
+
+            biggest = sorted(correct, key=lambda s: s["return_pct"])[:5]
+            biggest_avoided = [
+                {"ticker": s["ticker"], "drop_pct": s["return_pct"]} for s in biggest
+            ]
+
+            return {
+                "total": total,
+                "correct": len(correct),
+                "correct_rate": correct_rate,
+                "avg_price_change": avg_change,
+                "avg_avoided_loss": avg_avoided,
+                "mature_total": len(mature),
+                "mature_correct": len(m_correct),
+                "mature_correct_rate": m_rate,
+                "mature_avg_drop": m_avg_drop,
+                "biggest_avoided": biggest_avoided,
+            }
+
+        buy_stats = _compute_buy_stats(buy_signals)
+        sell_stats = _compute_sell_stats(sell_signals)
+
+        # SPY benchmark return over the full period
         spy_return = None
         if spy_history and len(spy_history) >= 2:
             spy_start_price = spy_history[0]["close"]
@@ -284,43 +350,38 @@ class SnapshotService:
                     (spy_end_price - spy_start_price) / spy_start_price * 100, 2
                 )
 
-        # 7. PASS signal stats
-        pass_signals = [s for s in scored_signals if s["signal_action"] == "PASS"]
-        mature_pass = [s for s in pass_signals if s["days_held"] >= MATURE_DAYS]
-        pass_correct_list = [s for s in mature_pass if s["pass_correct"]]
-        pass_stats = {
-            "total": len(pass_signals),
-            "mature": len(mature_pass),
-            "correct": len(pass_correct_list),
-            "correct_rate": round(len(pass_correct_list) / len(mature_pass) * 100, 1) if mature_pass else None,
-            "avg_avoided_loss": round(
-                sum(s["avoided_loss_pct"] for s in pass_correct_list) / len(pass_correct_list), 2
-            ) if pass_correct_list else None,
-        }
+        # Legacy top-level fields (backward compat) — now driven by buy-side only
+        total = len(scored_signals)
 
         result = {
             "period_days": days,
             "generated_at": now.isoformat(),
-            "total_signals": total,
-            "win_count": len(wins),
-            "loss_count": len(losses),
-            "avg_return": avg_return,
-            "avg_alpha": avg_alpha,
-            "mature_total": mature_total,
-            "mature_wins": mature_wins,
-            "mature_avg_return": mature_avg_return,
-            "mature_avg_alpha": mature_avg_alpha,
             "mature_days": MATURE_DAYS,
             "spy_return": spy_return,
-            "pass_stats": pass_stats,
-            "best_performer": {
-                "ticker": best["ticker"],
-                "return_pct": best["return_pct"],
-            } if best else None,
-            "worst_performer": {
-                "ticker": worst["ticker"],
-                "return_pct": worst["return_pct"],
-            } if worst else None,
+            # Buy-side headline stats (strong_buy only)
+            "total_signals": buy_stats["total"],
+            "win_count": buy_stats["win_count"],
+            "loss_count": buy_stats["loss_count"],
+            "avg_return": buy_stats["avg_return"],
+            "avg_alpha": buy_stats["avg_alpha"],
+            "mature_total": buy_stats["mature_total"],
+            "mature_wins": buy_stats["mature_wins"],
+            "mature_avg_return": buy_stats["mature_avg_return"],
+            "mature_avg_alpha": buy_stats["mature_avg_alpha"],
+            "best_performer": buy_stats["best"],
+            "worst_performer": buy_stats["worst"],
+            # Structured buy/sell stats
+            "buy_stats": buy_stats,
+            "sell_stats": sell_stats,
+            # Legacy pass_stats (now superseded by sell_stats)
+            "pass_stats": {
+                "total": sell_stats["total"],
+                "mature": sell_stats["mature_total"],
+                "correct": sell_stats["mature_correct"],
+                "correct_rate": sell_stats["mature_correct_rate"],
+                "avg_avoided_loss": sell_stats["avg_avoided_loss"],
+            },
+            # All signals for the table
             "signals": scored_signals,
         }
 

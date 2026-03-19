@@ -1129,6 +1129,34 @@ export interface SnapshotSignal {
   avoided_loss_pct?: number | null
 }
 
+export interface SnapshotBuyStats {
+  total: number
+  win_count: number
+  loss_count: number
+  avg_return: number
+  avg_alpha: number | null
+  beat_spy_count: number
+  mature_total: number
+  mature_wins: number
+  mature_avg_return: number
+  mature_avg_alpha: number | null
+  best: { ticker: string; return_pct: number } | null
+  worst: { ticker: string; return_pct: number } | null
+}
+
+export interface SnapshotSellStats {
+  total: number
+  correct: number
+  correct_rate: number | null
+  avg_price_change: number
+  avg_avoided_loss: number | null
+  mature_total: number
+  mature_correct: number
+  mature_correct_rate: number | null
+  mature_avg_drop: number | null
+  biggest_avoided: { ticker: string; drop_pct: number }[]
+}
+
 export interface WeeklySnapshot {
   period_days: number
   generated_at: string
@@ -1143,6 +1171,8 @@ export interface WeeklySnapshot {
   mature_avg_alpha: number | null
   mature_days: number
   spy_return: number | null
+  buy_stats: SnapshotBuyStats
+  sell_stats: SnapshotSellStats
   pass_stats: {
     total: number
     mature: number
@@ -1212,6 +1242,7 @@ export interface DashboardPrecomputed {
   pulse: DashboardPulse | null
   anomalies: AnomalyItem[]
   top_hits: unknown[]
+  scorecard: WeeklySnapshot | null
   computed_at: string
   compute_seconds: number
 }
