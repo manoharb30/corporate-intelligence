@@ -63,7 +63,7 @@ class DashboardPrecomputeService:
         try:
             signals, _ = await FeedService.get_feed(days=30, min_level="medium")
             signals_list = []
-            for s in signals[:100]:
+            for s in signals[:10]:
                 signals_list.append(s.to_dict())
             snapshot["signals"] = signals_list
             snapshot["signal_count"] = len(signals)
@@ -276,7 +276,7 @@ class DashboardPrecomputeService:
                 "pulse_json": json.dumps(snapshot.get("pulse")),
                 "anomalies_json": json.dumps(snapshot.get("anomalies", [])),
                 "top_hits_json": json.dumps(snapshot.get("top_hits", [])),
-                "scorecard_json": json.dumps(snapshot.get("scorecard")),
+                "scorecard_json": json.dumps(DashboardPrecomputeService._trim_scorecard(snapshot.get("scorecard"))),
                 "computed_at": snapshot["computed_at"],
                 "compute_seconds": elapsed,
             })
@@ -291,6 +291,23 @@ class DashboardPrecomputeService:
             "signal_count": snapshot.get("signal_count", 0),
             "anomaly_count": len(snapshot.get("anomalies", [])),
         }
+
+    @staticmethod
+    def _trim_scorecard(scorecard: dict | None) -> dict | None:
+        """Trim scorecard signals to top 20 sell + top 20 buy for storage.
+
+        Keeps aggregate stats intact, just reduces the signals list.
+        """
+        if not scorecard:
+            return scorecard
+        signals = scorecard.get("signals") or []
+        sells = [s for s in signals if s.get("signal_action") == "PASS"]
+        buys = [s for s in signals if s.get("signal_action") != "PASS"]
+        # Sort by value descending, take top 20 each
+        sells.sort(key=lambda s: abs(s.get("total_value") or 0), reverse=True)
+        buys.sort(key=lambda s: abs(s.get("total_value") or 0), reverse=True)
+        scorecard["signals"] = sells[:20] + buys[:20]
+        return scorecard
 
     @staticmethod
     async def get_cached() -> dict | None:
