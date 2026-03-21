@@ -339,6 +339,21 @@ class InsiderClusterService:
                     else:
                         buyer.form4_url = f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc_no_dashes}/{buyer.filing_accession}-index.htm"
 
+            # Compute actual trade date range from the trades themselves
+            all_trade_dates = [d for b in buyers for d in b.trade_dates if d]
+            first_trade = min(all_trade_dates) if all_trade_dates else window_start
+            last_trade = max(all_trade_dates) if all_trade_dates else latest_date
+
+            # Format as "Mar 10 - Mar 19" for the summary
+            def _fmt_date(d: str) -> str:
+                try:
+                    from datetime import datetime as dt
+                    return dt.strptime(d[:10], "%Y-%m-%d").strftime("%b %d").replace(" 0", " ")
+                except (ValueError, TypeError):
+                    return d[:10]
+
+            date_range = _fmt_date(first_trade) if first_trade == last_trade else f"{_fmt_date(first_trade)} - {_fmt_date(last_trade)}"
+
             # Classify signal level (different thresholds for buy vs sell)
             if direction == "sell":
                 # Sell: higher thresholds since selling is noisier
@@ -347,10 +362,10 @@ class InsiderClusterService:
                     continue
                 if num_buyers >= 4:
                     level = "high"
-                    summary = f"Insider Sell Cluster: {num_buyers} insiders selling"
+                    summary = f"{num_buyers} insiders selling between {date_range}"
                 elif num_buyers >= 3:
                     level = "medium"
-                    summary = f"Insider Sell Cluster: {num_buyers} insiders selling"
+                    summary = f"{num_buyers} insiders selling between {date_range}"
                 else:
                     continue  # <3 sellers = skip entirely
             else:
@@ -360,14 +375,14 @@ class InsiderClusterService:
 
                 if num_buyers >= 3:
                     level = "high"
-                    summary = f"Open Market Cluster: {num_buyers} insiders buying"
+                    summary = f"{num_buyers} insiders buying between {date_range}"
                 elif num_buyers >= 2 and officer_count >= 2 and total_buy_value >= 200_000:
                     # Two officers buying is highly informational — promote to HIGH
                     level = "high"
-                    summary = f"Officer Cluster: {num_buyers} insiders buying (inc. {officer_count} officers)"
+                    summary = f"{num_buyers} officers buying between {date_range}"
                 elif num_buyers >= 2:
                     level = "medium"
-                    summary = f"Open Market Cluster: {num_buyers} insiders buying"
+                    summary = f"{num_buyers} insiders buying between {date_range}"
                 else:
                     level = "low"
                     summary = f"Insider Purchase: {buyers[0].name}" if buyers else "Insider Purchase"
@@ -609,6 +624,7 @@ class InsiderClusterService:
         buyer_agg: dict[str, BuyerDetail] = {}
         total_trade_value = 0.0
         earliest_trade_date: Optional[str] = None
+        latest_trade_date: Optional[str] = None
         for t, tt in zip(trades, trade_types):
             if t.get("transaction_code") != tx_code:
                 continue
@@ -645,6 +661,8 @@ class InsiderClusterService:
             # Track earliest actual trade date for price measurement
             if earliest_trade_date is None or t["transaction_date"] < earliest_trade_date:
                 earliest_trade_date = t["transaction_date"]
+            if latest_trade_date is None or t["transaction_date"] > latest_trade_date:
+                latest_trade_date = t["transaction_date"]
 
         num_traders = len(buyer_agg)
         buyers = sorted(buyer_agg.values(), key=lambda b: b.total_value, reverse=True)
@@ -820,7 +838,19 @@ class InsiderClusterService:
                 conviction = "LOW"
 
         action_verb = "selling" if is_sell else "buying"
-        one_liner = f"{num_traders} insiders {action_verb} on open market — ${total_trade_value:,.0f} in {(window_end_dt - window_start_dt).days}d window"
+
+        # Format actual trade date range for display
+        _first = earliest_trade_date or window_start
+        _last = latest_trade_date or window_end
+        def _fmt_dt(d: str) -> str:
+            try:
+                return datetime.strptime(d[:10], "%Y-%m-%d").strftime("%b %d").replace(" 0", " ")
+            except (ValueError, TypeError):
+                return d[:10]
+        first_trade_fmt = _fmt_dt(_first)
+        last_trade_fmt = _fmt_dt(_last)
+
+        one_liner = f"{num_traders} insiders {action_verb} on open market — ${total_trade_value:,.0f} between {first_trade_fmt} and {last_trade_fmt}"
 
         # Use earliest actual trade date for price & timing (not arbitrary window_start)
         first_trade_date = earliest_trade_date or window_start
@@ -902,7 +932,7 @@ class InsiderClusterService:
             },
             "analysis": {
                 "agreement_type": agreement_type,
-                "summary": f"{num_traders} distinct insiders made open market {trade_verb} totaling ${total_trade_value:,.0f} within a {(window_end_dt - window_start_dt).days}-day window ({window_start} to {window_end}).",
+                "summary": f"{num_traders} insiders made open market {trade_verb} totaling ${total_trade_value:,.0f} between {first_trade_fmt} and {last_trade_fmt}.",
                 "parties_involved": [
                     {"name": b.name, "source_quote": f"{b.title} - {b.trade_count} trades, ${b.total_value:,.0f}"}
                     for b in buyers

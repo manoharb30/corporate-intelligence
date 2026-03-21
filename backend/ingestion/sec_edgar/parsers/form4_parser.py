@@ -50,6 +50,7 @@ class InsiderTransaction:
     total_value: float
     shares_after_transaction: float
     ownership_type: str  # "D" = Direct, "I" = Indirect
+    ownership_nature: str = ""  # e.g. "By Trust", "By Spouse" (indirect only)
     is_derivative: bool = False
 
 
@@ -219,10 +220,13 @@ class Form4Parser:
             post_holdings, "sharesOwnedFollowingTransaction/value", 0.0
         )
 
-        # Ownership type
+        # Ownership type and nature
         ownership_elem = elem.find("ownershipNature")
         ownership_type = self._get_text(
             ownership_elem, "directOrIndirectOwnership/value", "D"
+        )
+        ownership_nature = self._get_text(
+            ownership_elem, "natureOfOwnership/value", ""
         )
 
         return InsiderTransaction(
@@ -235,6 +239,7 @@ class Form4Parser:
             total_value=total_value,
             shares_after_transaction=shares_after,
             ownership_type=ownership_type,
+            ownership_nature=ownership_nature,
             is_derivative=is_derivative,
         )
 

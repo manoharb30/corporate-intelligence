@@ -171,6 +171,8 @@ class InsiderTradingService:
                                 t.total_value = $total_value,
                                 t.shares_after_transaction = $shares_after,
                                 t.ownership_type = $ownership_type,
+                                t.ownership_nature = $ownership_nature,
+                                t.pct_of_position_traded = $pct_of_position_traded,
                                 t.is_derivative = $is_derivative,
                                 t.insider_name = $insider_name,
                                 t.insider_title = $insider_title,
@@ -206,6 +208,14 @@ class InsiderTradingService:
                             "total_value": txn.total_value,
                             "shares_after": txn.shares_after_transaction,
                             "ownership_type": txn.ownership_type,
+                            "ownership_nature": txn.ownership_nature,
+                            "pct_of_position_traded": (
+                                round(txn.shares / (txn.shares_after_transaction + txn.shares) * 100, 1)
+                                if txn.transaction_code == "S" and (txn.shares_after_transaction + txn.shares) > 0
+                                else round(txn.shares / txn.shares_after_transaction * 100, 1)
+                                if txn.transaction_code == "P" and txn.shares_after_transaction > 0
+                                else None
+                            ),
                             "is_derivative": txn.is_derivative,
                             "insider_name": result.insider.name,
                             "insider_title": result.insider.title,

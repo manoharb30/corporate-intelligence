@@ -1127,6 +1127,7 @@ export interface SnapshotSignal {
   status: 'winning' | 'losing'
   pass_correct?: boolean
   avoided_loss_pct?: number | null
+  reason?: string
 }
 
 export interface SnapshotBuyStats {

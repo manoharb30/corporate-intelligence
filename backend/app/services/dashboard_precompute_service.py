@@ -17,6 +17,7 @@ from app.services.feed_service import FeedService
 from app.services.dashboard_service import DashboardService
 from app.services.accuracy_service import AccuracyService
 from app.services.snapshot_service import SnapshotService
+from app.services.signal_reason_service import SignalReasonService
 
 logger = logging.getLogger(__name__)
 
@@ -172,6 +173,72 @@ class DashboardPrecomputeService:
         except Exception as e:
             logger.error(f"Dashboard precompute: scorecard failed: {e}")
             snapshot["scorecard"] = None
+
+        # 8. LLM reason lines for qualifying signals in the scorecard
+        try:
+            scorecard_data = snapshot.get("scorecard") or {}
+            signals = scorecard_data.get("signals") or []
+            generated = 0
+            for sig in signals:
+                sig_id = sig.get("accession_number", "")
+                if not sig_id or not sig.get("ticker"):
+                    continue
+                # Qualify: strong_buy buys >= $100K or high sells >= $500K
+                is_buy = sig.get("signal_action") != "PASS"
+                value = sig.get("total_value") or 0
+                if is_buy and value < 100_000:
+                    continue
+                if not is_buy and value < 500_000:
+                    continue
+
+                direction = "buy" if is_buy else "sell"
+                # Extract CIK and window from signal_id
+                cik = sig.get("cik", "")
+                signal_date = sig.get("signal_date", "")
+                if not cik or not signal_date:
+                    continue
+
+                # Window: signal_date - 14 days
+                from datetime import timedelta
+                try:
+                    end_dt = datetime.strptime(signal_date[:10], "%Y-%m-%d")
+                    start_dt = end_dt - timedelta(days=14)
+                    window_start = start_dt.strftime("%Y-%m-%d")
+                    window_end = signal_date[:10]
+                except (ValueError, TypeError):
+                    continue
+
+                reason = await SignalReasonService.generate_and_store(
+                    signal_id=sig_id,
+                    ticker=sig["ticker"],
+                    company_name=sig.get("company_name", ""),
+                    direction=direction,
+                    cik=cik,
+                    window_start=window_start,
+                    window_end=window_end,
+                )
+                if reason:
+                    sig["reason"] = reason
+                    generated += 1
+
+            # Also add template reasons for non-qualifying signals
+            for sig in signals:
+                if sig.get("reason"):
+                    continue
+                is_buy = sig.get("signal_action") != "PASS"
+                direction = "sell" if not is_buy else "buy"
+                num = sig.get("num_insiders") or 0
+                val = sig.get("total_value") or 0
+                title = ""
+                headline = SignalReasonService.generate_headline(
+                    direction, num, val, title
+                )
+                sig["reason"] = headline
+
+            snapshot["scorecard"] = scorecard_data
+            logger.info(f"Dashboard precompute: signal reasons done ({generated} LLM, {len(signals) - generated} template)")
+        except Exception as e:
+            logger.error(f"Dashboard precompute: signal reasons failed: {e}")
 
         snapshot["computed_at"] = datetime.now().isoformat()
         elapsed = round(time.time() - start, 1)
