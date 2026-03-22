@@ -457,6 +457,8 @@ export const feedApi = {
   getFeed: (days = 30, limit = 50, minLevel = 'low', cik?: string) =>
     api.get<FeedResponse>('/feed', { params: { days, limit, min_level: minLevel, ...(cik ? { cik } : {}) } }),
 
+  getPrecomputed: () => api.get<FeedResponse>('/feed/precomputed'),
+
   getStats: () => api.get<DbStats>('/feed/stats'),
 
   getSummary: () => api.get<FeedSummary>('/feed/summary'),

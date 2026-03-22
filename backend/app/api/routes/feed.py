@@ -7,6 +7,7 @@ import logging
 from app.services.feed_service import FeedService, MarketScanResult
 from app.services.insider_trading_service import InsiderTradingService
 from app.services.officer_scan_service import OfficerScanService
+from app.services.dashboard_precompute_service import DashboardPrecomputeService
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,15 @@ async def get_db_stats():
         GET /feed/stats
     """
     return await FeedService.get_db_stats()
+
+
+@router.get("/precomputed")
+async def get_precomputed_feed():
+    """Get pre-computed feed signals from Neo4j. Instant response."""
+    data = await DashboardPrecomputeService.get_cached_feed()
+    if data is None:
+        return {"signals": [], "total_count": 0}
+    return data
 
 
 @router.get("")

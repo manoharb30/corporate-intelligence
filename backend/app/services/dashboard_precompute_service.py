@@ -68,6 +68,12 @@ class DashboardPrecomputeService:
             snapshot["signals"] = signals_list
             snapshot["signal_count"] = len(signals)
 
+            # Full feed for signals page (stored separately, not in dashboard response)
+            feed_full = []
+            for s in signals[:50]:
+                feed_full.append(s.to_dict())
+            snapshot["feed_full"] = feed_full
+
             # By level counts
             by_level = {"high": 0, "medium": 0, "low": 0}
             by_combined = {}
@@ -262,13 +268,14 @@ class DashboardPrecomputeService:
                     anomalies_json: $anomalies_json,
                     top_hits_json: $top_hits_json,
                     scorecard_json: $scorecard_json,
+                    feed_full_json: $feed_full_json,
                     computed_at: $computed_at,
                     compute_seconds: $compute_seconds
                 })
             """
             await Neo4jClient.execute_write(store_query, {
                 "stats_json": json.dumps(snapshot.get("stats")),
-                "signals_json": json.dumps(snapshot.get("signals", [])[:100]),
+                "signals_json": json.dumps(snapshot.get("signals", [])[:10]),
                 "signal_count": snapshot.get("signal_count", 0),
                 "by_level_json": json.dumps(snapshot.get("by_level", {})),
                 "by_combined_json": json.dumps(snapshot.get("by_combined", {})),
@@ -277,6 +284,7 @@ class DashboardPrecomputeService:
                 "anomalies_json": json.dumps(snapshot.get("anomalies", [])),
                 "top_hits_json": json.dumps(snapshot.get("top_hits", [])),
                 "scorecard_json": json.dumps(DashboardPrecomputeService._trim_scorecard(snapshot.get("scorecard"))),
+                "feed_full_json": json.dumps(snapshot.get("feed_full", [])),
                 "computed_at": snapshot["computed_at"],
                 "compute_seconds": elapsed,
             })
@@ -348,4 +356,36 @@ class DashboardPrecomputeService:
             "scorecard": json.loads(r["scorecard"]) if r.get("scorecard") else None,
             "computed_at": r["computed_at"],
             "compute_seconds": r["compute_seconds"],
+        }
+
+    @staticmethod
+    async def get_cached_feed() -> dict | None:
+        """Read just the pre-computed feed signals from Neo4j.
+
+        Separate from get_cached() to avoid loading the full dashboard blob
+        when only the signals page needs feed data.
+        """
+        query = """
+            MATCH (d:DashboardSnapshot {snapshot_key: 'latest'})
+            RETURN d.feed_full_json as feed_full,
+                   d.signal_count as signal_count,
+                   d.by_level_json as by_level,
+                   d.by_combined_json as by_combined,
+                   d.computed_at as computed_at
+        """
+        results = await Neo4jClient.execute_query(query, {})
+        if not results:
+            return None
+
+        r = results[0]
+        feed = r.get("feed_full")
+        if not feed:
+            return None
+
+        return {
+            "signals": json.loads(feed),
+            "total_count": r.get("signal_count") or 0,
+            "by_level": json.loads(r["by_level"]) if r.get("by_level") else {},
+            "by_combined": json.loads(r["by_combined"]) if r.get("by_combined") else {},
+            "computed_at": r.get("computed_at"),
         }

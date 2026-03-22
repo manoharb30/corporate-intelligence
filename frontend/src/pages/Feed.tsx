@@ -60,6 +60,28 @@ export default function Feed() {
     const fetchFeed = async () => {
       setLoading(true)
       try {
+        // Try precomputed feed first (instant) — only when no CIK filter
+        if (!cikFilter) {
+          try {
+            const [preRes, insiderRes, anomalyRes] = await Promise.allSettled([
+              feedApi.getPrecomputed(),
+              feedApi.getTopInsiderActivity(30, 10),
+              anomaliesApi.getTop(50),
+            ])
+            if (ignore) return
+            if (preRes.status === 'fulfilled' && preRes.value.data.signals?.length > 0) {
+              setSignals(preRes.value.data.signals)
+              if (preRes.value.data.by_level) setByLevel(preRes.value.data.by_level)
+              if (preRes.value.data.by_combined) setByCombined(preRes.value.data.by_combined)
+              if (insiderRes.status === 'fulfilled' && insiderRes.value) setInsiderActivity((insiderRes.value as any).data)
+              if (anomalyRes.status === 'fulfilled') setAnomalies(anomalyRes.value.data.anomalies)
+              return
+            }
+          } catch {
+            // Fall through to live fetch
+          }
+        }
+        // Fallback: live feed (when precomputed unavailable or CIK filter active)
         const [feedRes, insiderRes, anomalyRes] = await Promise.allSettled([
           feedApi.getFeed(days, 100, 'medium', cikFilter || undefined),
           cikFilter ? Promise.resolve(null) : feedApi.getTopInsiderActivity(30, 10),
