@@ -8,11 +8,10 @@ const features = [
   { text: 'Weekly CSV/data file delivery (S3 or SFTP)', accent: 'gray' },
   { text: 'Full anomaly dataset export (178+ validated cases)', accent: 'gray' },
   { text: 'Insider cluster signals with conviction scoring', accent: 'green' },
-  { text: 'Historical backtest data (Mar 2024 \u2013 present)', accent: 'gray' },
   { text: 'Signal metadata: insider names, titles, transaction amounts, timing', accent: 'gray' },
   { text: 'Company profiles with insider activity history', accent: 'gray' },
   { text: 'Live performance tracker vs market benchmark', accent: 'gray' },
-  { text: 'Coverage: 8,900+ US public companies', accent: 'gray' },
+  { text: 'Coverage: 3,600+ US public companies', accent: 'gray' },
   { text: 'Update frequency: Daily scans', accent: 'gray' },
 ]
 
@@ -81,7 +80,7 @@ export default function Pricing() {
               Annual Subscription
             </div>
             <div className="flex items-baseline justify-center gap-1">
-              <span className="text-5xl font-extrabold text-gray-900">$35,000</span>
+              <span className="text-5xl font-extrabold text-gray-900">$24,000</span>
               <span className="text-gray-500 text-lg">/year</span>
             </div>
           </div>
@@ -166,7 +165,7 @@ export default function Pricing() {
             </div>
             <div className="h-8 w-px bg-gray-300 hidden sm:block"></div>
             <div className="text-center">
-              <div className="text-2xl font-bold text-gray-900">8,900+</div>
+              <div className="text-2xl font-bold text-gray-900">3,600+</div>
               <div className="text-xs text-gray-500">Companies Covered</div>
             </div>
             <div className="h-8 w-px bg-gray-300 hidden sm:block"></div>

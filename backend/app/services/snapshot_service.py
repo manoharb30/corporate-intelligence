@@ -14,6 +14,7 @@ from typing import Optional
 
 import yfinance as yf
 
+from app.db.neo4j_client import Neo4jClient
 from app.services.insider_cluster_service import InsiderClusterService
 from app.services.compound_signal_service import CompoundSignalService
 from app.services.stock_price_service import StockPriceService
@@ -129,6 +130,17 @@ class SnapshotService:
         deduped_signals.sort(
             key=lambda s: (level_rank.get(s["signal_level"], 2), -(s.get("total_value") or 0))
         )
+
+        # Batch-fetch SIC codes for all companies (async, before threaded price fetch)
+        all_ciks = list(set(s["cik"] for s in deduped_signals if s.get("cik")))
+        sic_map: dict[str, str] = {}
+        if all_ciks:
+            sic_results = await Neo4jClient.execute_query(
+                "UNWIND $ciks as cik MATCH (c:Company {cik: cik}) WHERE c.sic IS NOT NULL "
+                "RETURN c.cik as cik, c.sic as sic",
+                {"ciks": all_ciks},
+            )
+            sic_map = {r["cik"]: r["sic"] for r in sic_results}
 
         # Fetch SPY price history once for per-signal alpha computation
         def _fetch_spy_history() -> list[dict]:
@@ -250,6 +262,10 @@ class SnapshotService:
         ]
         results = await asyncio.gather(*tasks)
         scored_signals = [r for r in results if r is not None]
+
+        # Inject SIC codes from pre-fetched map
+        for sig in scored_signals:
+            sig["sic_code"] = sic_map.get(sig.get("cik"), "")
 
         # Sort by return descending
         scored_signals.sort(key=lambda s: s["return_pct"], reverse=True)

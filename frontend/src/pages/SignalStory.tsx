@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { eventDetailApi, EventDetailResponse, ClusterBuyerDetail } from '../services/api'
 import DecisionCard from '../components/DecisionCard'
+import HistoricalContext from '../components/HistoricalContext'
 import PriceChart, { ChartMarker } from '../components/PriceChart'
 import InsiderTimeline from '../components/InsiderTimeline'
 import MiniGraph from '../components/MiniGraph'
@@ -153,6 +154,12 @@ export default function SignalStory() {
 
       {/* ===== Decision Card ===== */}
       {data.decision_card && <DecisionCard card={data.decision_card} isCluster={isAnyCluster || isCompound} />}
+
+      {/* ===== What History Says ===== */}
+      <HistoricalContext
+        sicCode={data.company_context?.sic_code}
+        direction={isSellCluster ? 'sell' : 'buy'}
+      />
 
       {/* ===== Chapter 1: The Filing ===== */}
       <section className="mb-8">

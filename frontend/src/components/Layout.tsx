@@ -13,6 +13,7 @@ const navigation = [
   { name: 'Snapshot', href: '/snapshot' },
   { name: 'Accuracy', href: '/accuracy' },
   { name: 'Track Record', href: '/track-record' },
+  { name: 'Research', href: '/blog/insider-signal-research' },
   { name: 'Pricing', href: '/pricing' },
 ]
 

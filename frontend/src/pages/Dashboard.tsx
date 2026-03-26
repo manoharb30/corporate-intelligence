@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { feedApi, profileApi, dashboardApi, anomaliesApi, snapshotApi, DbStats, SignalItem, ProfileSearchResult, AccuracySummary, DashboardPulse, AnomalyItem, WeeklySnapshot, SnapshotSignal } from '../services/api'
+import HistoricalContext, { getStats } from '../components/HistoricalContext'
 
 function formatVolume(v: number): string {
   if (v >= 1_000_000_000) return `$${(v / 1_000_000_000).toFixed(1)}B`
@@ -38,7 +39,7 @@ function SignalRow({ signal, onClick }: { signal: SnapshotSignal; onClick: () =>
       {signal.reason && (
         <p className="text-sm text-gray-600 mb-2 leading-relaxed">{signal.reason}</p>
       )}
-      <div className="flex items-center gap-3 text-xs">
+      <div className="flex items-center gap-3 text-xs mb-1">
         <span className={`font-semibold ${retColor}`}>{retSign}{signal.return_pct.toFixed(1)}% since signal</span>
         {signal.alpha_pct != null && (
           <span className={`${signal.alpha_pct >= 0 ? 'text-green-600' : 'text-red-600'}`}>
@@ -46,6 +47,7 @@ function SignalRow({ signal, onClick }: { signal: SnapshotSignal; onClick: () =>
           </span>
         )}
       </div>
+      <HistoricalContext sicCode={signal.sic_code} direction={isSell ? 'sell' : 'buy'} variant="inline" />
     </div>
   )
 }
@@ -230,7 +232,12 @@ export default function Dashboard() {
 
           <div className="space-y-3">
             {sellSignals
-              .sort((a, b) => (b.total_value || 0) - (a.total_value || 0))
+              .sort((a, b) => {
+                const aHit = getStats(a.sic_code, 'sell').hit_rate
+                const bHit = getStats(b.sic_code, 'sell').hit_rate
+                if (bHit !== aHit) return bHit - aHit
+                return (b.total_value || 0) - (a.total_value || 0)
+              })
               .slice(0, showAllSells ? 20 : 5)
               .map((s, idx) => (
                 <SignalRow
@@ -263,7 +270,12 @@ export default function Dashboard() {
 
           <div className="space-y-3">
             {buySignals
-              .sort((a, b) => (b.total_value || 0) - (a.total_value || 0))
+              .sort((a, b) => {
+                const aHit = getStats(a.sic_code, 'buy').hit_rate
+                const bHit = getStats(b.sic_code, 'buy').hit_rate
+                if (bHit !== aHit) return bHit - aHit
+                return (b.total_value || 0) - (a.total_value || 0)
+              })
               .slice(0, showAllBuys ? 20 : 5)
               .map((s, idx) => (
                 <SignalRow
@@ -472,6 +484,23 @@ export default function Dashboard() {
           )}
         </section>
       )}
+
+      {/* ===== CTA ===== */}
+      {/* ===== RESEARCH ===== */}
+      <section className="mb-10">
+        <Link
+          to="/blog/insider-signal-research"
+          className="block bg-gray-900 rounded-xl p-6 hover:bg-gray-800 transition-colors"
+        >
+          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Research</div>
+          <h3 className="text-lg font-bold text-white mb-2">
+            We Tested 80+ Insider Trading Signal Definitions. Here's What Actually Works.
+          </h3>
+          <p className="text-sm text-gray-400">
+            Banking insiders are right 89% of the time. "Buying the dip" is a myth. And more conviction doesn't mean better signals. Read the full analysis.
+          </p>
+        </Link>
+      </section>
 
       {/* ===== CTA ===== */}
       <section className="text-center py-10 mb-8 border-t border-gray-100">

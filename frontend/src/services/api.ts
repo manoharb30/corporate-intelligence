@@ -584,6 +584,7 @@ export interface DealConnection {
 }
 
 export interface CompanyContext {
+  sic_code: string | null
   sic_description: string | null
   state_of_incorporation: string | null
   officers: Array<{ name: string; title: string | null }>
@@ -1130,6 +1131,7 @@ export interface SnapshotSignal {
   pass_correct?: boolean
   avoided_loss_pct?: number | null
   reason?: string
+  sic_code?: string
 }
 
 export interface SnapshotBuyStats {

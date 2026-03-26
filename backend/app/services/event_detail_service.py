@@ -772,7 +772,8 @@ class EventDetailService:
             info_query = """
                 MATCH (c:Company {cik: $cik})
                 OPTIONAL MATCH (c)-[:OWNS]->(sub:Company)
-                RETURN c.sic_description as sic_description,
+                RETURN c.sic as sic_code,
+                       c.sic_description as sic_description,
                        c.state_of_incorporation as state_of_incorporation,
                        count(DISTINCT sub) as subsidiaries_count
             """
@@ -787,6 +788,7 @@ class EventDetailService:
             connections_result = await CompanyProfileService._get_connections(cik)
 
             return {
+                "sic_code": info.get("sic_code"),
                 "sic_description": info["sic_description"],
                 "state_of_incorporation": info["state_of_incorporation"],
                 "officers": officers,
