@@ -16,6 +16,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan handler for startup and shutdown."""
     # Startup
     await Neo4jClient.connect()
+    # Warm the connection pool so first user request is fast
+    try:
+        await Neo4jClient.execute_query("RETURN 1", {})
+    except Exception:
+        pass
     yield
     # Shutdown
     await Neo4jClient.disconnect()
