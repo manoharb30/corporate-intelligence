@@ -1,0 +1,6 @@
+{
+  "sentrux": {
+    "command": "sentrux",
+    "args": ["--mcp"]
+  }
+}

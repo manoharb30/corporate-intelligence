@@ -1,0 +1,26 @@
+[constraints]
+max_cycles = 0
+max_coupling = "B"
+max_cc = 25
+no_god_files = true
+
+# Boundary rules — hard constraints that actually matter
+[[boundaries]]
+from = "backend/ingestion/*"
+to = "backend/app/api/*"
+reason = "Ingestion layer must not depend on API layer"
+
+[[boundaries]]
+from = "backend/scanner/*"
+to = "backend/app/api/*"
+reason = "Scanners must not depend on API layer"
+
+[[boundaries]]
+from = "backend/app/db/*"
+to = "backend/app/api/*"
+reason = "Data layer must not depend on API layer"
+
+[[boundaries]]
+from = "backend/app/db/*"
+to = "backend/app/services/*"
+reason = "Data layer must not depend on service layer"

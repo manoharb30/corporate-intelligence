@@ -40,3 +40,30 @@ A corporate intelligence tool that detects M&A signals from SEC 8-K filings by a
 ## Demo Story
 1. Splunk example: 1.01+5.03 in Sep 2023 → Deal closed Mar 2024 (6 month warning)
 2. Current watch list: Delta, Salesforce, PayPal with Material Agreements
+
+## Architecture Governance (sentrux)
+
+This project uses sentrux for structural quality scoring. Follow these rules in every session:
+
+### Before making changes:
+1. Run `sentrux gate --save .` to snapshot the current baseline
+
+### During development:
+- Use the sentrux MCP tools: call `scan()` after major changes to check structural health
+- Never let architecture grade drop below B without explicit approval
+- Zero dependency cycles allowed (max_cycles = 0)
+- No god files — if any file exceeds 500 lines, refactor
+
+### After completing changes:
+1. Run `sentrux gate .` to compare against baseline
+2. If grade degraded, identify the cause and fix before committing
+3. Run `sentrux check .` — all rules must pass
+
+### Layer architecture (do not violate):
+- **data** (shared): Neo4j client, models — accessible from all layers
+- **ingestion** (layer 0): SEC filing fetchers, parsers — must not depend on API or services
+- **domain** (layer 1): Services, scanners — can access data + ingestion
+- **api** (layer 2): FastAPI routes — can access domain + data
+- **delivery** (layer 3): Frontend, CSV exports
+
+Scanners must NOT depend on API layer. Ingestion must NOT depend on services or API.
