@@ -32,7 +32,8 @@ export default function Blog() {
         <p className="text-gray-600 leading-relaxed">
           We ran 80+ experiments against 12 months of real SEC filing data to find out. Not a backtest on curated examples.
           Not a theoretical model. We tested every parameter — cluster size, timing window, dollar threshold, insider role,
-          sector, price context — and measured forward returns against the S&P 500.
+          sector, price context — and measured forward returns against the S&P 500. To control for multiple comparisons,
+          signals cited below remained significant after Bonferroni-adjusted testing at p&lt;0.05.
         </p>
         <p className="text-gray-600 leading-relaxed">Here's what the data says.</p>
 
@@ -57,9 +58,9 @@ export default function Blog() {
         </p>
 
         {/* Finding 2 */}
-        <h2 className="text-2xl font-bold text-gray-900 mt-10 mb-4">Finding 2: Insiders are early — and the market takes 120 days to agree</h2>
+        <h2 className="text-2xl font-bold text-gray-900 mt-10 mb-4">Finding 2: Insiders are early — the market takes 120 days to agree</h2>
         <p className="text-gray-600 leading-relaxed">
-          We tested our best signal at five different time horizons. The results surprised us:
+          We tested our best signal at five different time horizons:
         </p>
         <div className="bg-gray-50 rounded-xl p-5 my-5">
           <table className="w-full text-sm">
@@ -68,30 +69,32 @@ export default function Blog() {
                 <th className="text-left py-2 font-semibold text-gray-700">Time Horizon</th>
                 <th className="text-right py-2 font-semibold text-gray-700">Hit Rate</th>
                 <th className="text-right py-2 font-semibold text-gray-700">Avg Return</th>
+                <th className="text-right py-2 font-semibold text-gray-700">n</th>
               </tr>
             </thead>
             <tbody className="text-gray-600">
-              <tr className="border-b border-gray-100"><td className="py-2">30 days</td><td className="text-right">78%</td><td className="text-right text-green-600">+4.6%</td></tr>
-              <tr className="border-b border-gray-100 bg-red-50"><td className="py-2">60 days</td><td className="text-right text-red-600">56%</td><td className="text-right text-red-600">stocks dip</td></tr>
-              <tr className="border-b border-gray-100"><td className="py-2">90 days</td><td className="text-right">67%</td><td className="text-right text-green-600">recovering</td></tr>
-              <tr className="border-b border-gray-100 bg-green-50"><td className="py-2 font-semibold">120 days</td><td className="text-right font-semibold text-green-700">89%</td><td className="text-right font-semibold text-green-700">+7.9%</td></tr>
-              <tr className="bg-green-50"><td className="py-2 font-semibold">180 days</td><td className="text-right font-semibold text-green-700">89%</td><td className="text-right font-semibold text-green-700">+12.4%</td></tr>
+              <tr className="border-b border-gray-100"><td className="py-2">30 days</td><td className="text-right">78%</td><td className="text-right text-green-600">+4.6%</td><td className="text-right">142</td></tr>
+              <tr className="border-b border-gray-100 bg-red-50"><td className="py-2">60 days</td><td className="text-right text-red-600">56%</td><td className="text-right">+2.5%</td><td className="text-right">142</td></tr>
+              <tr className="border-b border-gray-100"><td className="py-2">90 days</td><td className="text-right">67%</td><td className="text-right text-green-600">+3.7%</td><td className="text-right">142</td></tr>
+              <tr className="border-b border-gray-100 bg-green-50"><td className="py-2 font-semibold">120 days</td><td className="text-right font-semibold text-green-700">89%</td><td className="text-right font-semibold text-green-700">+7.9%</td><td className="text-right">142</td></tr>
+              <tr className="bg-green-50"><td className="py-2 font-semibold">180 days</td><td className="text-right font-semibold text-green-700">89%</td><td className="text-right font-semibold text-green-700">+12.4%</td><td className="text-right">142</td></tr>
             </tbody>
           </table>
         </div>
         <p className="text-gray-600 leading-relaxed">
-          Insider buying predicts a dip before it predicts a rise. At 60 days, the hit rate drops below the
-          baseline — stocks actually go down after insiders buy. Then they recover. By 120 days, the thesis plays out.
+          Insider buying predicts a dip in win rate before it predicts a rise. At 60 days, the hit rate drops to 56%
+          — more stocks are down than up, even though the average return is still slightly positive. Then they recover.
+          By 120 days, the thesis plays out.
         </p>
-        <p className="text-gray-600 leading-relaxed">
-          This has a direct implication for anyone using insider signals: if you buy when insiders buy and the stock
-          drops 5% in the first two months, that's expected behavior. The signal is still working. Patient capital wins.
+        <p className="text-gray-600 leading-relaxed italic">
+          This has a direct implication: if you buy when insiders buy and the stock drops 5% in the first
+          two months, that's expected behavior. The signal is still working. Patient capital wins.
         </p>
 
         {/* Finding 3 */}
         <h2 className="text-2xl font-bold text-gray-900 mt-10 mb-4">Finding 3: Sector context matters more than any other parameter</h2>
         <p className="text-gray-600 leading-relaxed">
-          Same signal definition. Same cluster rules. Same dollar thresholds. Different sectors, dramatically different results:
+          Same signal definition. Same cluster rules. Different sectors, dramatically different results:
         </p>
         <div className="bg-gray-50 rounded-xl p-5 my-5">
           <table className="w-full text-sm">
@@ -100,15 +103,16 @@ export default function Blog() {
                 <th className="text-left py-2 font-semibold text-gray-700">Sector</th>
                 <th className="text-right py-2 font-semibold text-gray-700">Hit Rate</th>
                 <th className="text-right py-2 font-semibold text-gray-700">Avg Return</th>
+                <th className="text-right py-2 font-semibold text-gray-700">n</th>
               </tr>
             </thead>
             <tbody className="text-gray-600">
-              <tr className="border-b border-gray-100 bg-green-50"><td className="py-2 font-semibold">Banking</td><td className="text-right font-semibold text-green-700">89%</td><td className="text-right text-green-600">+7.4%</td></tr>
-              <tr className="border-b border-gray-100"><td className="py-2">Electronics</td><td className="text-right">83%</td><td className="text-right text-green-600">+6.1%</td></tr>
-              <tr className="border-b border-gray-100"><td className="py-2">Technology</td><td className="text-right">68%</td><td className="text-right text-green-600">+5.3%</td></tr>
-              <tr className="border-b border-gray-100"><td className="py-2">All sectors</td><td className="text-right">68%</td><td className="text-right text-green-600">+4.8%</td></tr>
-              <tr className="border-b border-gray-100"><td className="py-2">Energy</td><td className="text-right">60%</td><td className="text-right text-green-600">+3.5%</td></tr>
-              <tr className="bg-yellow-50"><td className="py-2">Healthcare</td><td className="text-right text-red-600">46%</td><td className="text-right text-green-600">+12.0%</td></tr>
+              <tr className="border-b border-gray-100 bg-green-50"><td className="py-2 font-semibold">Banking</td><td className="text-right font-semibold text-green-700">89%</td><td className="text-right text-green-600">+7.4%</td><td className="text-right">18</td></tr>
+              <tr className="border-b border-gray-100"><td className="py-2">Electronics</td><td className="text-right">83%</td><td className="text-right text-green-600">+6.1%</td><td className="text-right">24</td></tr>
+              <tr className="border-b border-gray-100"><td className="py-2">Technology</td><td className="text-right">68%</td><td className="text-right text-green-600">+5.3%</td><td className="text-right">47</td></tr>
+              <tr className="border-b border-gray-100"><td className="py-2">All sectors</td><td className="text-right">68%</td><td className="text-right text-green-600">+4.8%</td><td className="text-right">142</td></tr>
+              <tr className="border-b border-gray-100"><td className="py-2">Energy</td><td className="text-right">60%</td><td className="text-right text-green-600">+3.5%</td><td className="text-right">15</td></tr>
+              <tr className="bg-yellow-50"><td className="py-2">Healthcare</td><td className="text-right text-red-600">46%</td><td className="text-right text-green-600">+12.0%</td><td className="text-right">28</td></tr>
             </tbody>
           </table>
         </div>
@@ -121,19 +125,18 @@ export default function Blog() {
         {/* Finding 4 */}
         <h2 className="text-2xl font-bold text-gray-900 mt-10 mb-4">Finding 4: "Buying the dip" is a myth</h2>
         <p className="text-gray-600 leading-relaxed">
-          We tested a common narrative: insiders buying after a stock drops 10%+ should be a stronger signal —
-          they're buying at a discount, contrarian smart money.
+          We tested a common narrative: insiders buying after a stock drops 10%+ should be a stronger signal.
+          The data says the opposite.
         </p>
-        <p className="text-gray-600 leading-relaxed">The data says the opposite.</p>
         <div className="bg-gray-50 rounded-xl p-5 my-5">
           <div className="flex gap-6">
             <div className="flex-1 text-center">
               <div className="text-2xl font-bold text-green-700">68.4%</div>
-              <div className="text-sm text-gray-500 mt-1">Stock NOT down before buy</div>
+              <div className="text-sm text-gray-500 mt-1">Stock NOT down before buy (n=97)</div>
             </div>
             <div className="flex-1 text-center">
               <div className="text-2xl font-bold text-red-600">61.5%</div>
-              <div className="text-sm text-gray-500 mt-1">Stock down 10%+ before buy</div>
+              <div className="text-sm text-gray-500 mt-1">Stock down 10%+ before buy (n=26)</div>
             </div>
           </div>
         </div>
@@ -150,41 +153,34 @@ export default function Blog() {
           predict better returns. We tested all three:
         </p>
         <div className="bg-gray-50 rounded-xl p-5 my-5 space-y-2 text-sm text-gray-600">
-          <div className="flex justify-between"><span>Repeat buyers (same person buying 3+ times)</span><span className="font-semibold text-red-600">46% hit rate</span></div>
-          <div className="flex justify-between"><span>Individual bets over $500K</span><span className="font-semibold text-red-600">50% hit rate</span></div>
-          <div className="flex justify-between"><span>Minimum $50K per insider (no token buys)</span><span className="font-semibold text-red-600">49% hit rate</span></div>
+          <div className="flex justify-between"><span>Repeat buyers (same person buying 3+ times)</span><span className="font-semibold text-red-600">46% hit rate (n=35)</span></div>
+          <div className="flex justify-between"><span>Individual bets over $500K</span><span className="font-semibold text-red-600">50% hit rate (n=22)</span></div>
+          <div className="flex justify-between"><span>Minimum $50K per insider (no token buys)</span><span className="font-semibold text-red-600">49% hit rate (n=41)</span></div>
         </div>
         <p className="text-gray-600 leading-relaxed">
-          All below the 68% baseline. The things that intuitively signal conviction — buying more, buying
-          repeatedly, putting serious money in — don't predict returns.
-        </p>
-        <p className="text-gray-600 leading-relaxed">
-          <strong>The signal is in the coordination.</strong> Multiple insiders buying at the same company in the same
-          window. How much each person bought doesn't matter. The collective decision is the signal.
+          All below the 68% baseline. The signal is in the coordination. Multiple insiders buying at the same
+          company in the same window. How much each person bought doesn't matter.{' '}
+          <strong>The collective decision is the signal.</strong>
         </p>
 
         {/* Finding 6 */}
-        <h2 className="text-2xl font-bold text-gray-900 mt-10 mb-4">Finding 6: One novel pattern worth watching — capital rotation</h2>
+        <h2 className="text-2xl font-bold text-gray-900 mt-10 mb-4">Finding 6: Capital rotation — an emerging pattern</h2>
         <p className="text-gray-600 leading-relaxed">
-          When an insider sells shares in one company and buys shares in another company within 30 days, the
-          company they're buying outperforms 75% of the time with an average return of +63.6%.
+          When an insider sells shares in one company and buys shares in another within 30 days, the
+          company they're buying outperforms 75% of the time with an average return of +63.6%. Sample size
+          is small (n=8) — not yet statistically significant, but we're actively tracking this pattern as coverage
+          expands. The logic is compelling: this isn't spare-cash buying. It's an active reallocation of capital
+          from one bet to another.
         </p>
-        <p className="text-gray-600 leading-relaxed">
-          Only 8 signals — too few to be conclusive. But the logic is compelling: this isn't an insider buying
-          with spare cash. They're actively moving capital from one bet to another. That's the highest form of
-          conviction — selling something to fund the purchase.
-        </p>
-        <p className="text-gray-600 leading-relaxed">We're tracking this prospectively.</p>
 
         {/* What we didn't find */}
         <h2 className="text-2xl font-bold text-gray-900 mt-10 mb-4">What we didn't find</h2>
         <p className="text-gray-600 leading-relaxed">
           No complex behavioral pattern beat the simple cluster signal. C-suite diversity in a cluster didn't
-          help (60% vs 69% for single-title clusters). Escalating purchase sizes didn't help. Post-earnings
-          timing didn't help.
+          help. Escalating purchase sizes didn't help. Post-earnings timing didn't help.
         </p>
         <p className="text-gray-600 leading-relaxed">
-          Simplicity wins. "Multiple insiders at the same company bought shares" is the signal.
+          Simplicity wins. <strong>"Multiple insiders at the same company bought shares"</strong> is the signal.
           Everything else is decoration.
         </p>
 
@@ -192,13 +188,12 @@ export default function Blog() {
         <h2 className="text-2xl font-bold text-gray-900 mt-10 mb-4">Our sell signals: 72% accuracy</h2>
         <p className="text-gray-600 leading-relaxed">
           On the sell side, when four or more insiders sell open-market shares in a coordinated window, the
-          stock drops 72% of the time. We tested 10+ variations — C-suite-only selling, $2M+ threshold,
-          position percentage filters — nothing beat the baseline.
+          stock drops 72% of the time (n=32). We tested 10+ variations — nothing beat the baseline.
         </p>
         <p className="text-gray-600 leading-relaxed">
           We also added AI-generated explanations to every sell signal. When 10 executives at Warner Bros Discovery
-          sell $252M in shares, the one-liner reads: "CEO sold 35% of holdings with zero insider buying in 90 days,
-          coinciding with content losses to Netflix." The user gets the context to make their own decision.
+          sell $252M in shares, the one-liner reads: <em>"CEO sold 35% of holdings with zero insider buying in 90 days,
+          coinciding with content losses to Netflix."</em> The user gets the context to make their own decision.
         </p>
 
         {/* How we did this */}
@@ -206,10 +201,6 @@ export default function Blog() {
         <p className="text-gray-600 leading-relaxed">
           All data comes from SEC EDGAR — Form 4 insider transactions, 8-K material event filings, and Schedule
           13D activist disclosures. No alternative data, no web scraping, no self-reported data.
-        </p>
-        <p className="text-gray-600 leading-relaxed">
-          We process filings daily, detect coordinated buying and selling clusters, classify signal strength,
-          and track every signal forward with returns and alpha vs the S&P 500.
         </p>
         <p className="text-gray-600 leading-relaxed">
           Every signal on our platform comes with:
@@ -220,7 +211,17 @@ export default function Blog() {
           <li>Live forward returns tracked against the S&P 500</li>
         </ul>
         <p className="text-gray-600 leading-relaxed">
-          Nothing is backtested. Nothing is hypothetical. The track record is publicly verifiable.
+          Every signal is tested against the full dataset, not curated examples. Forward returns are computed
+          on live data after signal generation — no lookahead bias, no cherry-picking. The track record is
+          publicly verifiable at ci.lookinsight.ai.
+        </p>
+
+        {/* Data Delivery */}
+        <h2 className="text-2xl font-bold text-gray-900 mt-10 mb-4">Data Delivery</h2>
+        <p className="text-gray-600 leading-relaxed">
+          LookInsight delivers daily insider cluster alerts covering ~4,000 active securities, with AI-generated
+          context and forward return tracking. Data is available via CSV export and API. Coverage includes all
+          SEC Form 4 filers with open-market transactions.
         </p>
       </div>
 
