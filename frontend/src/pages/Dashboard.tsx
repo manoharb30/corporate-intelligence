@@ -489,7 +489,7 @@ export default function Dashboard() {
         >
           <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Research</div>
           <h3 className="text-lg font-bold text-white mb-2">
-            We Tested 80+ Insider Trading Signal Definitions. Here's What Actually Works.
+            We Tested 80+ Insider Trading Signals. Here's What Actually Works.
           </h3>
           <p className="text-sm text-gray-400">
             Banking insiders are right 89% of the time. "Buying the dip" is a myth. And more conviction doesn't mean better signals. Read the full analysis.

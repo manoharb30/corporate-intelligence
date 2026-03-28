@@ -8,7 +8,7 @@ export default function Blog() {
       <div className="mb-10">
         <Link to="/" className="text-sm text-gray-400 hover:text-gray-600 mb-4 inline-block">&larr; Back to Dashboard</Link>
         <h1 className="text-3xl font-extrabold text-gray-900 leading-tight mb-4">
-          We Tested 80+ Insider Trading Signal Definitions Against Real Data. Here's What Actually Works.
+          We Tested 80+ Insider Trading Signals Against Real Data. Here's What Actually Works.
         </h1>
         <div className="flex items-center gap-3 text-sm text-gray-500">
           <span>Manohar</span>
