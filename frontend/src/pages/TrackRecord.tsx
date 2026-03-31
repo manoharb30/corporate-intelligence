@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   signalPerfApi,
@@ -186,7 +186,7 @@ export default function TrackRecord() {
                 </div>
                 <div className="bg-green-50 border border-green-200 rounded-xl p-5">
                   <div className="text-3xl font-black text-green-700">{pct(summary.buy_avg_return_30d)}</div>
-                  <div className="text-xs font-semibold text-green-600 uppercase mt-1">Avg Buy 30d Return</div>
+                  <div className="text-xs font-semibold text-green-600 uppercase mt-1">Avg 90d Return</div>
                   <div className="text-xs text-green-600 mt-0.5">SPY: {pct(summary.avg_spy_return)}</div>
                 </div>
                 <div className="bg-red-50 border border-red-200 rounded-xl p-5">
@@ -198,6 +198,114 @@ export default function TrackRecord() {
                   <div className="text-3xl font-black text-purple-700">{summary.eight_k_follow_rate?.toFixed(0) ?? '—'}%</div>
                   <div className="text-xs font-semibold text-purple-600 uppercase mt-1">8-K Confirmation</div>
                   <div className="text-xs text-purple-600 mt-0.5">Buy signals followed by filing</div>
+                </div>
+              </div>
+              {/* Alpha & HIGH-only row */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-5">
+                  <div className="text-3xl font-black text-blue-700">
+                    {summary.buy_avg_return_30d != null && summary.avg_spy_return != null
+                      ? `+${(summary.buy_avg_return_30d - summary.avg_spy_return).toFixed(1)}%`
+                      : '—'}
+                  </div>
+                  <div className="text-xs font-semibold text-blue-600 uppercase mt-1">Alpha vs SPY</div>
+                  <div className="text-xs text-blue-600 mt-0.5">
+                    Signal: {pct(summary.buy_avg_return_30d)} vs SPY: {pct(summary.avg_spy_return)}
+                  </div>
+                </div>
+                <div className="bg-gray-900 border border-gray-700 rounded-xl p-5">
+                  {(() => {
+                    const highBuys = signals.filter(s => s.direction === 'buy' && s.signal_level === 'high' && s.return_day0 != null)
+                    const highWins = highBuys.filter(s => (s.return_day0 ?? 0) > 0).length
+                    const highRate = highBuys.length > 0 ? (highWins / highBuys.length * 100) : null
+                    const highAvg = highBuys.length > 0 ? highBuys.reduce((sum, s) => sum + (s.return_day0 ?? 0), 0) / highBuys.length : null
+                    return (
+                      <>
+                        <div className="text-3xl font-black text-white">
+                          {highRate != null ? `${highRate.toFixed(1)}%` : '—'}
+                        </div>
+                        <div className="text-xs font-semibold text-gray-300 uppercase mt-1">HIGH-Only Hit Rate</div>
+                        <div className="text-xs text-gray-400 mt-0.5">
+                          {highBuys.length} signals | Avg return: {highAvg != null ? pct(highAvg) : '—'}
+                        </div>
+                      </>
+                    )
+                  })()}
+                </div>
+              </div>
+            </section>
+          )}
+
+          {/* Top Performers */}
+          {signals.length > 0 && (
+            <section className="mb-10">
+              <h2 className="text-xl font-bold text-gray-900 mb-1">Top Performers</h2>
+              <p className="text-sm text-gray-500 mb-4">Best verified results from mature signals (90+ days old, SEC EDGAR data).</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Top Buy Signals */}
+                <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                  <div className="bg-green-50 px-4 py-2.5 border-b border-green-100">
+                    <span className="text-sm font-bold text-green-700">Best Buy Signals</span>
+                  </div>
+                  <div className="divide-y divide-gray-50">
+                    {signals
+                      .filter(s => s.direction === 'buy' && s.return_day0 != null)
+                      .sort((a, b) => (b.return_day0 ?? 0) - (a.return_day0 ?? 0))
+                      .slice(0, 5)
+                      .map((s, i) => {
+                        const alpha = s.return_day0 != null && s.spy_return_30d != null
+                          ? s.return_day0 - s.spy_return_30d : null
+                        return (
+                          <div key={s.signal_id} className="flex items-center justify-between px-4 py-3">
+                            <div className="flex items-center gap-3">
+                              <span className="text-lg font-black text-gray-300 w-6">#{i + 1}</span>
+                              <div>
+                                <Link to={`/signal/${encodeURIComponent(s.signal_id)}`} className="font-bold text-gray-900 hover:text-primary-600">
+                                  {s.ticker}
+                                </Link>
+                                <div className="text-xs text-gray-400">{s.signal_date} | {s.num_insiders} insiders</div>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-lg font-black text-green-600">{pct(s.return_day0)}</div>
+                              {alpha != null && <div className="text-xs text-gray-500">Alpha: {pct(alpha)}</div>}
+                            </div>
+                          </div>
+                        )
+                      })}
+                  </div>
+                </div>
+                {/* Top Sell Signals */}
+                <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                  <div className="bg-red-50 px-4 py-2.5 border-b border-red-100">
+                    <span className="text-sm font-bold text-red-700">Best Sell Signals (Avoided Loss)</span>
+                  </div>
+                  <div className="divide-y divide-gray-50">
+                    {signals
+                      .filter(s => s.direction === 'sell' && s.return_day0 != null)
+                      .sort((a, b) => (a.return_day0 ?? 0) - (b.return_day0 ?? 0))
+                      .slice(0, 5)
+                      .map((s, i) => {
+                        const drop = Math.abs(s.return_day0 ?? 0)
+                        return (
+                          <div key={s.signal_id} className="flex items-center justify-between px-4 py-3">
+                            <div className="flex items-center gap-3">
+                              <span className="text-lg font-black text-gray-300 w-6">#{i + 1}</span>
+                              <div>
+                                <Link to={`/signal/${encodeURIComponent(s.signal_id)}`} className="font-bold text-gray-900 hover:text-primary-600">
+                                  {s.ticker}
+                                </Link>
+                                <div className="text-xs text-gray-400">{s.signal_date} | {s.num_insiders} insiders</div>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-lg font-black text-red-600">-{drop.toFixed(1)}%</div>
+                              <div className="text-xs text-gray-500">Stock dropped</div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                  </div>
                 </div>
               </div>
             </section>
@@ -306,17 +414,53 @@ export default function TrackRecord() {
                     </tr>
                   </thead>
                   <tbody>
-                    {ladder.map(row => (
-                      <tr key={row.threshold} className="border-b border-gray-50">
-                        <td className="px-4 py-2.5 font-bold text-gray-900">{row.threshold} sellers</td>
-                        <td className="px-4 py-2.5 text-right text-gray-600">{row.total}</td>
-                        <td className="px-4 py-2.5 text-right text-gray-600">{row.correct}</td>
-                        <td className="px-4 py-2.5 text-right font-bold text-red-700">{row.correct_rate?.toFixed(1)}%</td>
-                        <td className={`px-4 py-2.5 text-right font-bold ${row.avg_short_return >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {pct(row.avg_short_return)}
-                        </td>
-                      </tr>
-                    ))}
+                    {ladder.map(row => {
+                      const threshold = parseInt(row.threshold)
+                      const matching = sellSignals
+                        .filter(s => s.num_insiders >= threshold && s.return_day0 != null)
+                        .sort((a, b) => (a.return_day0 ?? 0) - (b.return_day0 ?? 0))
+                      return (
+                        <React.Fragment key={row.threshold}>
+                          <tr className="border-b border-gray-50">
+                            <td className="px-4 py-2.5 font-bold text-gray-900">{row.threshold} sellers</td>
+                            <td className="px-4 py-2.5 text-right text-gray-600">{row.total}</td>
+                            <td className="px-4 py-2.5 text-right text-gray-600">{row.correct}</td>
+                            <td className="px-4 py-2.5 text-right font-bold text-red-700">{row.correct_rate?.toFixed(1)}%</td>
+                            <td className={`px-4 py-2.5 text-right font-bold ${row.avg_short_return >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {pct(row.avg_short_return)}
+                            </td>
+                          </tr>
+                          {matching.length > 0 && (
+                            <tr>
+                              <td colSpan={5} className="px-4 py-2 bg-gray-50">
+                                <div className="flex flex-wrap gap-2">
+                                  {matching.map(s => {
+                                    const correct = (s.return_day0 ?? 0) < 0
+                                    return (
+                                      <Link
+                                        key={s.signal_id}
+                                        to={`/signal/${encodeURIComponent(s.signal_id)}`}
+                                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors hover:shadow-sm ${
+                                          correct
+                                            ? 'bg-red-50 border-red-200 text-red-700 hover:bg-red-100'
+                                            : 'bg-gray-100 border-gray-200 text-gray-500 hover:bg-gray-200'
+                                        }`}
+                                      >
+                                        <span className="font-bold">{s.ticker}</span>
+                                        <span className={correct ? 'text-red-600' : 'text-gray-400'}>
+                                          {pct(s.return_day0)}
+                                        </span>
+                                        <span>{correct ? '\u2713' : '\u2717'}</span>
+                                      </Link>
+                                    )
+                                  })}
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>

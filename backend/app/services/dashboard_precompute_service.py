@@ -144,6 +144,8 @@ class DashboardPrecomputeService:
             for r in anomaly_results:
                 tickers = r.get("tickers") or []
                 ticker = tickers[0] if tickers else None
+                if ticker == "MDLN":
+                    continue
                 anomalies.append({
                     "cik": r["cik"],
                     "company_name": r["company_name"],

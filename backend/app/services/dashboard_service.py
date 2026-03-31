@@ -75,8 +75,9 @@ class DashboardService:
         buy_clusters = [s for s in signals if s.signal_type == "insider_cluster"]
         sell_clusters = [s for s in signals if s.signal_type == "insider_sell_cluster"]
         compound_signals = [s for s in signals if s.signal_type == "compound"]
-        buy_volume = sum((s.insider_context.total_buy_value if s.insider_context else 0) for s in buy_clusters)
-        sell_volume = sum((s.insider_context.total_sell_value if s.insider_context else 0) for s in sell_clusters)
+        MAX_VOLUME_PER_SIGNAL = 10_000_000_000  # Cap at $10B to filter data outliers
+        buy_volume = sum(min(s.insider_context.total_buy_value, MAX_VOLUME_PER_SIGNAL) if s.insider_context else 0 for s in buy_clusters)
+        sell_volume = sum(min(s.insider_context.total_sell_value, MAX_VOLUME_PER_SIGNAL) if s.insider_context else 0 for s in sell_clusters)
         bc = len(buy_clusters)
         sc = len(sell_clusters)
         cc = len(compound_signals)
