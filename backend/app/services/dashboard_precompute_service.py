@@ -173,7 +173,63 @@ class DashboardPrecomputeService:
             logger.error(f"Dashboard precompute: top hits failed: {e}")
             snapshot["top_hits"] = []
 
-        # 7. Scorecard (live signal performance — buy + sell stats with prices)
+        # 7a. Today's signals from recent alerts (detected in last 24h)
+        try:
+            today_query = """
+                MATCH (a:Alert)
+                WHERE a.created_at >= toString(datetime() - duration({hours: 36}))
+                  AND a.alert_type IN ['insider_cluster', 'insider_sell_cluster']
+                  AND a.severity IN ['high', 'medium']
+                RETURN a.ticker AS ticker, a.company_name AS company_name,
+                       a.company_cik AS cik, a.alert_type AS alert_type,
+                       a.severity AS severity, a.signal_id AS signal_id,
+                       a.title AS title
+                ORDER BY a.created_at DESC
+            """
+            today_results = await Neo4jClient.execute_query(today_query, {})
+
+            # Parse insider count from title ("Open Market Cluster: 3 buyers at ...")
+            def _parse_count(title: str) -> int:
+                try:
+                    parts = title.split(":")
+                    if len(parts) >= 2:
+                        num = parts[1].strip().split(" ")[0]
+                        return int(num)
+                except (ValueError, IndexError):
+                    pass
+                return 0
+
+            # Deduplicate by CIK, keep highest insider count
+            seen_ciks_sell: dict[str, dict] = {}
+            seen_ciks_buy: dict[str, dict] = {}
+            for r in today_results:
+                cik = r["cik"]
+                entry = {
+                    "ticker": r["ticker"] or "",
+                    "company_name": r["company_name"] or "",
+                    "cik": cik,
+                    "signal_id": r["signal_id"] or "",
+                    "severity": r["severity"],
+                    "num_insiders": _parse_count(r["title"] or ""),
+                }
+                if r["alert_type"] == "insider_sell_cluster":
+                    if cik not in seen_ciks_sell or entry["num_insiders"] > seen_ciks_sell[cik]["num_insiders"]:
+                        seen_ciks_sell[cik] = entry
+                else:
+                    if cik not in seen_ciks_buy or entry["num_insiders"] > seen_ciks_buy[cik]["num_insiders"]:
+                        seen_ciks_buy[cik] = entry
+
+            todays_sells = sorted(seen_ciks_sell.values(), key=lambda x: (x["num_insiders"], x["ticker"]), reverse=True)[:10]
+            todays_buys = sorted(seen_ciks_buy.values(), key=lambda x: (x["num_insiders"], x["ticker"]), reverse=True)[:10]
+            snapshot["todays_sells"] = todays_sells
+            snapshot["todays_buys"] = todays_buys
+            logger.info(f"Dashboard precompute: today's signals done ({len(todays_sells)} sells, {len(todays_buys)} buys)")
+        except Exception as e:
+            logger.error(f"Dashboard precompute: today's signals failed: {e}")
+            snapshot["todays_sells"] = []
+            snapshot["todays_buys"] = []
+
+        # 7b. Scorecard (live signal performance — buy + sell stats with prices)
         try:
             scorecard = await SnapshotService.get_weekly_snapshot(days=30)
             snapshot["scorecard"] = scorecard
@@ -271,6 +327,8 @@ class DashboardPrecomputeService:
                     top_hits_json: $top_hits_json,
                     scorecard_json: $scorecard_json,
                     feed_full_json: $feed_full_json,
+                    todays_sells_json: $todays_sells_json,
+                    todays_buys_json: $todays_buys_json,
                     computed_at: $computed_at,
                     compute_seconds: $compute_seconds
                 })
@@ -287,6 +345,8 @@ class DashboardPrecomputeService:
                 "top_hits_json": json.dumps(snapshot.get("top_hits", [])),
                 "scorecard_json": json.dumps(DashboardPrecomputeService._trim_scorecard(snapshot.get("scorecard"))),
                 "feed_full_json": json.dumps(snapshot.get("feed_full", [])),
+                "todays_sells_json": json.dumps(snapshot.get("todays_sells", [])),
+                "todays_buys_json": json.dumps(snapshot.get("todays_buys", [])),
                 "computed_at": snapshot["computed_at"],
                 "compute_seconds": elapsed,
             })
@@ -307,15 +367,30 @@ class DashboardPrecomputeService:
         """Trim scorecard signals to top 20 sell + top 20 buy for storage.
 
         Keeps aggregate stats intact, just reduces the signals list.
+        Sells sorted by conviction (num_insiders DESC) then recency.
+        Buys sorted by conviction (num_insiders DESC) then recency.
+        Market cap filter: skip signals where trade < 0.01% of market cap.
         """
         if not scorecard:
             return scorecard
         signals = scorecard.get("signals") or []
-        sells = [s for s in signals if s.get("signal_action") == "PASS"]
-        buys = [s for s in signals if s.get("signal_action") != "PASS"]
-        # Sort by value descending, take top 20 each
-        sells.sort(key=lambda s: abs(s.get("total_value") or 0), reverse=True)
-        buys.sort(key=lambda s: abs(s.get("total_value") or 0), reverse=True)
+
+        # Market cap filter — remove noise trades
+        filtered = []
+        for s in signals:
+            mcap = s.get("market_cap")
+            val = abs(s.get("total_value") or 0)
+            if mcap and mcap > 0 and val > 0:
+                pct = (val / mcap) * 100
+                if pct < 0.01:
+                    continue  # Too small relative to company size
+            filtered.append(s)
+
+        sells = [s for s in filtered if s.get("signal_action") == "PASS"]
+        buys = [s for s in filtered if s.get("signal_action") != "PASS"]
+        # Sort by insider count DESC (conviction), then signal_date DESC (recency)
+        sells.sort(key=lambda s: (s.get("num_insiders") or 0, s.get("signal_date") or ""), reverse=True)
+        buys.sort(key=lambda s: (s.get("num_insiders") or 0, s.get("signal_date") or ""), reverse=True)
         scorecard["signals"] = sells[:20] + buys[:20]
         return scorecard
 
@@ -337,6 +412,8 @@ class DashboardPrecomputeService:
                    d.anomalies_json as anomalies,
                    d.top_hits_json as top_hits,
                    d.scorecard_json as scorecard,
+                   d.todays_sells_json as todays_sells,
+                   d.todays_buys_json as todays_buys,
                    d.computed_at as computed_at,
                    d.compute_seconds as compute_seconds
         """
@@ -356,6 +433,8 @@ class DashboardPrecomputeService:
             "anomalies": json.loads(r["anomalies"]) if r["anomalies"] else [],
             "top_hits": json.loads(r["top_hits"]) if r["top_hits"] else [],
             "scorecard": json.loads(r["scorecard"]) if r.get("scorecard") else None,
+            "todays_sells": json.loads(r["todays_sells"]) if r.get("todays_sells") else [],
+            "todays_buys": json.loads(r["todays_buys"]) if r.get("todays_buys") else [],
             "computed_at": r["computed_at"],
             "compute_seconds": r["compute_seconds"],
         }

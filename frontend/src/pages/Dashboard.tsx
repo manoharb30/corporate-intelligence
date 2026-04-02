@@ -67,6 +67,9 @@ export default function Dashboard() {
   const [showAllSells, setShowAllSells] = useState(false)
   const [showAllBuys, setShowAllBuys] = useState(false)
   const [showScorecard, setShowScorecard] = useState(false)
+  const [todaysSells, setTodaysSells] = useState<Array<{ticker: string, company_name: string, cik: string, signal_id: string, severity: string, num_insiders: number}>>([])
+  const [todaysBuys, setTodaysBuys] = useState<Array<{ticker: string, company_name: string, cik: string, signal_id: string, severity: string, num_insiders: number}>>([])
+
 
   useEffect(() => {
     let ignore = false
@@ -82,6 +85,8 @@ export default function Dashboard() {
         if (data.pulse) setPulse(data.pulse)
         if (data.anomalies) setAnomalies(data.anomalies)
         if (data.scorecard) setSnapshot(data.scorecard)
+        if (data.todays_sells) setTodaysSells(data.todays_sells)
+        if (data.todays_buys) setTodaysBuys(data.todays_buys)
       } catch {
         if (ignore) return
         try {
@@ -244,85 +249,146 @@ export default function Dashboard() {
         </div>
       </section>
 
-      {/* ===== INSIDERS ARE SELLING ===== */}
-      {sellSignals.length > 0 && (
+      {/* ===== SELL / BUY COLUMNS ===== */}
+      {(sellSignals.length > 0 || buySignals.length > 0) && (
         <section className="mb-10">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-1 h-7 bg-red-500 rounded-full"></div>
-            <h2 className="text-xl font-bold text-gray-900">Insiders Are Selling</h2>
-            <span className="text-sm text-gray-400">Last 30 days</span>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* LEFT: Insiders Are Selling */}
+            <div>
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-1 h-7 bg-red-500 rounded-full"></div>
+                <h2 className="text-lg font-bold text-gray-900">Insiders Are Selling</h2>
+                <span className="text-xs text-gray-400">Last 30 days</span>
+              </div>
+              <p className="text-xs text-gray-500 mb-3 ml-4">
+                Sorted by conviction — more insiders selling = higher probability of drop.
+              </p>
+
+              {todaysSells.length > 0 && (
+                <div className="mb-3 bg-red-950 rounded-lg p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                    </span>
+                    <span className="text-xs font-bold text-red-300 uppercase tracking-wide">Detected Today</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {todaysSells.map(s => (
+                      <button
+                        key={s.cik}
+                        onClick={() => navigate(`/signal/${encodeURIComponent(s.signal_id)}`)}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-red-900 text-red-100 hover:bg-red-800 transition-colors"
+                      >
+                        <span className="font-bold">{s.ticker || 'N/A'}</span>
+                        <span className="text-red-300">{s.num_insiders} sellers</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {sellSignals.length > 0 ? (
+                <>
+                  <div className="space-y-3">
+                    {sellSignals
+                      .sort((a, b) => {
+                        const aIns = a.num_insiders || 0
+                        const bIns = b.num_insiders || 0
+                        if (bIns !== aIns) return bIns - aIns
+                        return (b.signal_date || '').localeCompare(a.signal_date || '')
+                      })
+                      .slice(0, showAllSells ? 20 : 5)
+                      .map((s, idx) => (
+                        <SignalRow
+                          key={`sell-${s.cik}-${s.signal_date}-${idx}`}
+                          signal={s}
+                          onClick={() => navigate(`/signal/${encodeURIComponent(s.accession_number)}`)}
+                        />
+                      ))}
+                  </div>
+                  {sellSignals.length > 5 && (
+                    <button
+                      onClick={() => setShowAllSells(!showAllSells)}
+                      className="mt-3 text-sm text-red-600 hover:text-red-800 font-medium"
+                    >
+                      {showAllSells ? 'Show less' : `See all ${sellSignals.length} sell signals`}
+                    </button>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-gray-400 ml-4">No sell clusters detected</p>
+              )}
+            </div>
+
+            {/* RIGHT: Insiders Are Buying */}
+            <div>
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-1 h-7 bg-green-500 rounded-full"></div>
+                <h2 className="text-lg font-bold text-gray-900">Insiders Are Buying</h2>
+                <span className="text-xs text-gray-400">Last 30 days</span>
+              </div>
+              <p className="text-xs text-gray-500 mb-3 ml-4">
+                Sorted by conviction — more insiders buying = stronger signal.{bs && bs.avg_alpha !== null ? ` Avg alpha: ${bs.avg_alpha >= 0 ? '+' : ''}${bs.avg_alpha.toFixed(1)}% vs S&P.` : ''}
+              </p>
+
+              {todaysBuys.length > 0 && (
+                <div className="mb-3 bg-green-950 rounded-lg p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                    </span>
+                    <span className="text-xs font-bold text-green-300 uppercase tracking-wide">Detected Today</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {todaysBuys.map(s => (
+                      <button
+                        key={s.cik}
+                        onClick={() => navigate(`/signal/${encodeURIComponent(s.signal_id)}`)}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-green-900 text-green-100 hover:bg-green-800 transition-colors"
+                      >
+                        <span className="font-bold">{s.ticker || 'N/A'}</span>
+                        <span className="text-green-300">{s.num_insiders} buyers</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {buySignals.length > 0 ? (
+                <>
+                  <div className="space-y-3">
+                    {buySignals
+                      .sort((a, b) => {
+                        const aIns = a.num_insiders || 0
+                        const bIns = b.num_insiders || 0
+                        if (bIns !== aIns) return bIns - aIns
+                        return (b.signal_date || '').localeCompare(a.signal_date || '')
+                      })
+                      .slice(0, showAllBuys ? 20 : 5)
+                      .map((s, idx) => (
+                        <SignalRow
+                          key={`buy-${s.cik}-${s.signal_date}-${idx}`}
+                          signal={s}
+                          onClick={() => navigate(`/signal/${encodeURIComponent(s.accession_number)}`)}
+                        />
+                      ))}
+                  </div>
+                  {buySignals.length > 5 && (
+                    <button
+                      onClick={() => setShowAllBuys(!showAllBuys)}
+                      className="mt-3 text-sm text-green-600 hover:text-green-800 font-medium"
+                    >
+                      {showAllBuys ? 'Show less' : `See all ${buySignals.length} buy signals`}
+                    </button>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-gray-400 ml-4">No buy clusters detected</p>
+              )}
+            </div>
           </div>
-          <p className="text-sm text-gray-500 mb-4 ml-4">
-            These companies had coordinated insider selling. Historically, 71% of similar patterns were followed by a stock drop.
-          </p>
-
-          <div className="space-y-3">
-            {sellSignals
-              .sort((a, b) => {
-                const aHit = getStats(a.sic_code, 'sell').hit_rate
-                const bHit = getStats(b.sic_code, 'sell').hit_rate
-                if (bHit !== aHit) return bHit - aHit
-                return (b.total_value || 0) - (a.total_value || 0)
-              })
-              .slice(0, showAllSells ? 20 : 5)
-              .map((s, idx) => (
-                <SignalRow
-                  key={`sell-${s.cik}-${s.signal_date}-${idx}`}
-                  signal={s}
-                  onClick={() => navigate(`/signal/${encodeURIComponent(s.accession_number)}`)}
-                />
-              ))}
-          </div>
-
-          {sellSignals.length > 5 && (
-            <button
-              onClick={() => setShowAllSells(!showAllSells)}
-              className="mt-3 text-sm text-red-600 hover:text-red-800 font-medium"
-            >
-              {showAllSells ? 'Show less' : `See all ${sellSignals.length} sell signals`}
-            </button>
-          )}
-        </section>
-      )}
-
-      {/* ===== INSIDERS ARE BUYING ===== */}
-      {buySignals.length > 0 && (
-        <section className="mb-10">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-1 h-7 bg-green-500 rounded-full"></div>
-            <h2 className="text-xl font-bold text-gray-900">Insiders Are Buying</h2>
-            <span className="text-sm text-gray-400">Last 30 days</span>
-          </div>
-          <p className="text-sm text-gray-500 mb-4 ml-4">
-            These companies had coordinated insider buying.{bs && bs.avg_alpha !== null ? ` Our buy signals outperform the S&P 500 by an average of ${bs.avg_alpha >= 0 ? '+' : ''}${bs.avg_alpha.toFixed(1)}%.` : ''}
-          </p>
-
-          <div className="space-y-3">
-            {buySignals
-              .sort((a, b) => {
-                const aHit = getStats(a.sic_code, 'buy').hit_rate
-                const bHit = getStats(b.sic_code, 'buy').hit_rate
-                if (bHit !== aHit) return bHit - aHit
-                return (b.total_value || 0) - (a.total_value || 0)
-              })
-              .slice(0, showAllBuys ? 20 : 5)
-              .map((s, idx) => (
-                <SignalRow
-                  key={`buy-${s.cik}-${s.signal_date}-${idx}`}
-                  signal={s}
-                  onClick={() => navigate(`/signal/${encodeURIComponent(s.accession_number)}`)}
-                />
-              ))}
-          </div>
-
-          {buySignals.length > 5 && (
-            <button
-              onClick={() => setShowAllBuys(!showAllBuys)}
-              className="mt-3 text-sm text-green-600 hover:text-green-800 font-medium"
-            >
-              {showAllBuys ? 'Show less' : `See all ${buySignals.length} buy signals`}
-            </button>
-          )}
         </section>
       )}
 

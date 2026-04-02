@@ -1361,4 +1361,25 @@ export const signalPerfApi = {
     `/api/signal-performance/download?mature_only=true&meaningful_only=${meaningfulOnly}${direction ? '&direction=' + direction : ''}`,
 }
 
+// Signal Context
+export interface SignalContextData {
+  recent_events: Array<{ type: string; date: string | null; item: string; is_ma: boolean }>
+  activist_filings: Array<{ filer: string; date: string | null; percentage: number | null; form_type: string }>
+  insider_history: Array<{ name: string; prior_trades: number; buys: number; sells: number }>
+  opposing_activity: Array<{ name: string; title: string | null; date: string | null; value: number | null }>
+  prior_alerts: Array<{ type: string; severity: string; date: string; title: string }>
+  volume: { total_txns: number; total_buying: number; total_selling: number; distinct_insiders: number } | null
+}
+
+export const signalContextApi = {
+  get: (cik: string, signalDate: string, direction: string, insiderNames: string[] = []) =>
+    api.get<SignalContextData>(`/signal-context/${cik}`, {
+      params: {
+        signal_date: signalDate,
+        direction,
+        insider_names: insiderNames.join('; '),
+      },
+    }),
+}
+
 export default api

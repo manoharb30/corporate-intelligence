@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { eventDetailApi, EventDetailResponse, ClusterBuyerDetail } from '../services/api'
 import DecisionCard from '../components/DecisionCard'
 import HistoricalContext from '../components/HistoricalContext'
+import SignalContext from '../components/SignalContext'
 import PriceChart, { ChartMarker } from '../components/PriceChart'
 import InsiderTimeline from '../components/InsiderTimeline'
 import MiniGraph from '../components/MiniGraph'
@@ -158,7 +159,15 @@ export default function SignalStory() {
       {/* ===== What History Says ===== */}
       <HistoricalContext
         sicCode={data.company_context?.sic_code}
-        direction={isSellCluster ? 'sell' : 'buy'}
+        direction={isSellCluster || data.decision_card?.action === 'PASS' || insiderCtx?.net_direction === 'selling' ? 'sell' : 'buy'}
+      />
+
+      {/* ===== Signal Context ===== */}
+      <SignalContext
+        cik={company.cik}
+        signalDate={event.filing_date}
+        direction={isSellCluster || data.decision_card?.action === 'PASS' || insiderCtx?.net_direction === 'selling' ? 'sell' : 'buy'}
+        insiderNames={data.cluster_detail?.buyers?.map((b: ClusterBuyerDetail) => b.name) || []}
       />
 
       {/* ===== Chapter 1: The Filing ===== */}
