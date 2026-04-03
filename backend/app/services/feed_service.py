@@ -766,9 +766,13 @@ class FeedService:
                     logger.warning(f"Failed to fetch compound signals: {e}")
                     return []
 
-            cluster_signals, sell_cluster_signals, compound_signals = await asyncio.gather(
+            cluster_signals_raw, sell_cluster_signals_raw, compound_signals = await asyncio.gather(
                 _fetch_buy_clusters(), _fetch_sell_clusters(), _fetch_compounds()
             )
+
+            # Apply market cap filter to remove noise trades (< 0.01% of market cap)
+            cluster_signals = InsiderClusterService.apply_market_cap_filter(cluster_signals_raw, min_pct=0.01)
+            sell_cluster_signals = InsiderClusterService.apply_market_cap_filter(sell_cluster_signals_raw, min_pct=0.01)
 
             for cs in cluster_signals:
                 d = cs.to_signal_dict()

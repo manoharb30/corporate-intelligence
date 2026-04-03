@@ -304,6 +304,23 @@ class InsiderClusterService:
             if not window_trades:
                 continue
 
+            # Dedup: same date + same shares + same price = same transaction
+            # reported by multiple legal entities in a fund structure.
+            # Keep only the first filing per (date, shares, price) group.
+            seen_trades: set[tuple] = set()
+            deduped_trades = []
+            for t, tt in window_trades:
+                key = (
+                    t.get("transaction_date", ""),
+                    str(int(t.get("shares") or 0)),
+                    str(round(t.get("price_per_share") or 0, 2)),
+                )
+                if key in seen_trades:
+                    continue
+                seen_trades.add(key)
+                deduped_trades.append((t, tt))
+            window_trades = deduped_trades
+
             # Aggregate by trader
             buyer_agg: dict[str, BuyerDetail] = {}
             for t, _ in window_trades:
@@ -423,6 +440,27 @@ class InsiderClusterService:
         clusters.sort(key=lambda c: level_order.get(c.signal_level, 2))
 
         return clusters
+
+    @staticmethod
+    async def detect_clusters_for_company(
+        cik: str,
+        days: int = 90,
+        window_days: int = 30,
+    ) -> list[InsiderClusterSignal]:
+        """Detect buy and sell clusters for a single company.
+
+        Returns both buy and sell clusters combined, sorted by date.
+        """
+        buy_clusters = await InsiderClusterService.detect_clusters(
+            days=days, window_days=window_days, min_level="low", direction="buy"
+        )
+        sell_clusters = await InsiderClusterService.detect_clusters(
+            days=days, window_days=window_days, min_level="low", direction="sell"
+        )
+        # Filter to just this CIK
+        company_clusters = [c for c in buy_clusters + sell_clusters if c.cik == cik]
+        company_clusters.sort(key=lambda c: c.window_end, reverse=True)
+        return company_clusters
 
     @staticmethod
     async def detect_clusters_excluding_8k(

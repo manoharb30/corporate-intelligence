@@ -263,7 +263,7 @@ export default function SignalStory() {
                     <div className="space-y-1.5">
                       {data.company_context.board_connections.map((conn, idx) => (
                         <div key={idx} className="flex items-center gap-2 text-sm">
-                          <Link to={`/signals?cik=${conn.cik}`} className="font-medium text-primary-600 hover:underline">
+                          <Link to={`/company/${conn.cik}`} className="font-medium text-primary-600 hover:underline">
                             {conn.company_name}
                           </Link>
                           <span className="text-xs text-gray-500">
@@ -289,7 +289,7 @@ export default function SignalStory() {
 
             {/* View all signals link */}
             <Link
-              to={`/signals?cik=${company.cik}`}
+              to={`/company/${company.cik}`}
               className="inline-block text-sm text-primary-600 hover:underline font-medium"
             >
               View all signals for {company.name} &rarr;

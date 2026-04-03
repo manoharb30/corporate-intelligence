@@ -371,7 +371,7 @@ export default function Feed() {
                     {searchResults.map(r => (
                       <button
                         key={r.cik}
-                        onClick={() => { navigate(`/signals?cik=${r.cik}`); setSearchQuery(''); setSearchResults([]) }}
+                        onClick={() => { navigate(`/company/${r.cik}`); setSearchQuery(''); setSearchResults([]) }}
                         className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm border-b border-gray-100 last:border-0"
                       >
                         <span className="font-medium text-gray-900">{r.name}</span>
@@ -484,7 +484,7 @@ export default function Feed() {
             {insiderActivity.map((item, idx) => (
               <Link
                 key={idx}
-                to={`/signals?cik=${item.cik}`}
+                to={`/company/${item.cik}`}
                 className="flex items-center justify-between p-2.5 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors"
               >
                 <div className="flex-1 min-w-0">

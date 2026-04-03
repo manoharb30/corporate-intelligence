@@ -1382,4 +1382,77 @@ export const signalContextApi = {
     }),
 }
 
+// Company Intelligence
+export interface CompanyIntelligenceData {
+  company: {
+    name: string
+    ticker: string | null
+    cik: string
+    sic_description: string | null
+    state: string | null
+  }
+  clusters: Array<{
+    direction: 'buy' | 'sell'
+    signal_level: string
+    signal_summary: string
+    num_insiders: number
+    total_value: number
+    window_start: string
+    window_end: string
+    conviction_tier: string
+    accession_number: string
+    buyers: Array<{
+      name: string
+      title: string
+      total_value: number
+      trade_count: number
+      total_shares: number
+      trade_dates: string[]
+      form4_url: string
+      role: string
+    }>
+  }>
+  events: Array<{
+    date: string | null
+    type: string
+    item: string
+    is_ma: boolean
+    accession: string
+  }>
+  activist_filings: Array<{
+    filer: string
+    date: string | null
+    percentage: number | null
+    form_type: string
+  }>
+  transactions: Array<{
+    name: string
+    title: string | null
+    code: string
+    date: string | null
+    value: number | null
+    shares: number | null
+    accession: string
+  }>
+  alerts: Array<{
+    type: string
+    severity: string
+    date: string
+    title: string
+    signal_id: string | null
+  }>
+  volume: {
+    total_txns: number
+    total_buying: number
+    total_selling: number
+    distinct_insiders: number
+  } | null
+  officers: Array<{ name: string; title: string | null }>
+  directors: Array<{ name: string }>
+}
+
+export const companyIntelligenceApi = {
+  get: (cik: string) => api.get<CompanyIntelligenceData>(`/company-intelligence/${cik}`),
+}
+
 export default api

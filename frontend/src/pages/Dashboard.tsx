@@ -229,7 +229,7 @@ export default function Dashboard() {
                 <button
                   key={r.cik}
                   onClick={() => {
-                    navigate(`/signals?cik=${r.cik}`)
+                    navigate(`/company/${r.cik}`)
                     setSearchQuery('')
                     setSearchResults([])
                   }}
@@ -277,7 +277,7 @@ export default function Dashboard() {
                     {todaysSells.map(s => (
                       <button
                         key={s.cik}
-                        onClick={() => navigate(`/signal/${encodeURIComponent(s.signal_id)}`)}
+                        onClick={() => navigate(`/company/${s.cik}`)}
                         className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-red-900 text-red-100 hover:bg-red-800 transition-colors"
                       >
                         <span className="font-bold">{s.ticker || 'N/A'}</span>
@@ -303,7 +303,7 @@ export default function Dashboard() {
                         <SignalRow
                           key={`sell-${s.cik}-${s.signal_date}-${idx}`}
                           signal={s}
-                          onClick={() => navigate(`/signal/${encodeURIComponent(s.accession_number)}`)}
+                          onClick={() => navigate(`/company/${s.cik}`)}
                         />
                       ))}
                   </div>
@@ -345,7 +345,7 @@ export default function Dashboard() {
                     {todaysBuys.map(s => (
                       <button
                         key={s.cik}
-                        onClick={() => navigate(`/signal/${encodeURIComponent(s.signal_id)}`)}
+                        onClick={() => navigate(`/company/${s.cik}`)}
                         className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-green-900 text-green-100 hover:bg-green-800 transition-colors"
                       >
                         <span className="font-bold">{s.ticker || 'N/A'}</span>
@@ -371,7 +371,7 @@ export default function Dashboard() {
                         <SignalRow
                           key={`buy-${s.cik}-${s.signal_date}-${idx}`}
                           signal={s}
-                          onClick={() => navigate(`/signal/${encodeURIComponent(s.accession_number)}`)}
+                          onClick={() => navigate(`/company/${s.cik}`)}
                         />
                       ))}
                   </div>
@@ -428,7 +428,7 @@ export default function Dashboard() {
             {anomalies.slice(0, 5).map((a, idx) => (
               <div
                 key={`anomaly-${a.cik}-${idx}`}
-                onClick={() => navigate(`/signal/${encodeURIComponent(a.accession_number)}`)}
+                onClick={() => navigate(`/company/${a.cik}`)}
                 className="bg-white border border-gray-200 border-l-4 border-l-purple-400 rounded-xl p-5 hover:shadow-md cursor-pointer transition-all"
               >
                 <div className="flex items-start justify-between mb-2">
@@ -505,7 +505,7 @@ export default function Dashboard() {
                     return (
                       <tr
                         key={`sc-${s.cik}-${s.signal_date}-${idx}`}
-                        onClick={() => navigate(`/signal/${encodeURIComponent(s.accession_number)}`)}
+                        onClick={() => navigate(`/company/${s.cik}`)}
                         className="border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors"
                       >
                         <td className="px-4 py-3">
