@@ -1132,6 +1132,11 @@ export interface SnapshotSignal {
   avoided_loss_pct?: number | null
   reason?: string
   sic_code?: string
+  connected_insider?: {
+    person: string
+    other_tickers: string[]
+    direction: string
+  }
 }
 
 export interface SnapshotBuyStats {
@@ -1433,6 +1438,7 @@ export interface CompanyIntelligenceData {
     value: number | null
     shares: number | null
     accession: string
+    has_cross_company?: boolean
   }>
   alerts: Array<{
     type: string
@@ -1449,10 +1455,62 @@ export interface CompanyIntelligenceData {
   } | null
   officers: Array<{ name: string; title: string | null }>
   directors: Array<{ name: string }>
+  cross_company_insiders: Record<string, Array<{
+    cik: string
+    company: string
+    ticker: string | null
+    total_value: number
+    trade_count: number
+    latest_trade: string | null
+    direction: string
+  }>>
 }
 
 export const companyIntelligenceApi = {
   get: (cik: string) => api.get<CompanyIntelligenceData>(`/company-intelligence/${cik}`),
+}
+
+// Person Intelligence
+export interface PersonIntelligenceData {
+  person_name: string
+  num_companies: number
+  total_buying: number
+  total_selling: number
+  total_trades: number
+  net_direction: string
+  companies: Array<{
+    cik: string
+    name: string
+    ticker: string | null
+    title: string | null
+    total_buying: number
+    total_selling: number
+    buy_count: number
+    sell_count: number
+    latest_trade: string | null
+    earliest_trade: string | null
+  }>
+  transactions: Array<{
+    cik: string
+    ticker: string | null
+    company_name: string
+    code: string
+    date: string | null
+    value: number | null
+    shares: number | null
+    price: number | null
+  }>
+  roles: Array<{
+    cik: string
+    name: string
+    ticker: string | null
+    role: string
+    title?: string
+  }>
+}
+
+export const personIntelligenceApi = {
+  get: (name: string) => api.get<PersonIntelligenceData>(`/person-intelligence/${encodeURIComponent(name)}`),
 }
 
 export default api

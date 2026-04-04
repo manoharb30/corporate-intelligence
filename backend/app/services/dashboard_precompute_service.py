@@ -173,6 +173,95 @@ class DashboardPrecomputeService:
             logger.error(f"Dashboard precompute: top hits failed: {e}")
             snapshot["top_hits"] = []
 
+        # 6b. Cross-company insider activity (Smart Money Moves)
+        try:
+            cross_query = """
+                MATCH (p:Person)-[:TRADED_BY]->(t:InsiderTransaction)<-[:INSIDER_TRADE_OF]-(c:Company)
+                WHERE t.transaction_code IN ['P', 'S']
+                  AND (t.is_derivative IS NULL OR t.is_derivative = false)
+                  AND t.total_value > 0
+                  AND t.transaction_date >= toString(date() - duration({days: 90}))
+                  AND c.tickers IS NOT NULL AND size(c.tickers) > 0
+                WITH p, c,
+                     sum(CASE WHEN t.transaction_code = 'P' THEN t.total_value ELSE 0 END) AS buying,
+                     sum(CASE WHEN t.transaction_code = 'S' THEN t.total_value ELSE 0 END) AS selling,
+                     count(t) AS trades,
+                     max(t.transaction_date) AS latest,
+                     t.insider_title AS title
+                WITH p, collect({
+                    cik: c.cik, ticker: c.tickers[0], name: c.name,
+                    buying: buying, selling: selling, trades: trades,
+                    latest: latest, title: title
+                }) AS positions
+                WHERE size(positions) >= 2
+                RETURN p.name AS person, positions
+            """
+            cross_results = await Neo4jClient.execute_query(cross_query, {})
+
+            smart_money = []
+            for r in cross_results:
+                person = r["person"]
+                positions = r["positions"]
+                name_upper = person.upper()
+                is_inst = any(kw in name_upper for kw in [
+                    'LLC', 'L.P.', 'L.L.C.', 'FUND', 'PARTNERS', 'CAPITAL',
+                    'MANAGEMENT', 'HOLDINGS', 'ADVISORS', 'ASSOCIATES', 'INC.',
+                ])
+
+                total_buy = sum(p.get("buying") or 0 for p in positions)
+                total_sell = sum(p.get("selling") or 0 for p in positions)
+                total_trades = sum(p.get("trades") or 0 for p in positions)
+
+                # Build position list
+                pos_list = []
+                for p in sorted(positions, key=lambda x: (x.get("buying") or 0) + (x.get("selling") or 0), reverse=True):
+                    buy = p.get("buying") or 0
+                    sell = p.get("selling") or 0
+                    direction = "buying" if buy > sell * 1.5 else "selling" if sell > buy * 1.5 else "both"
+                    pos_list.append({
+                        "cik": p["cik"],
+                        "ticker": p["ticker"],
+                        "company": (p.get("name") or "")[:40],
+                        "value": round(buy + sell, 2),
+                        "direction": direction,
+                        "trades": p["trades"],
+                        "latest": (p.get("latest") or "")[:10],
+                    })
+
+                # Determine pattern
+                all_buying = all(p["direction"] == "buying" for p in pos_list)
+                all_selling = all(p["direction"] == "selling" for p in pos_list)
+                has_rotation = any(p["direction"] == "buying" for p in pos_list) and any(p["direction"] == "selling" for p in pos_list)
+
+                if all_buying:
+                    pattern = f"Buying at {len(pos_list)} companies"
+                elif all_selling:
+                    pattern = f"Selling at {len(pos_list)} companies"
+                elif has_rotation:
+                    buy_tickers = [p["ticker"] for p in pos_list if p["direction"] == "buying"]
+                    sell_tickers = [p["ticker"] for p in pos_list if p["direction"] == "selling"]
+                    pattern = f"Rotating: selling {', '.join(sell_tickers[:2])} → buying {', '.join(buy_tickers[:2])}"
+                else:
+                    pattern = f"Active at {len(pos_list)} companies"
+
+                smart_money.append({
+                    "person": person,
+                    "is_institution": is_inst,
+                    "pattern": pattern,
+                    "num_companies": len(pos_list),
+                    "total_value": round(total_buy + total_sell, 2),
+                    "total_trades": total_trades,
+                    "positions": pos_list[:5],
+                })
+
+            # Sort: individuals first (more interesting), then by total value
+            smart_money.sort(key=lambda x: (x["is_institution"], -x["total_value"]))
+            snapshot["smart_money"] = smart_money[:15]
+            logger.info(f"Dashboard precompute: smart money done ({len(smart_money)} people, keeping top 15)")
+        except Exception as e:
+            logger.error(f"Dashboard precompute: smart money failed: {e}")
+            snapshot["smart_money"] = []
+
         # 7a. Today's signals from recent alerts (detected in last 24h)
         try:
             today_query = """
@@ -304,6 +393,39 @@ class DashboardPrecomputeService:
         except Exception as e:
             logger.error(f"Dashboard precompute: signal reasons failed: {e}")
 
+        # 9. Cross-reference: tag scorecard signals that have connected insiders
+        try:
+            smart_money_data = snapshot.get("smart_money") or []
+            # Build CIK → person+tickers lookup from smart money
+            cik_to_connections: dict[str, list[dict]] = {}
+            for sm in smart_money_data:
+                for pos in sm.get("positions", []):
+                    pos_cik = pos.get("cik")
+                    if pos_cik:
+                        if pos_cik not in cik_to_connections:
+                            cik_to_connections[pos_cik] = []
+                        other_tickers = [p["ticker"] for p in sm["positions"] if p["cik"] != pos_cik]
+                        if other_tickers:
+                            cik_to_connections[pos_cik].append({
+                                "person": sm["person"],
+                                "other_tickers": other_tickers[:3],
+                                "direction": pos.get("direction", ""),
+                            })
+
+            scorecard_data = snapshot.get("scorecard") or {}
+            for sig in scorecard_data.get("signals") or []:
+                sig_cik = sig.get("cik")
+                if sig_cik and sig_cik in cik_to_connections:
+                    conns = cik_to_connections[sig_cik]
+                    # Pick the most relevant connection (first one)
+                    sig["connected_insider"] = conns[0]
+
+            snapshot["scorecard"] = scorecard_data
+            tagged = sum(1 for s in (scorecard_data.get("signals") or []) if s.get("connected_insider"))
+            logger.info(f"Dashboard precompute: connected insiders tagged ({tagged} signals)")
+        except Exception as e:
+            logger.error(f"Dashboard precompute: connected insider tagging failed: {e}")
+
         snapshot["computed_at"] = datetime.now().isoformat()
         elapsed = round(time.time() - start, 1)
         snapshot["compute_seconds"] = elapsed
@@ -327,6 +449,7 @@ class DashboardPrecomputeService:
                     top_hits_json: $top_hits_json,
                     scorecard_json: $scorecard_json,
                     feed_full_json: $feed_full_json,
+                    smart_money_json: $smart_money_json,
                     todays_sells_json: $todays_sells_json,
                     todays_buys_json: $todays_buys_json,
                     computed_at: $computed_at,
@@ -345,6 +468,7 @@ class DashboardPrecomputeService:
                 "top_hits_json": json.dumps(snapshot.get("top_hits", [])),
                 "scorecard_json": json.dumps(DashboardPrecomputeService._trim_scorecard(snapshot.get("scorecard"))),
                 "feed_full_json": json.dumps(snapshot.get("feed_full", [])),
+                "smart_money_json": json.dumps(snapshot.get("smart_money", [])),
                 "todays_sells_json": json.dumps(snapshot.get("todays_sells", [])),
                 "todays_buys_json": json.dumps(snapshot.get("todays_buys", [])),
                 "computed_at": snapshot["computed_at"],
@@ -412,6 +536,7 @@ class DashboardPrecomputeService:
                    d.anomalies_json as anomalies,
                    d.top_hits_json as top_hits,
                    d.scorecard_json as scorecard,
+                   d.smart_money_json as smart_money,
                    d.todays_sells_json as todays_sells,
                    d.todays_buys_json as todays_buys,
                    d.computed_at as computed_at,
@@ -433,6 +558,7 @@ class DashboardPrecomputeService:
             "anomalies": json.loads(r["anomalies"]) if r["anomalies"] else [],
             "top_hits": json.loads(r["top_hits"]) if r["top_hits"] else [],
             "scorecard": json.loads(r["scorecard"]) if r.get("scorecard") else None,
+            "smart_money": json.loads(r["smart_money"]) if r.get("smart_money") else [],
             "todays_sells": json.loads(r["todays_sells"]) if r.get("todays_sells") else [],
             "todays_buys": json.loads(r["todays_buys"]) if r.get("todays_buys") else [],
             "computed_at": r["computed_at"],

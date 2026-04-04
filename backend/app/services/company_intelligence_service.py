@@ -140,6 +140,62 @@ class CompanyIntelligenceService:
         except Exception:
             txn_list = []
 
+        # Cross-company insider check: which insiders also trade at other companies?
+        cross_company_insiders: dict[str, list[dict]] = {}
+        try:
+            # Collect all insider names from transactions and clusters
+            all_insider_names = list(set(
+                [t["name"] for t in transactions if t.get("name")]
+                + [b.name for cl in (clusters_raw if 'clusters_raw' in dir() else []) for b in cl.buyers]
+            ))
+            if not all_insider_names:
+                all_insider_names = list(set(t["name"] for t in transactions if t.get("name")))
+
+            if all_insider_names:
+                cross = await Neo4jClient.execute_query("""
+                    UNWIND $names AS insider_name
+                    MATCH (p:Person {name: insider_name})-[:TRADED_BY]->(t:InsiderTransaction)<-[:INSIDER_TRADE_OF]-(c:Company)
+                    WHERE c.cik <> $cik
+                      AND t.transaction_code IN ['P', 'S']
+                      AND (t.is_derivative IS NULL OR t.is_derivative = false)
+                      AND t.total_value > 0
+                      AND c.tickers IS NOT NULL AND size(c.tickers) > 0
+                    WITH insider_name, c,
+                         sum(t.total_value) AS total_value,
+                         count(t) AS trade_count,
+                         max(t.transaction_date) AS latest_trade,
+                         collect(DISTINCT t.transaction_code) AS codes
+                    RETURN insider_name,
+                           c.cik AS other_cik,
+                           c.name AS other_company,
+                           c.tickers[0] AS other_ticker,
+                           total_value, trade_count, latest_trade, codes
+                    ORDER BY insider_name, total_value DESC
+                """, {"names": all_insider_names, "cik": cik})
+
+                for r in cross:
+                    name = r["insider_name"]
+                    if name not in cross_company_insiders:
+                        cross_company_insiders[name] = []
+                    direction = "buying" if "P" in (r["codes"] or []) else "selling"
+                    if "P" in (r["codes"] or []) and "S" in (r["codes"] or []):
+                        direction = "both"
+                    cross_company_insiders[name].append({
+                        "cik": r["other_cik"],
+                        "company": r["other_company"],
+                        "ticker": r["other_ticker"],
+                        "total_value": round(r["total_value"], 2),
+                        "trade_count": r["trade_count"],
+                        "latest_trade": r["latest_trade"][:10] if r["latest_trade"] else None,
+                        "direction": direction,
+                    })
+        except Exception:
+            pass
+
+        # Add cross-company flag to transactions
+        for t in txn_list:
+            t["has_cross_company"] = t["name"] in cross_company_insiders
+
         # Alerts history
         try:
             alerts = await Neo4jClient.execute_query("""
@@ -214,4 +270,5 @@ class CompanyIntelligenceService:
             "volume": volume_data,
             "officers": officer_list,
             "directors": director_list,
+            "cross_company_insiders": cross_company_insiders,
         }

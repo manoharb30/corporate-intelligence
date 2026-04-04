@@ -4,6 +4,7 @@ import { eventDetailApi, EventDetailResponse, ClusterBuyerDetail } from '../serv
 import DecisionCard from '../components/DecisionCard'
 import HistoricalContext from '../components/HistoricalContext'
 import SignalContext from '../components/SignalContext'
+import PersonSlideOver from '../components/PersonSlideOver'
 import PriceChart, { ChartMarker } from '../components/PriceChart'
 import InsiderTimeline from '../components/InsiderTimeline'
 import MiniGraph from '../components/MiniGraph'
@@ -41,6 +42,7 @@ export default function SignalStory() {
   const [highlightDate, setHighlightDate] = useState<string | null>(null)
   const [analysisLoading, setAnalysisLoading] = useState(false)
   const [abortController, setAbortController] = useState<AbortController | null>(null)
+  const [selectedPerson, setSelectedPerson] = useState<string | null>(null)
 
   useEffect(() => {
     if (accessionNumber) {
@@ -340,7 +342,10 @@ export default function SignalStory() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <p className="font-semibold text-gray-900 text-sm">{buyer.name}</p>
+                        <button
+                          onClick={() => setSelectedPerson(buyer.name)}
+                          className="font-semibold text-gray-900 text-sm hover:text-primary-600 hover:underline cursor-pointer"
+                        >{buyer.name}</button>
                         <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium uppercase ${
                           isSellCluster ? 'bg-red-200 text-red-800' : 'bg-emerald-200 text-emerald-800'
                         }`}>
@@ -625,6 +630,11 @@ export default function SignalStory() {
         </section>
       )}
 
+      {/* Person slide-over */}
+      <PersonSlideOver
+        personName={selectedPerson}
+        onClose={() => setSelectedPerson(null)}
+      />
     </div>
   )
 }

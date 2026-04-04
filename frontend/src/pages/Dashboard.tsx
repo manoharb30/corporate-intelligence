@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { feedApi, profileApi, dashboardApi, anomaliesApi, snapshotApi, DbStats, SignalItem, ProfileSearchResult, AccuracySummary, DashboardPulse, AnomalyItem, WeeklySnapshot, SnapshotSignal } from '../services/api'
 import HistoricalContext, { getStats } from '../components/HistoricalContext'
+import PersonSlideOver from '../components/PersonSlideOver'
 
 function formatVolume(v: number): string {
   if (v >= 1_000_000_000) return `$${(v / 1_000_000_000).toFixed(1)}B`
@@ -48,6 +49,11 @@ function SignalRow({ signal, onClick }: { signal: SnapshotSignal; onClick: () =>
         )}
       </div>
       <HistoricalContext sicCode={signal.sic_code} direction={isSell ? 'sell' : 'buy'} variant="inline" />
+      {signal.connected_insider && (
+        <div className="mt-1 text-xs text-purple-600">
+          ↗ {signal.connected_insider.person} also {signal.connected_insider.direction === 'buying' ? 'buying' : signal.connected_insider.direction === 'selling' ? 'selling' : 'trading'} at {signal.connected_insider.other_tickers.join(', ')}
+        </div>
+      )}
     </div>
   )
 }
@@ -69,6 +75,8 @@ export default function Dashboard() {
   const [showScorecard, setShowScorecard] = useState(false)
   const [todaysSells, setTodaysSells] = useState<Array<{ticker: string, company_name: string, cik: string, signal_id: string, severity: string, num_insiders: number}>>([])
   const [todaysBuys, setTodaysBuys] = useState<Array<{ticker: string, company_name: string, cik: string, signal_id: string, severity: string, num_insiders: number}>>([])
+  const [smartMoney, setSmartMoney] = useState<Array<{person: string, is_institution: boolean, pattern: string, num_companies: number, total_value: number, total_trades: number, positions: Array<{cik: string, ticker: string, company: string, value: number, direction: string, trades: number, latest: string}>}>>([])
+  const [selectedPerson, setSelectedPerson] = useState<string | null>(null)
 
 
   useEffect(() => {
@@ -87,6 +95,7 @@ export default function Dashboard() {
         if (data.scorecard) setSnapshot(data.scorecard)
         if (data.todays_sells) setTodaysSells(data.todays_sells)
         if (data.todays_buys) setTodaysBuys(data.todays_buys)
+        if (data.smart_money) setSmartMoney(data.smart_money)
       } catch {
         if (ignore) return
         try {
@@ -392,6 +401,58 @@ export default function Dashboard() {
         </section>
       )}
 
+      {/* ===== SMART MONEY MOVES ===== */}
+      {smartMoney.length > 0 && (
+        <section className="mb-10">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-1 h-7 bg-purple-500 rounded-full"></div>
+            <h2 className="text-lg font-bold text-gray-900">Smart Money Moves</h2>
+          </div>
+          <p className="text-xs text-gray-500 mb-4 ml-4">
+            People deploying capital across multiple companies right now.
+          </p>
+
+          <div className="space-y-3">
+            {smartMoney.slice(0, 8).map((sm, idx) => (
+              <div
+                key={`sm-${idx}`}
+                className="bg-white border border-gray-200 rounded-xl p-4 hover:border-purple-300 transition-colors"
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <button
+                    onClick={() => setSelectedPerson(sm.person)}
+                    className="font-bold text-gray-900 hover:text-purple-600 hover:underline cursor-pointer"
+                  >
+                    {sm.person}
+                  </button>
+                  <span className="text-xs text-gray-400">{sm.total_trades} trades · {formatVolume(sm.total_value)}</span>
+                </div>
+                <p className="text-sm text-purple-700 font-medium mb-2">{sm.pattern}</p>
+                <div className="flex flex-wrap gap-2">
+                  {sm.positions.map((p, i) => (
+                    <button
+                      key={i}
+                      onClick={() => navigate(`/company/${p.cik}`)}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors hover:shadow-sm ${
+                        p.direction === 'buying'
+                          ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100'
+                          : p.direction === 'selling'
+                          ? 'bg-red-50 border-red-200 text-red-700 hover:bg-red-100'
+                          : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+                      }`}
+                    >
+                      <span className="font-bold">{p.ticker}</span>
+                      <span>{p.direction === 'buying' ? '↑' : p.direction === 'selling' ? '↓' : '↕'}</span>
+                      <span>{formatVolume(p.value)}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* ===== TRACK RECORD LINK ===== */}
       <section className="mb-10">
         <Link
@@ -587,6 +648,12 @@ export default function Dashboard() {
           </Link>
         </div>
       </section>
+
+      {/* Person slide-over */}
+      <PersonSlideOver
+        personName={selectedPerson}
+        onClose={() => setSelectedPerson(null)}
+      />
     </div>
   )
 }

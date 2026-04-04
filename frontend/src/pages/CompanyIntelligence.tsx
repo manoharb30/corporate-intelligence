@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { companyIntelligenceApi, CompanyIntelligenceData } from '../services/api'
 import HistoricalContext from '../components/HistoricalContext'
+import PersonSlideOver from '../components/PersonSlideOver'
 
 function formatValue(v: number): string {
   if (v >= 1_000_000_000) return `$${(v / 1_000_000_000).toFixed(1)}B`
@@ -27,6 +28,7 @@ export default function CompanyIntelligence() {
   const navigate = useNavigate()
   const [data, setData] = useState<CompanyIntelligenceData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [selectedPerson, setSelectedPerson] = useState<string | null>(null)
 
   useEffect(() => {
     if (!cik) return
@@ -51,9 +53,10 @@ export default function CompanyIntelligence() {
     return <div className="text-center py-24 text-gray-500">Company not found</div>
   }
 
-  const { company, clusters, events, activist_filings, transactions, alerts, volume, officers, directors } = data
+  const { company, clusters, events, activist_filings, transactions, alerts, volume, officers, directors, cross_company_insiders } = data
   const buyClusters = clusters.filter(c => c.direction === 'buy')
   const sellClusters = clusters.filter(c => c.direction === 'sell')
+  const hasCrossCompany = (name: string) => cross_company_insiders && name in cross_company_insiders && cross_company_insiders[name].length > 0
 
   return (
     <div className="max-w-5xl mx-auto">
@@ -105,12 +108,25 @@ export default function CompanyIntelligence() {
                   </p>
                   <p className="text-xs text-gray-500">{cl.signal_summary}</p>
                   <div className="mt-2 flex flex-wrap gap-1">
-                    {cl.buyers.slice(0, 4).map((b, i) => (
-                      <span key={i} className="text-xs text-gray-600 bg-white px-2 py-0.5 rounded border border-gray-200">
-                        {b.name.split(' ').slice(0, 2).join(' ')}
-                        {b.title ? ` (${b.title.slice(0, 20)})` : ''}
-                      </span>
-                    ))}
+                    {cl.buyers.slice(0, 4).map((b, i) => {
+                      const isCross = hasCrossCompany(b.name)
+                      return isCross ? (
+                        <button
+                          key={i}
+                          onClick={(e) => { e.stopPropagation(); setSelectedPerson(b.name) }}
+                          className="text-xs bg-white px-2 py-0.5 rounded border border-purple-300 text-purple-700 hover:bg-purple-50 transition-colors cursor-pointer"
+                        >
+                          {b.name.split(' ').slice(0, 2).join(' ')}
+                          {b.title ? ` (${b.title.slice(0, 20)})` : ''}
+                          <span className="ml-1 text-purple-400">&#x2197;</span>
+                        </button>
+                      ) : (
+                        <span key={i} className="text-xs text-gray-600 bg-white px-2 py-0.5 rounded border border-gray-200">
+                          {b.name.split(' ').slice(0, 2).join(' ')}
+                          {b.title ? ` (${b.title.slice(0, 20)})` : ''}
+                        </span>
+                      )
+                    })}
                     {cl.buyers.length > 4 && (
                       <span className="text-xs text-gray-400">+{cl.buyers.length - 4} more</span>
                     )}
@@ -232,7 +248,16 @@ export default function CompanyIntelligence() {
                   <tr key={`txn-${idx}`} className="border-b border-gray-50">
                     <td className="px-4 py-2 text-gray-600 font-mono text-xs">{t.date}</td>
                     <td className="px-4 py-2">
-                      <span className="font-medium text-gray-900">{t.name}</span>
+                      {t.has_cross_company ? (
+                        <button
+                          onClick={() => setSelectedPerson(t.name)}
+                          className="font-medium text-purple-700 hover:text-purple-900 hover:underline cursor-pointer"
+                        >
+                          {t.name} <span className="text-purple-400 text-xs">&#x2197;</span>
+                        </button>
+                      ) : (
+                        <span className="font-medium text-gray-900">{t.name}</span>
+                      )}
                       {t.title && <span className="ml-2 text-xs text-gray-400">{t.title}</span>}
                     </td>
                     <td className="px-4 py-2">
@@ -338,6 +363,12 @@ export default function CompanyIntelligence() {
           <p className="text-sm">We don't have insider trading or event data for this company yet.</p>
         </div>
       )}
+
+      {/* Person slide-over */}
+      <PersonSlideOver
+        personName={selectedPerson}
+        onClose={() => setSelectedPerson(null)}
+      />
     </div>
   )
 }
