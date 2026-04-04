@@ -10,7 +10,6 @@ const navigation = [
   { name: 'Dashboard', href: '/' },
   { name: 'Trade Signals', href: '/signals?tab=trade' },
   { name: 'Intelligence', href: '/signals?tab=intelligence' },
-  { name: 'Snapshot', href: '/snapshot' },
   { name: 'Accuracy', href: '/accuracy' },
   { name: 'Track Record', href: '/track-record' },
   { name: 'Research', href: '/blog/insider-signal-research' },

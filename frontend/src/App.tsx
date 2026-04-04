@@ -9,7 +9,6 @@ import NetworkPage from './pages/NetworkPage'
 import Pricing from './pages/Pricing'
 import Alerts from './pages/Alerts'
 import Accuracy from './pages/Accuracy'
-import WeeklySnapshotPage from './pages/WeeklySnapshotPage'
 import TrackRecord from './pages/TrackRecord'
 import Blog from './pages/Blog'
 import CompanyIntelligence from './pages/CompanyIntelligence'
@@ -29,7 +28,7 @@ function App() {
         <Route path="/pricing" element={<Pricing />} />
         <Route path="/alerts" element={<Alerts />} />
         <Route path="/accuracy" element={<Accuracy />} />
-        <Route path="/snapshot" element={<WeeklySnapshotPage />} />
+        <Route path="/snapshot" element={<Navigate to="/track-record" replace />} />
         <Route path="/track-record" element={<TrackRecord />} />
         <Route path="/blog/insider-signal-research" element={<Blog />} />
 

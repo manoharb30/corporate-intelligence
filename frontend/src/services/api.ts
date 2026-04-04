@@ -1195,50 +1195,10 @@ export interface WeeklySnapshot {
   signals: SnapshotSignal[]
 }
 
-// Snapshot page types
-export interface SnapshotCluster {
-  cik: string
-  company_name: string
-  ticker: string | null
-  direction: 'buy' | 'sell'
-  signal_level: string
-  signal_date: string
-  num_insiders: number
-  total_value: number
-  trade_count: number
-  insiders: string[]
-  accession_number: string
-  description: string
-}
-
-export interface SnapshotAnomaly {
-  cik: string
-  company_name: string
-  ticker: string | null
-  event_type: string
-  event_date: string
-  accession_number: string
-  pre_sell_value: number
-  num_insiders: number
-  insider_list: string[]
-  avg_days_before: number | null
-  description: string
-}
-
-export interface WeekSnapshotData {
-  week_start: string
-  week_end: string
-  clusters: SnapshotCluster[]
-  anomalies: SnapshotAnomaly[]
-}
-
 // Snapshot API
 export const snapshotApi = {
   getWeekly: (days = 30) =>
     api.get<WeeklySnapshot>('/snapshot/weekly', { params: { days } }),
-
-  getWeekSnapshot: (start = '2026-03-03', end = '2026-03-07') =>
-    api.get<WeekSnapshotData>('/snapshot/week', { params: { start, end } }),
 }
 
 // Dashboard precomputed data
@@ -1253,6 +1213,9 @@ export interface DashboardPrecomputed {
   anomalies: AnomalyItem[]
   top_hits: unknown[]
   scorecard: WeeklySnapshot | null
+  todays_sells?: Array<{ticker: string, company_name: string, cik: string, signal_id: string, severity: string, num_insiders: number}>
+  todays_buys?: Array<{ticker: string, company_name: string, cik: string, signal_id: string, severity: string, num_insiders: number}>
+  smart_money?: Array<{person: string, is_institution: boolean, pattern: string, num_companies: number, total_value: number, total_trades: number, positions: Array<{cik: string, ticker: string, company: string, value: number, direction: string, trades: number, latest: string}>}>
   computed_at: string
   compute_seconds: number
 }
