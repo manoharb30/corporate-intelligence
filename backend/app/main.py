@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.db.neo4j_client import Neo4jClient
-from app.api.routes import companies, persons, filings, graph, health, citations, connections, sanctions, insights, events, feed, profile, insider_trades, event_detail, stock_price, officers, alerts, scanner, accuracy, dashboard, activist, anomalies, snapshot, signal_performance, signal_context, company_intelligence, person_intelligence
+from app.api.routes import companies, persons, filings, graph, health, citations, connections, sanctions, insights, events, feed, profile, insider_trades, event_detail, stock_price, officers, alerts, scanner, accuracy, dashboard, activist, anomalies, snapshot, signal_performance, signal_context, company_intelligence, person_intelligence, explorer
 
 
 @asynccontextmanager
@@ -70,6 +70,7 @@ app.include_router(signal_performance.router, prefix="/api/signal-performance", 
 app.include_router(signal_context.router, prefix="/api/signal-context", tags=["Signal Context"])
 app.include_router(company_intelligence.router, prefix="/api/company-intelligence", tags=["Company Intelligence"])
 app.include_router(person_intelligence.router, prefix="/api/person-intelligence", tags=["Person Intelligence"])
+app.include_router(explorer.router, prefix="/api/explorer", tags=["Explorer"])
 
 
 @app.get("/")

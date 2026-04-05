@@ -149,6 +149,21 @@ class InsiderTradingService:
                     for idx, txn in enumerate(result.transactions):
                         if txn.transaction_code not in ("P", "S"):
                             continue
+
+                        # If price is 0 for an open market trade, look up closing price
+                        price_source = "filing"
+                        if txn.price_per_share == 0 and txn.shares > 0 and tickers:
+                            try:
+                                from app.services.stock_price_service import StockPriceService
+                                price_data = StockPriceService.get_price_at_date(tickers[0], txn.transaction_date)
+                                if price_data and price_data.get("price_at_date"):
+                                    txn.price_per_share = price_data["price_at_date"]
+                                    txn.total_value = txn.shares * txn.price_per_share
+                                    price_source = "market_close"
+                                    logger.info(f"Zero price fixed for {tickers[0]} {txn.transaction_date}: ${txn.price_per_share:.2f} (market close)")
+                            except Exception:
+                                pass  # Leave as 0 if lookup fails
+
                         txn_id = f"{filing.accession_number}_{idx}"
 
                         query = """
@@ -178,7 +193,8 @@ class InsiderTradingService:
                                 t.insider_title = $insider_title,
                                 t.insider_cik = $insider_cik,
                                 t.is_10b5_1 = $is_10b5_1,
-                                t.primary_document = $primary_document
+                                t.primary_document = $primary_document,
+                                t.price_source = $price_source
 
                             MERGE (c)-[:INSIDER_TRADE_OF]->(t)
 
@@ -222,6 +238,7 @@ class InsiderTradingService:
                             "insider_cik": result.insider.cik,
                             "is_10b5_1": result.is_10b5_1,
                             "primary_document": filing.primary_document,
+                            "price_source": price_source,
                         })
                         stored_count += 1
 

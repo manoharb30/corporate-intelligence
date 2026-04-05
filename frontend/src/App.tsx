@@ -12,6 +12,7 @@ import Accuracy from './pages/Accuracy'
 import TrackRecord from './pages/TrackRecord'
 import Blog from './pages/Blog'
 import CompanyIntelligence from './pages/CompanyIntelligence'
+import Explorer from './pages/Explorer'
 
 function App() {
   return (
@@ -30,6 +31,7 @@ function App() {
         <Route path="/accuracy" element={<Accuracy />} />
         <Route path="/snapshot" element={<Navigate to="/track-record" replace />} />
         <Route path="/track-record" element={<TrackRecord />} />
+        <Route path="/explorer" element={<Explorer />} />
         <Route path="/blog/insider-signal-research" element={<Blog />} />
 
         {/* Redirects for old routes */}

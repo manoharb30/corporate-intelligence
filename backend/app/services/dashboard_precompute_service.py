@@ -430,6 +430,35 @@ class DashboardPrecomputeService:
         elapsed = round(time.time() - start, 1)
         snapshot["compute_seconds"] = elapsed
 
+        # Cleanup: delete empty Company shells (no relationships)
+        try:
+            cleanup = await Neo4jClient.execute_write("""
+                MATCH (c:Company)
+                WHERE NOT (c)-[:FILED_EVENT]->()
+                  AND NOT (c)-[:INSIDER_TRADE_OF]->()
+                  AND NOT ()-[:TARGETS]->(c)
+                  AND NOT ()-[:OFFICER_OF]->(c)
+                  AND NOT ()-[:DIRECTOR_OF]->(c)
+                  AND NOT (c)-[:HAS_SIGNAL_PERF]->()
+                DETACH DELETE c
+            """)
+            if cleanup["nodes_deleted"] > 0:
+                logger.info(f"Dashboard precompute: cleaned up {cleanup['nodes_deleted']} empty Company shells")
+        except Exception as e:
+            logger.warning(f"Dashboard precompute: Company cleanup failed: {e}")
+
+        # Cleanup: delete orphaned Person nodes (no relationships at all)
+        try:
+            person_cleanup = await Neo4jClient.execute_write("""
+                MATCH (p:Person)
+                WHERE NOT (p)-[]-()
+                DELETE p
+            """)
+            if person_cleanup["nodes_deleted"] > 0:
+                logger.info(f"Dashboard precompute: cleaned up {person_cleanup['nodes_deleted']} orphaned Person nodes")
+        except Exception as e:
+            logger.warning(f"Dashboard precompute: Person cleanup failed: {e}")
+
         # Store in Neo4j — delete old snapshot first so no stale properties linger
         try:
             await Neo4jClient.execute_write(

@@ -1476,4 +1476,59 @@ export const personIntelligenceApi = {
   get: (name: string) => api.get<PersonIntelligenceData>(`/person-intelligence/${encodeURIComponent(name)}`),
 }
 
+// Explorer
+export interface ExplorerSearchResult {
+  id: string
+  label: string
+  ticker?: string
+  name?: string
+}
+
+export interface ExplorerGraphNode {
+  id: string
+  type: 'company' | 'person' | 'event' | 'activist'
+  label: string
+  name: string
+  metadata: Record<string, unknown>
+}
+
+export interface ExplorerGraphEdge {
+  source: string
+  target: string
+  type: 'buy' | 'sell' | 'event' | 'activist' | 'officer' | 'director'
+  metadata: Record<string, unknown>
+}
+
+export interface ExplorerGraphData {
+  nodes: ExplorerGraphNode[]
+  edges: ExplorerGraphEdge[]
+  summary: {
+    company?: string
+    ticker?: string
+    cik?: string
+    person?: string
+    total_insiders?: number
+    total_buy_value: number
+    total_sell_value: number
+    event_count?: number
+    activist_count?: number
+    cross_company_insiders?: number
+    officer_count?: number
+    director_count?: number
+    num_companies?: number
+    net_direction?: string
+  }
+}
+
+export const explorerApi = {
+  search: (q: string, mode: string) =>
+    api.get<ExplorerSearchResult[]>('/explorer/search', { params: { q, mode } }),
+  graph: (q: string, mode: string) =>
+    api.get<ExplorerGraphData>('/explorer/graph', { params: { q, mode } }),
+  expandPerson: (name: string) =>
+    api.get<ExplorerGraphData>(`/explorer/expand/person/${encodeURIComponent(name)}`),
+  expandCompany: (ticker: string) =>
+    api.get<ExplorerGraphData>(`/explorer/expand/company/${encodeURIComponent(ticker)}`),
+}
+
 export default api

@@ -12,6 +12,7 @@ const navigation = [
   { name: 'Intelligence', href: '/signals?tab=intelligence' },
   { name: 'Accuracy', href: '/accuracy' },
   { name: 'Track Record', href: '/track-record' },
+  { name: 'Explorer', href: '/explorer' },
   { name: 'Research', href: '/blog/insider-signal-research' },
   { name: 'Pricing', href: '/pricing' },
 ]
