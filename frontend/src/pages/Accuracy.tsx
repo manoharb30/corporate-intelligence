@@ -288,7 +288,7 @@ export default function Accuracy() {
                 <tr key={`${s.cik}-${s.signal_date}-${i}`} className="hover:bg-gray-50">
                   <td className="px-4 py-3 text-sm">
                     <a
-                      href={`/signal/CLUSTER-${s.cik}-${s.signal_date}`}
+                      href={`/company/${s.cik}`}
                       className="text-primary-600 hover:underline font-medium"
                     >
                       {(s.company_name || s.ticker || s.cik).length > 30

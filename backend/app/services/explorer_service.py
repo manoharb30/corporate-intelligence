@@ -455,14 +455,24 @@ class ExplorerService:
             return []
 
         if mode == "company":
+            # Fast: try name index first (indexed), then ticker scan
             results = await Neo4jClient.execute_query("""
-                MATCH (c:Company)
-                WHERE c.tickers IS NOT NULL AND size(c.tickers) > 0
-                  AND (ANY(t IN c.tickers WHERE toUpper(t) STARTS WITH toUpper($q))
-                       OR toLower(c.name) CONTAINS toLower($q))
+                CALL {
+                    MATCH (c:Company)
+                    WHERE c.tickers IS NOT NULL AND size(c.tickers) > 0
+                      AND toLower(c.name) CONTAINS toLower($q)
+                    RETURN c, 1 AS priority
+                    LIMIT 10
+                    UNION
+                    MATCH (c:Company)
+                    WHERE c.tickers IS NOT NULL AND size(c.tickers) > 0
+                      AND ANY(t IN c.tickers WHERE toUpper(t) STARTS WITH toUpper($q))
+                    RETURN c, 0 AS priority
+                    LIMIT 10
+                }
+                WITH DISTINCT c, min(priority) AS p
+                ORDER BY p, c.name
                 RETURN c.cik AS cik, c.name AS name, c.tickers[0] AS ticker
-                ORDER BY CASE WHEN ANY(t IN c.tickers WHERE toUpper(t) = toUpper($q)) THEN 0 ELSE 1 END,
-                         c.name
                 LIMIT 10
             """, {"q": query})
             return [
