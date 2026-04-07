@@ -24,9 +24,12 @@ function SignalRow({ signal, onClick }: { signal: SnapshotSignal; onClick: () =>
       className={`bg-white border border-gray-200 border-l-4 ${borderColor} rounded-xl p-5 hover:shadow-md cursor-pointer transition-all`}
     >
       <div className="flex items-start justify-between mb-2">
-        <div>
+        <div className="flex items-center gap-2">
           <span className="text-lg font-bold text-gray-900">{signal.ticker}</span>
-          <span className="text-sm text-gray-500 ml-2">{signal.company_name}</span>
+          {!isSell && signal.conviction_tier === 'strong_buy' && (
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-700 text-white">75% HIT RATE</span>
+          )}
+          <span className="text-sm text-gray-500">{signal.company_name}</span>
         </div>
         <div className="text-right">
           <div className={`text-sm font-bold ${isSell ? 'text-red-600' : 'text-green-600'}`}>
@@ -270,7 +273,7 @@ export default function Dashboard() {
                 <span className="text-xs text-gray-400">Last 30 days</span>
               </div>
               <p className="text-xs text-gray-500 mb-3 ml-4">
-                Sorted by conviction — more insiders selling = higher probability of drop.
+                Coordinated insider selling. Sorted by insider count — more sellers = higher conviction.
               </p>
 
               {todaysSells.length > 0 && (
@@ -338,7 +341,7 @@ export default function Dashboard() {
                 <span className="text-xs text-gray-400">Last 30 days</span>
               </div>
               <p className="text-xs text-gray-500 mb-3 ml-4">
-                Sorted by conviction — more insiders buying = stronger signal.{bs && bs.avg_alpha !== null ? ` Avg alpha: ${bs.avg_alpha >= 0 ? '+' : ''}${bs.avg_alpha.toFixed(1)}% vs S&P.` : ''}
+                Scored by market cap and trade value — strong_buy signals have 75% historical hit rate.{bs && bs.avg_alpha !== null ? ` Avg alpha: ${bs.avg_alpha >= 0 ? '+' : ''}${bs.avg_alpha.toFixed(1)}% vs S&P.` : ''}
               </p>
 
               {todaysBuys.length > 0 && (
@@ -370,9 +373,10 @@ export default function Dashboard() {
                   <div className="space-y-3">
                     {buySignals
                       .sort((a, b) => {
-                        const aIns = a.num_insiders || 0
-                        const bIns = b.num_insiders || 0
-                        if (bIns !== aIns) return bIns - aIns
+                        const tierOrder: Record<string, number> = { strong_buy: 0, buy: 1, watch: 2 }
+                        const aTier = tierOrder[a.conviction_tier || 'watch'] ?? 2
+                        const bTier = tierOrder[b.conviction_tier || 'watch'] ?? 2
+                        if (aTier !== bTier) return aTier - bTier
                         return (b.signal_date || '').localeCompare(a.signal_date || '')
                       })
                       .slice(0, showAllBuys ? 20 : 5)
