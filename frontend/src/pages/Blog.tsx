@@ -158,9 +158,10 @@ export default function Blog() {
           <div className="flex justify-between"><span>Minimum $50K per insider (no token buys)</span><span className="font-semibold text-red-600">49% hit rate (n=41)</span></div>
         </div>
         <p className="text-gray-600 leading-relaxed">
-          All below the 68% baseline. The signal is in the coordination. Multiple insiders buying at the same
-          company in the same window. How much each person bought doesn't matter.{' '}
-          <strong>The collective decision is the signal.</strong>
+          All below the 68% baseline. The signal isn't in the count or the conviction of individual bets.{' '}
+          In expanded testing (223 signals), the strongest filter is company size ($300M-$10B market cap) combined
+          with meaningful total value ($100K+) — hitting 75% on 84 signals.{' '}
+          <strong>It's about who is buying at what kind of company, not how many or how much each person bets.</strong>
         </p>
 
         {/* Finding 6 */}

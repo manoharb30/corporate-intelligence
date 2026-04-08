@@ -343,6 +343,22 @@ export default function Explorer() {
     }
   }, [expanding])
 
+  // Load full graph for a company node (resets sidebar + graph)
+  const loadCompanyGraph = useCallback(async (ticker: string, label: string) => {
+    setLoading(true)
+    setSelectedLabel(label)
+    setSelectedNode(null)
+    expandedNodes.current = new Set()
+    try {
+      const res = await explorerApi.graph(ticker, 'company')
+      setGraphData(res.data)
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
   // Handle Cytoscape instance
   const handleCy = useCallback((cy: cytoscape.Core) => {
     cyRef.current = cy
@@ -351,13 +367,17 @@ export default function Explorer() {
       const node = evt.target
       const data = node.data()
       setSelectedNode(data)
-      expandNode(data)
+      // Company click: reload full graph for that company
+      if (data.type === 'company' && (data.ticker || data.label)) {
+        loadCompanyGraph(data.ticker || data.label, data.name || data.label)
+      }
+      // Person/event/activist click: sidebar updates only, no graph expansion
     })
     // Background click — deselect
     cy.on('tap', (evt) => {
       if (evt.target === cy) setSelectedNode(null)
     })
-  }, [expandNode])
+  }, [expandNode, loadCompanyGraph])
 
   // Autocomplete search
   useEffect(() => {

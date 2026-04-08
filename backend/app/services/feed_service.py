@@ -188,6 +188,7 @@ class SignalItem:
     insider_context: Optional[InsiderContext] = None
     signal_type: str = "8k"  # "8k", "insider_cluster", or "insider_sell_cluster"
     cluster_detail: Optional[dict] = None  # Only for insider_cluster signals
+    conviction_tier: Optional[str] = None  # strong_buy, buy, watch (buy clusters only)
 
     def to_dict(self) -> dict:
         result = {
@@ -207,6 +208,8 @@ class SignalItem:
         }
         if self.cluster_detail:
             result["cluster_detail"] = self.cluster_detail
+        if self.conviction_tier:
+            result["conviction_tier"] = self.conviction_tier
         return result
 
 
@@ -799,6 +802,7 @@ class FeedService:
                     ),
                     signal_type="insider_cluster",
                     cluster_detail=d.get("cluster_detail"),
+                    conviction_tier=cs.conviction_tier,
                 ))
 
             for cs in sell_cluster_signals:

@@ -125,8 +125,8 @@ export default function Pricing() {
               <h3 className="font-bold text-gray-900">Insider Cluster Alerts</h3>
             </div>
             <p className="text-sm text-gray-600 leading-relaxed">
-              Actionable trade signals when 3+ insiders buy shares in a coordinated window.
-              67.8% hit rate over 90 days.
+              Actionable trade signals when multiple insiders buy shares in a coordinated window.
+              75% hit rate on quality signals (mid-cap + $100K+ value, 84 signals validated).
             </p>
           </div>
 

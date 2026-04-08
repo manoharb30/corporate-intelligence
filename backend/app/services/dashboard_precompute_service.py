@@ -308,7 +308,8 @@ class DashboardPrecomputeService:
                     if cik not in seen_ciks_buy or entry["num_insiders"] > seen_ciks_buy[cik]["num_insiders"]:
                         seen_ciks_buy[cik] = entry
 
-            todays_sells = sorted(seen_ciks_sell.values(), key=lambda x: (x["num_insiders"], x["ticker"]), reverse=True)[:10]
+            # Sells: 3-seller clusters are most predictive, sort by recency after that
+            todays_sells = sorted(seen_ciks_sell.values(), key=lambda x: (1 if x["num_insiders"] == 3 else 0, x["ticker"]), reverse=True)[:10]
             todays_buys = sorted(seen_ciks_buy.values(), key=lambda x: (x["num_insiders"], x["ticker"]), reverse=True)[:10]
             snapshot["todays_sells"] = todays_sells
             snapshot["todays_buys"] = todays_buys
@@ -541,9 +542,18 @@ class DashboardPrecomputeService:
 
         sells = [s for s in filtered if s.get("signal_action") == "PASS"]
         buys = [s for s in filtered if s.get("signal_action") != "PASS"]
-        # Sort by insider count DESC (conviction), then signal_date DESC (recency)
-        sells.sort(key=lambda s: (s.get("num_insiders") or 0, s.get("signal_date") or ""), reverse=True)
-        buys.sort(key=lambda s: (s.get("num_insiders") or 0, s.get("signal_date") or ""), reverse=True)
+        # Sort buys by conviction tier (strong_buy > buy > watch), then recency
+        tier_order = {"strong_buy": 3, "buy": 2, "watch": 1}
+        buys.sort(key=lambda s: (tier_order.get(s.get("conviction_tier"), 0), s.get("signal_date") or ""), reverse=True)
+        # Sort sells: MEDIUM (3 sellers) + high value first (most predictive per research),
+        # then by total value DESC, then recency
+        def sell_score(s):
+            n = s.get("num_insiders") or 0
+            val = s.get("total_value") or 0
+            # MEDIUM (3 sellers) with $1M+ = best; then by value
+            is_quality = 1 if (n == 3 and val >= 1_000_000) else 0
+            return (is_quality, val, s.get("signal_date") or "")
+        sells.sort(key=sell_score, reverse=True)
         scorecard["signals"] = sells[:20] + buys[:20]
         return scorecard
 

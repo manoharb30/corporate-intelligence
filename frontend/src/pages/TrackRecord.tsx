@@ -400,7 +400,7 @@ export default function TrackRecord() {
             <section className="mb-10">
               <h2 className="text-xl font-bold text-gray-900 mb-1">Conviction Ladder</h2>
               <p className="text-sm text-gray-500 mb-4">
-                Sell signal accuracy scales with seller count. More insiders selling = higher conviction.
+                Signal accuracy by insider count. More insiders does not always mean higher conviction.
               </p>
               <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
                 <table className="w-full text-sm">

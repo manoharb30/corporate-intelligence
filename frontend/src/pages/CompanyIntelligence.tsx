@@ -92,11 +92,28 @@ export default function CompanyIntelligence() {
                   }`}
                 >
                   <div className="flex items-center justify-between mb-2">
-                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                      isSell ? 'bg-red-600 text-white' : 'bg-green-600 text-white'
-                    }`}>
-                      {isSell ? 'SELL CLUSTER' : 'BUY CLUSTER'}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                        isSell ? 'bg-red-600 text-white' : 'bg-green-600 text-white'
+                      }`}>
+                        {isSell ? 'SELL CLUSTER' : 'BUY CLUSTER'}
+                      </span>
+                      {!isSell && cl.conviction_tier === 'strong_buy' && (
+                        <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-green-800 text-white">
+                          75% HIT RATE
+                        </span>
+                      )}
+                      {!isSell && cl.conviction_tier === 'buy' && (
+                        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 border border-green-300">
+                          BUY
+                        </span>
+                      )}
+                      {!isSell && cl.conviction_tier === 'watch' && (
+                        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 border border-gray-300">
+                          WATCH
+                        </span>
+                      )}
+                    </div>
                     <span className={`text-xs font-medium uppercase ${
                       cl.signal_level === 'high' ? 'text-red-600' : 'text-yellow-600'
                     }`}>

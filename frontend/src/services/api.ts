@@ -248,6 +248,7 @@ export interface SignalItem {
   insider_context: InsiderContextData | null
   signal_type?: 'insider_cluster' | 'insider_sell_cluster' | 'compound' | '8k'
   cluster_detail?: ClusterDetail
+  conviction_tier?: 'strong_buy' | 'buy' | 'watch'
 }
 
 export interface CompanyFilter {

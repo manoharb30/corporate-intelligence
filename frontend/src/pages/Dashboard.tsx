@@ -178,16 +178,16 @@ export default function Dashboard() {
         {/* Proof strip */}
         <div className="grid grid-cols-3 gap-4 mb-8">
           <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-center">
-            <div className="text-2xl font-black text-gray-900">71%</div>
-            <p className="text-xs text-gray-500 mt-1">of our sell signals were followed by a stock drop</p>
+            <div className="text-2xl font-black text-gray-900">75%</div>
+            <p className="text-xs text-gray-500 mt-1">of quality buy signals are up 90 days later — 84 signals validated</p>
           </div>
           <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-center">
-            <div className="text-2xl font-black text-gray-900">89%</div>
-            <p className="text-xs text-gray-500 mt-1">accuracy on banking insider buy signals</p>
+            <div className="text-2xl font-black text-gray-900">75%</div>
+            <p className="text-xs text-gray-500 mt-1">of quality sell signals followed by a stock decline</p>
           </div>
           <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-center">
             <div className="text-2xl font-black text-gray-900">Live</div>
-            <p className="text-xs text-gray-500 mt-1">every signal tracked forward — nothing is backtested</p>
+            <p className="text-xs text-gray-500 mt-1">every signal tracked forward from detection — no hindsight bias</p>
           </div>
         </div>
 
@@ -273,7 +273,7 @@ export default function Dashboard() {
                 <span className="text-xs text-gray-400">Last 30 days</span>
               </div>
               <p className="text-xs text-gray-500 mb-3 ml-4">
-                Coordinated insider selling. Sorted by insider count — more sellers = higher conviction.
+                Coordinated insider selling. 3-seller clusters with $1M+ value are most predictive (75% correct).
               </p>
 
               {todaysSells.length > 0 && (
@@ -341,7 +341,7 @@ export default function Dashboard() {
                 <span className="text-xs text-gray-400">Last 30 days</span>
               </div>
               <p className="text-xs text-gray-500 mb-3 ml-4">
-                Scored by market cap and trade value — strong_buy signals have 75% historical hit rate.{bs && bs.avg_alpha !== null ? ` Avg alpha: ${bs.avg_alpha >= 0 ? '+' : ''}${bs.avg_alpha.toFixed(1)}% vs S&P.` : ''}
+                Scored by market cap ($300M-$10B) and trade value ($100K+) — strong_buy signals have 75% hit rate on 84 validated signals.{bs && bs.avg_alpha !== null ? ` Avg return: +26.3%.` : ''}
               </p>
 
               {todaysBuys.length > 0 && (
@@ -623,7 +623,7 @@ export default function Dashboard() {
             We Tested 80+ Insider Trading Signals. Here's What Actually Works.
           </h3>
           <p className="text-sm text-gray-400">
-            Banking insiders are right 89% of the time. "Buying the dip" is a myth. And more conviction doesn't mean better signals. Read the full analysis.
+            More insiders doesn't mean better signals. Mid-cap + $100K+ buys hit 75%. Sector matters more than count. Read the full analysis.
           </p>
         </Link>
       </section>

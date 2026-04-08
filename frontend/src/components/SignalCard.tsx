@@ -38,7 +38,7 @@ export default function SignalCard({ signal, compact = false }: SignalCardProps)
   const isAnyCluster = isCluster || isSellCluster
   const buyers = signal.cluster_detail?.buyers || []
   const notableTrades = signal.insider_context?.notable_trades || []
-  const convictionTier = (signal as unknown as { conviction_tier?: string }).conviction_tier
+  const convictionTier = signal.conviction_tier
 
   return (
     <Link
@@ -58,7 +58,17 @@ export default function SignalCard({ signal, compact = false }: SignalCardProps)
             )}
             {convictionTier === 'strong_buy' && (
               <span className="px-2 py-0.5 rounded text-xs font-bold bg-green-800 text-white">
-                STRONG BUY
+                STRONG BUY · 75%
+              </span>
+            )}
+            {convictionTier === 'buy' && (
+              <span className="px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 border border-green-300">
+                BUY
+              </span>
+            )}
+            {convictionTier === 'watch' && (
+              <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600 border border-gray-200">
+                WATCH
               </span>
             )}
             {isSellCluster && (
