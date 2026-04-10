@@ -178,12 +178,12 @@ export default function Dashboard() {
         {/* Proof strip */}
         <div className="grid grid-cols-3 gap-4 mb-8">
           <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-center">
-            <div className="text-2xl font-black text-gray-900">75%</div>
-            <p className="text-xs text-gray-500 mt-1">of quality buy signals are up 90 days later — 84 signals validated</p>
+            <div className="text-2xl font-black text-gray-900">72%</div>
+            <p className="text-xs text-gray-500 mt-1">of quality buy signals are up 90 days later — 131 signals validated</p>
           </div>
           <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-center">
-            <div className="text-2xl font-black text-gray-900">75%</div>
-            <p className="text-xs text-gray-500 mt-1">of quality sell signals followed by a stock decline</p>
+            <div className="text-2xl font-black text-gray-900">60%</div>
+            <p className="text-xs text-gray-500 mt-1">directional accuracy on sell clusters — risk warning, not a short signal</p>
           </div>
           <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-center">
             <div className="text-2xl font-black text-gray-900">Live</div>

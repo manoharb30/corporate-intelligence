@@ -99,10 +99,10 @@ async def download_csv(
         "signal_level", "num_insiders", "total_value", "conviction_tier",
         "industry", "market_cap", "pct_of_mcap",
         "price_day0", "price_day1", "price_day2", "price_day3", "price_day5",
-        "price_day7", "price_day30",
+        "price_day7", "price_day90",
         "return_day0", "return_day1", "return_day2", "return_day3",
         "return_day5", "return_day7",
-        "spy_return_30d", "followed_by_8k", "days_to_8k",
+        "spy_return_90d", "followed_by_8k", "days_to_8k",
     ]
     writer = csv.DictWriter(output, fieldnames=fields, extrasaction="ignore")
     writer.writeheader()

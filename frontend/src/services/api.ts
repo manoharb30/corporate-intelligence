@@ -1247,14 +1247,14 @@ export interface SignalPerf {
   price_day3: number | null
   price_day5: number | null
   price_day7: number | null
-  price_day30: number | null
+  price_day90: number | null
   return_day0: number | null
   return_day1: number | null
   return_day2: number | null
   return_day3: number | null
   return_day5: number | null
   return_day7: number | null
-  spy_return_30d: number | null
+  spy_return_90d: number | null
   followed_by_8k: boolean | null
   days_to_8k: number | null
   is_mature: boolean
@@ -1266,7 +1266,7 @@ export interface SignalPerfSummary {
   total_mature: number
   buy_count: number
   sell_count: number
-  buy_avg_return_30d: number | null
+  buy_avg_return_90d: number | null
   buy_win_rate: number | null
   sell_avg_short_return: number | null
   sell_correct_rate: number | null

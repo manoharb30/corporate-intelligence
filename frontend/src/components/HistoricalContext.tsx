@@ -44,7 +44,7 @@ const BUY_STATS: Record<string, SectorStats> = {
     description: "financial companies where multiple insiders bought together",
   },
   "all": {
-    total: 223, hits: 138, hit_rate: 61.9, avg_return: 12.6, avg_alpha: 5.9,
+    total: 337, hits: 209, hit_rate: 62.0, avg_return: 11.0, avg_alpha: 5.1,
     description: "companies where multiple insiders bought in a coordinated window",
   },
 }
@@ -59,7 +59,7 @@ const SELL_STATS: Record<string, SectorStats> = {
     description: "technology companies where multiple insiders sold together",
   },
   "all": {
-    total: 76, hits: 49, hit_rate: 64.5, avg_return: -3.2, avg_alpha: -3.0,
+    total: 118, hits: 64, hit_rate: 54.2, avg_return: -1.0, avg_alpha: -2.0,
     description: "companies where multiple insiders sold in a coordinated window",
   },
 }

@@ -96,26 +96,26 @@ def _compute_signal_perf(cluster, spy_prices: dict[str, float], direction: str) 
     if 0 not in delay_prices:
         return None  # Can't even find signal-date price
 
-    # Get price at day 30
+    # Get price at horizon (90 days)
     exit_date = (signal_dt + timedelta(days=HORIZON_DAYS)).strftime("%Y-%m-%d")
-    price_day30 = _find_price(prices, exit_date)
-    is_mature = age >= MIN_AGE_DAYS and price_day30 is not None
+    price_day90 = _find_price(prices, exit_date)
+    is_mature = age >= MIN_AGE_DAYS and price_day90 is not None
 
-    # Compute 30-day returns from each entry point
+    # Compute 90-day returns from each entry point
     returns = {}
-    if price_day30 is not None:
-        price_day30 = float(round(price_day30, 2))
+    if price_day90 is not None:
+        price_day90 = float(round(price_day90, 2))
         for d, entry_price in delay_prices.items():
             if entry_price > 0:
-                ret = round((price_day30 - entry_price) / entry_price * 100, 2)
+                ret = round((price_day90 - entry_price) / entry_price * 100, 2)
                 returns[d] = float(ret)
 
-    # SPY 30-day return from signal date
+    # SPY 90-day return from signal date
     spy_at_signal = _find_price(spy_prices, signal_date)
     spy_at_exit = _find_price(spy_prices, exit_date) if is_mature else None
-    spy_return_30d = None
+    spy_return_90d = None
     if spy_at_signal and spy_at_exit and spy_at_signal > 0:
-        spy_return_30d = float(round(
+        spy_return_90d = float(round(
             (spy_at_exit - spy_at_signal) / spy_at_signal * 100, 2
         ))
 
@@ -144,8 +144,8 @@ def _compute_signal_perf(cluster, spy_prices: dict[str, float], direction: str) 
         "pct_of_mcap": pct_of_mcap,
         "is_mature": is_mature,
         "computed_at": datetime.now().isoformat(),
-        "price_day30": price_day30,
-        "spy_return_30d": spy_return_30d,
+        "price_day90": price_day90,
+        "spy_return_90d": spy_return_90d,
     }
 
     # Add delay prices and returns
@@ -306,14 +306,14 @@ class SignalPerformanceService:
                     sp.price_day3 = $price_day3,
                     sp.price_day5 = $price_day5,
                     sp.price_day7 = $price_day7,
-                    sp.price_day30 = $price_day30,
+                    sp.price_day90 = $price_day90,
                     sp.return_day0 = $return_day0,
                     sp.return_day1 = $return_day1,
                     sp.return_day2 = $return_day2,
                     sp.return_day3 = $return_day3,
                     sp.return_day5 = $return_day5,
                     sp.return_day7 = $return_day7,
-                    sp.spy_return_30d = $spy_return_30d,
+                    sp.spy_return_90d = $spy_return_90d,
                     sp.followed_by_8k = $followed_by_8k,
                     sp.days_to_8k = $days_to_8k,
                     sp.is_mature = $is_mature,
@@ -382,7 +382,7 @@ class SignalPerformanceService:
                        THEN sp.return_day0 END) as buy_avg_return,
                    avg(CASE WHEN sp.direction = 'sell' AND sp.return_day0 IS NOT NULL
                        THEN -sp.return_day0 END) as sell_avg_short_return,
-                   avg(sp.spy_return_30d) as avg_spy_return,
+                   avg(sp.spy_return_90d) as avg_spy_return,
                    sum(CASE WHEN sp.direction = 'buy' AND sp.return_day0 IS NOT NULL
                        AND sp.return_day0 > 0 THEN 1 ELSE 0 END) as buy_wins,
                    sum(CASE WHEN sp.direction = 'sell' AND sp.return_day0 IS NOT NULL
@@ -401,7 +401,7 @@ class SignalPerformanceService:
             "total_mature": r["total"],
             "buy_count": buy_count,
             "sell_count": sell_count,
-            "buy_avg_return_30d": round(r["buy_avg_return"], 2) if r["buy_avg_return"] else None,
+            "buy_avg_return_90d": round(r["buy_avg_return"], 2) if r["buy_avg_return"] else None,
             "buy_win_rate": round((r["buy_wins"] or 0) / buy_count * 100, 1) if buy_count > 0 else None,
             "sell_avg_short_return": round(r["sell_avg_short_return"], 2) if r["sell_avg_short_return"] else None,
             "sell_correct_rate": round((r["sell_correct"] or 0) / sell_count * 100, 1) if sell_count > 0 else None,
@@ -424,7 +424,7 @@ class SignalPerformanceService:
                    avg(sp.return_day5) as avg_day5,
                    avg(sp.return_day7) as avg_day7,
                    count(sp) as n,
-                   avg(sp.spy_return_30d) as avg_spy
+                   avg(sp.spy_return_90d) as avg_spy
         """
         results = await Neo4jClient.execute_query(query, {})
         stats = {}

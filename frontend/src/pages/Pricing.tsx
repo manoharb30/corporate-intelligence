@@ -126,7 +126,7 @@ export default function Pricing() {
             </div>
             <p className="text-sm text-gray-600 leading-relaxed">
               Actionable trade signals when multiple insiders buy shares in a coordinated window.
-              75% hit rate on quality signals (mid-cap + $100K+ value, 84 signals validated).
+              72% hit rate on quality signals (mid-cap + $100K+ value, 131 signals validated).
             </p>
           </div>
 
