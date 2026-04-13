@@ -612,22 +612,6 @@ export default function Dashboard() {
       )}
 
       {/* ===== CTA ===== */}
-      {/* ===== RESEARCH ===== */}
-      <section className="mb-10">
-        <Link
-          to="/blog/insider-signal-research"
-          className="block bg-gray-900 rounded-xl p-6 hover:bg-gray-800 transition-colors"
-        >
-          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Research</div>
-          <h3 className="text-lg font-bold text-white mb-2">
-            We Tested 80+ Insider Trading Signals. Here's What Actually Works.
-          </h3>
-          <p className="text-sm text-gray-400">
-            More insiders doesn't mean better signals. Mid-cap + $100K+ buys hit 75%. Sector matters more than count. Read the full analysis.
-          </p>
-        </Link>
-      </section>
-
       {/* ===== CTA ===== */}
       <section className="text-center py-10 mb-8 border-t border-gray-100">
         <p className="text-gray-500 mb-6">Every signal is tracked with live prices. Nothing is backtested.</p>

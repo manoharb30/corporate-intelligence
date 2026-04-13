@@ -11,7 +11,6 @@ import Alerts from './pages/Alerts'
 import Accuracy from './pages/Accuracy'
 import TrackRecord from './pages/TrackRecord'
 import Performance from './pages/Performance'
-import Blog from './pages/Blog'
 import CompanyIntelligence from './pages/CompanyIntelligence'
 import Explorer from './pages/Explorer'
 
@@ -34,7 +33,7 @@ function App() {
         <Route path="/track-record" element={<TrackRecord />} />
         <Route path="/performance" element={<Performance />} />
         <Route path="/explorer" element={<Explorer />} />
-        <Route path="/blog/insider-signal-research" element={<Blog />} />
+        <Route path="/blog/insider-signal-research" element={<Navigate to="/" replace />} />
 
         {/* Redirects for old routes */}
         <Route path="/dashboard" element={<Navigate to="/" replace />} />

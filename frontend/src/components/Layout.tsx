@@ -14,7 +14,6 @@ const navigation = [
   { name: 'Track Record', href: '/track-record' },
   { name: 'Performance', href: '/performance' },
   { name: 'Explorer', href: '/explorer' },
-  { name: 'Research', href: '/blog/insider-signal-research' },
   { name: 'Pricing', href: '/pricing' },
 ]
 
