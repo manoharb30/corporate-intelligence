@@ -1,11 +1,15 @@
 """Parser for SEC Schedule 13D/13D-A filings.
 
-Extracts structured data from the XSLT-rendered HTML that SEC serves for
-Schedule 13D filings. The key extraction targets are:
-
-- Cover page: filer name, reporting person type, shares owned, percentage
-- Item 4 (Purpose of Transaction): raw text for downstream classification
-- Filing metadata: amendment status, filing date
+Parses the XSLT-rendered HTML using BeautifulSoup table structure (not regex).
+The 13D rendered HTML uses semantic IDs:
+  - <table id="reportingPersonDetails"> — one per reporting person
+  - Row 1: Name of reporting person
+  - Row 6: Citizenship
+  - Row 7: Sole voting power
+  - Row 8: Shared voting power
+  - Row 11: Aggregate amount beneficially owned
+  - Row 13: Percent of class
+  - Row 14: Type of reporting person
 """
 
 import logging
@@ -17,6 +21,22 @@ from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
+# Quality flag thresholds
+SHARES_LIKELY_ERROR = 1_000_000_000  # >1B shares is suspicious
+
+
+@dataclass
+class ReportingPerson:
+    """Single reporting person within a 13D filing."""
+
+    name: str = ""
+    citizenship: str = ""
+    sole_voting_power: Optional[int] = None
+    shared_voting_power: Optional[int] = None
+    shares_owned: Optional[int] = None
+    percentage: Optional[float] = None
+    reporting_person_type: str = ""
+
 
 @dataclass
 class Schedule13DResult:
@@ -27,7 +47,7 @@ class Schedule13DResult:
     filing_type: str = ""  # "SCHEDULE 13D" or "SCHEDULE 13D/A"
     filing_date: str = ""
 
-    # Filer info (from cover page)
+    # Filer info — from the FIRST reporting person, or EFTS metadata
     filer_name: str = ""
     filer_cik: str = ""
     reporting_person_type: str = ""  # Row 14: IA, IN, CO, HC, etc.
@@ -37,11 +57,14 @@ class Schedule13DResult:
     target_name: str = ""
     target_cik: str = ""
 
-    # Stake info (from cover page)
-    shares_owned: Optional[int] = None  # Row 11: aggregate amount
-    percentage: Optional[float] = None  # Row 13: percent of class
-    sole_voting_power: Optional[int] = None  # Row 7
-    shared_voting_power: Optional[int] = None  # Row 8
+    # Stake info — from the FIRST reporting person
+    shares_owned: Optional[int] = None
+    percentage: Optional[float] = None
+    sole_voting_power: Optional[int] = None
+    shared_voting_power: Optional[int] = None
+
+    # All reporting persons (multi-filer support)
+    all_reporting_persons: list[ReportingPerson] = field(default_factory=list)
 
     # Purpose (Item 4) — raw text
     purpose_text: str = ""
@@ -55,20 +78,11 @@ class Schedule13DResult:
 
     # Parse quality
     parse_errors: list[str] = field(default_factory=list)
+    quality_flag: Optional[str] = None  # set if data looks suspicious
 
 
 def parse_schedule_13d(html: str, metadata: Optional[dict] = None) -> Schedule13DResult:
-    """
-    Parse a Schedule 13D filing from its rendered HTML.
-
-    Args:
-        html: The HTML content of the filing (from www.sec.gov XSLT render)
-        metadata: Optional dict with EFTS fields (accession_number, filing_type,
-                  filing_date, target_cik, target_name, filer_cik, filer_name)
-
-    Returns:
-        Schedule13DResult with extracted fields
-    """
+    """Parse a Schedule 13D filing from its rendered HTML."""
     result = Schedule13DResult()
 
     # Pre-fill from EFTS metadata if provided
@@ -91,127 +105,195 @@ def parse_schedule_13d(html: str, metadata: Optional[dict] = None) -> Schedule13
     for tag in soup(["style", "script"]):
         tag.decompose()
 
+    # Parse all reporting persons from the table structures
+    _parse_reporting_persons(soup, result)
+
+    # Use the first reporting person as the primary filer info
+    if result.all_reporting_persons:
+        primary = result.all_reporting_persons[0]
+        if not result.filer_name:
+            result.filer_name = primary.name
+        result.citizenship = primary.citizenship
+        result.shares_owned = primary.shares_owned
+        result.percentage = primary.percentage
+        result.sole_voting_power = primary.sole_voting_power
+        result.shared_voting_power = primary.shared_voting_power
+        result.reporting_person_type = primary.reporting_person_type
+
+    # Get plain text for amendment number, item 1, item 4
     text = soup.get_text(separator="\n", strip=True)
 
-    # Extract amendment number from the header
     result.amendment_number = _extract_amendment_number(text)
-
-    # Parse cover page rows
-    _parse_cover_page(text, result)
-
-    # Parse Item 4 (Purpose of Transaction)
     _parse_item4(text, result)
-
-    # Parse Item 1 for target name if not from EFTS
     if not result.target_name:
         _parse_item1(text, result)
+
+    # Auto-flag suspicious data
+    _set_quality_flag(result)
 
     return result
 
 
-def _extract_amendment_number(text: str) -> Optional[int]:
-    """Extract amendment number from '(Amendment No. X)' in the header.
+def _parse_reporting_persons(soup: BeautifulSoup, result: Schedule13DResult) -> None:
+    """Extract data from each reportingPersonDetails table.
 
-    The number may be on the same line or a separate line in the rendered HTML.
+    Each filing has one or more <table id="reportingPersonDetails"> tables.
+    Each table has rows 1-14 of the cover page.
     """
+    tables = soup.find_all("table", id="reportingPersonDetails")
+    if not tables:
+        # Fallback: try to find tables that look like reporting person tables
+        # by looking for cells containing "Name of reporting person"
+        all_tables = soup.find_all("table")
+        tables = [
+            t for t in all_tables
+            if t.find(string=re.compile(r"Name of reporting person", re.IGNORECASE))
+        ]
+
+    for table in tables:
+        person = _parse_one_reporting_person(table)
+        if person and person.name:
+            result.all_reporting_persons.append(person)
+
+    # If no tables found OR no person extracted, fall back to text-based parsing
+    # (handles legacy fixtures and unstructured HTML)
+    if not result.all_reporting_persons:
+        text = soup.get_text(separator="\n", strip=True)
+        person = _parse_text_fallback(text)
+        if person and person.name:
+            result.all_reporting_persons.append(person)
+        else:
+            result.parse_errors.append("Could not extract reporting person data")
+
+
+def _parse_one_reporting_person(table) -> Optional[ReportingPerson]:
+    """Extract fields from a single reportingPersonDetails table.
+
+    The table is structured as <tr><td row_num</td><td label and value</td></tr>.
+    The value is typically inside a <div class="text"> tag.
+    """
+    person = ReportingPerson()
+    rows = table.find_all("tr")
+
+    for row in rows:
+        cells = row.find_all("td")
+        if len(cells) < 2:
+            continue
+
+        # First cell is the row number (1-14)
+        row_num_text = cells[0].get_text(strip=True)
+        try:
+            row_num = int(row_num_text)
+        except (ValueError, TypeError):
+            continue
+
+        # Second cell contains the label and value
+        value_cell = cells[1]
+        # The value is typically in a <div class="text"> child
+        text_div = value_cell.find("div", class_="text")
+        if text_div:
+            value = text_div.get_text(strip=True)
+        else:
+            # Fallback: get all text from the cell, strip the label
+            full_text = value_cell.get_text(separator=" ", strip=True)
+            value = full_text  # may include label
+
+        if row_num == 1:
+            person.name = value
+        elif row_num == 6:
+            person.citizenship = value
+        elif row_num == 7:
+            person.sole_voting_power = _parse_int(value)
+        elif row_num == 8:
+            person.shared_voting_power = _parse_int(value)
+        elif row_num == 11:
+            person.shares_owned = _parse_int(value)
+        elif row_num == 13:
+            person.percentage = _parse_percent(value)
+        elif row_num == 14:
+            # Type of reporting person — typically 2-letter code
+            m = re.search(r"\b([A-Z]{2})\b", value)
+            if m:
+                person.reporting_person_type = m.group(1)
+
+    return person if person.name else None
+
+
+def _parse_text_fallback(text: str) -> Optional[ReportingPerson]:
+    """Fallback parser for unstructured HTML — uses text patterns.
+
+    Used when the rendered HTML doesn't have <table id="reportingPersonDetails">
+    structure (e.g., test fixtures or older filings).
+    """
+    person = ReportingPerson()
+
+    # Row 1: Name
+    m = re.search(r"1\s*\n\s*Name of reporting person\s*\n\s*(.+)", text, re.IGNORECASE)
+    if m:
+        person.name = m.group(1).strip()
+
+    # Row 6: Citizenship
+    m = re.search(r"6\s*\n\s*Citizenship or place of organization\s*\n\s*(.+)", text, re.IGNORECASE)
+    if m:
+        person.citizenship = m.group(1).strip()
+
+    # Row 7: Sole Voting Power
+    m = re.search(r"7\s*\n\s*Sole Voting Power\s*\n\s*([\d,\.]+)", text, re.IGNORECASE)
+    if m:
+        person.sole_voting_power = _parse_int(m.group(1))
+
+    # Row 8: Shared Voting Power
+    m = re.search(r"8\s*\n\s*Shared Voting Power\s*\n\s*([\d,\.]+)", text, re.IGNORECASE)
+    if m:
+        person.shared_voting_power = _parse_int(m.group(1))
+
+    # Row 11: Aggregate amount
+    m = re.search(r"11\s*\n\s*Aggregate amount beneficially owned[^\n]*\n\s*([\d,\.]+)", text, re.IGNORECASE)
+    if m:
+        person.shares_owned = _parse_int(m.group(1))
+
+    # Row 13: Percent
+    m = re.search(r"13\s*\n\s*Percent of class[^\n]*\n\s*([\d\.]+)\s*%?", text, re.IGNORECASE)
+    if m:
+        person.percentage = _parse_percent(m.group(1))
+
+    # Row 14: Type of Reporting Person
+    m = re.search(r"14\s*\n\s*Type of Reporting Person[^\n]*\n\s*([A-Z]{2})", text, re.IGNORECASE)
+    if m:
+        person.reporting_person_type = m.group(1).upper()
+
+    return person if person.name else None
+
+
+def _extract_amendment_number(text: str) -> Optional[int]:
+    """Extract amendment number from '(Amendment No. X)' in the header."""
     match = re.search(r"\(Amendment\s+No\.?\s*\n?\s*(\d+)\s*\n?\s*\)", text, re.IGNORECASE)
     if match:
         return int(match.group(1))
     return None
 
 
-def _parse_cover_page(text: str, result: Schedule13DResult) -> None:
-    """Extract structured data from the numbered cover page rows."""
-
-    # Row 1: Name of reporting person (filer)
-    # Only overwrite if we didn't get it from EFTS
-    if not result.filer_name:
-        match = re.search(
-            r"1\s*\n\s*Name of reporting person\s*\n\s*(.+)",
-            text, re.IGNORECASE
-        )
-        if match:
-            result.filer_name = match.group(1).strip()
-
-    # Row 6: Citizenship or place of organization
-    match = re.search(
-        r"6\s*\n\s*Citizenship or place of organization\s*\n\s*(.+)",
-        text, re.IGNORECASE
-    )
-    if match:
-        result.citizenship = match.group(1).strip()
-
-    # Row 11: Aggregate amount beneficially owned
-    match = re.search(
-        r"11\s*\n\s*Aggregate amount beneficially owned[^\n]*\n\s*([\d,\.]+)",
-        text, re.IGNORECASE
-    )
-    if match:
-        result.shares_owned = _parse_int(match.group(1))
-
-    # Row 13: Percent of class
-    match = re.search(
-        r"13\s*\n\s*Percent of class[^\n]*\n\s*([\d\.]+)\s*%?",
-        text, re.IGNORECASE
-    )
-    if match:
-        try:
-            result.percentage = float(match.group(1))
-        except ValueError:
-            result.parse_errors.append(f"Could not parse percentage: {match.group(1)}")
-
-    # Row 14: Type of Reporting Person
-    match = re.search(
-        r"14\s*\n\s*Type of Reporting Person[^\n]*\n\s*([A-Z]{2})",
-        text, re.IGNORECASE
-    )
-    if match:
-        result.reporting_person_type = match.group(1).upper()
-
-    # Row 7: Sole Voting Power
-    match = re.search(
-        r"7\s*\n\s*Sole Voting Power\s*\n\s*([\d,\.]+)",
-        text, re.IGNORECASE
-    )
-    if match:
-        result.sole_voting_power = _parse_int(match.group(1))
-
-    # Row 8: Shared Voting Power
-    match = re.search(
-        r"8\s*\n\s*Shared Voting Power\s*\n\s*([\d,\.]+)",
-        text, re.IGNORECASE
-    )
-    if match:
-        result.shared_voting_power = _parse_int(match.group(1))
-
-
 def _parse_item4(text: str, result: Schedule13DResult) -> None:
     """Extract Item 4 (Purpose of Transaction) text."""
-    # Find Item 4 section
     item4_match = re.search(r"Item\s+4\.?\s*\n\s*Purpose of Transaction", text, re.IGNORECASE)
     if not item4_match:
         result.parse_errors.append("Could not find Item 4 section")
         return
 
-    # Find where Item 5 starts (end boundary for Item 4)
     item5_match = re.search(r"Item\s+5\.?\s*\n\s*Interest in Securities", text[item4_match.end():], re.IGNORECASE)
 
     if item5_match:
         raw = text[item4_match.end():item4_match.end() + item5_match.start()]
     else:
-        # Take up to 2000 chars if we can't find Item 5
         raw = text[item4_match.end():item4_match.end() + 2000]
 
-    # Clean up the text
     purpose = raw.strip()
-    # Remove leading section label remnants
     purpose = re.sub(r"^\s*Purpose of Transaction\s*", "", purpose, flags=re.IGNORECASE).strip()
-
     result.purpose_text = purpose
 
 
 def _parse_item1(text: str, result: Schedule13DResult) -> None:
-    """Extract target company name from Item 1 if not already set."""
+    """Extract target company name from Item 1."""
     match = re.search(
         r"Item\s+1\.?\s*\n\s*Security and Issuer.*?"
         r"Name of Issuer:\s*\n?\s*(.+?)(?:\n|$)",
@@ -223,11 +305,57 @@ def _parse_item1(text: str, result: Schedule13DResult) -> None:
 
 def _parse_int(value: str) -> Optional[int]:
     """Parse an integer from a string, handling commas and decimals."""
+    if not value:
+        return None
     try:
         cleaned = value.replace(",", "").replace("'", "").strip()
-        # Handle values like "2,872,185.00"
+        # Strip non-numeric trailing chars
+        cleaned = re.sub(r"[^\d.\-]+", "", cleaned)
+        if not cleaned or cleaned == "-":
+            return None
         if "." in cleaned:
             return int(float(cleaned))
         return int(cleaned)
     except (ValueError, TypeError):
         return None
+
+
+def _parse_percent(value: str) -> Optional[float]:
+    """Parse a percentage like '8.7 %' or '100' or '5.85%'."""
+    if not value:
+        return None
+    try:
+        # Strip % sign and whitespace
+        cleaned = value.replace("%", "").replace(",", "").strip()
+        # Strip any non-numeric trailing chars
+        m = re.search(r"^[\-+]?[\d.]+", cleaned)
+        if m:
+            return float(m.group(0))
+    except (ValueError, TypeError):
+        pass
+    return None
+
+
+def _set_quality_flag(result: Schedule13DResult) -> None:
+    """Auto-set quality_flag if data looks suspicious."""
+    # Multi-filer with first entry at 100% — likely parent ownership
+    if (result.percentage is not None and result.percentage >= 100
+            and len(result.all_reporting_persons) > 1):
+        result.quality_flag = "pct_100_likely_multi_filer"
+        return
+
+    # Suspicious share count (likely SEC filing error or non-equity unit)
+    if result.shares_owned is not None and result.shares_owned > SHARES_LIKELY_ERROR:
+        result.quality_flag = "shares_over_1b_review"
+        return
+
+    # Original filing with 0% — parser may have grabbed wrong row
+    if (result.percentage == 0 and not result.is_amendment):
+        result.quality_flag = "zero_pct_original_review"
+        return
+
+    # Inconsistent: has percentage but no shares
+    if (result.percentage and result.percentage > 0
+            and (not result.shares_owned or result.shares_owned == 0)):
+        result.quality_flag = "shares_zero_inconsistent"
+        return

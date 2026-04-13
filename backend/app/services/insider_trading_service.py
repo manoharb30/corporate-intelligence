@@ -193,6 +193,9 @@ class InsiderTradingService:
                                 t.insider_title = $insider_title,
                                 t.insider_cik = $insider_cik,
                                 t.is_10b5_1 = $is_10b5_1,
+                                t.is_officer = $is_officer,
+                                t.is_director = $is_director,
+                                t.is_ten_percent_owner = $is_ten_percent_owner,
                                 t.primary_document = $primary_document,
                                 t.price_source = $price_source
 
@@ -237,6 +240,9 @@ class InsiderTradingService:
                             "insider_title": result.insider.title,
                             "insider_cik": result.insider.cik,
                             "is_10b5_1": result.is_10b5_1,
+                            "is_officer": result.insider.is_officer,
+                            "is_director": result.insider.is_director,
+                            "is_ten_percent_owner": result.insider.is_ten_percent_owner,
                             "primary_document": filing.primary_document,
                             "price_source": price_source,
                         })

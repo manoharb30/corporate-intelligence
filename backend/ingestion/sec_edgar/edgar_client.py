@@ -449,7 +449,7 @@ class SECEdgarClient:
         from_idx = 0
         while len(filings) < max_results:
             params = {
-                "forms": "SCHEDULE 13D,SCHEDULE 13D/A",
+                "forms": "SCHEDULE 13D",  # matches both SCHEDULE 13D and SCHEDULE 13D/A
                 "dateRange": "custom",
                 "startdt": since_date,
                 "enddt": end_date,

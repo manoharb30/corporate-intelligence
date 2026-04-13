@@ -173,9 +173,9 @@ class Form4Parser:
             return None
 
         rel = owner.find("reportingOwnerRelationship")
-        is_officer = self._get_text(rel, "isOfficer", "0") == "1"
-        is_director = self._get_text(rel, "isDirector", "0") == "1"
-        is_ten_percent = self._get_text(rel, "isTenPercentOwner", "0") == "1"
+        is_officer = self._get_text(rel, "isOfficer", "0").strip().lower() in ("1", "true")
+        is_director = self._get_text(rel, "isDirector", "0").strip().lower() in ("1", "true")
+        is_ten_percent = self._get_text(rel, "isTenPercentOwner", "0").strip().lower() in ("1", "true")
         title = self._get_text(rel, "officerTitle", "")
 
         return InsiderInfo(

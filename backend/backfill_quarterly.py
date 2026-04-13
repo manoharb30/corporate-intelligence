@@ -205,6 +205,9 @@ async def store_batch(batch: list[dict], max_retries: int = 2) -> tuple[int, int
                 "deriv": txn.is_derivative, "name": result.insider.name,
                 "title": result.insider.title, "insider_cik": result.insider.cik,
                 "is_plan": result.is_10b5_1, "price_source": price_source, "pct": pct,
+                "is_officer": result.insider.is_officer,
+                "is_director": result.insider.is_director,
+                "is_ten_percent_owner": result.insider.is_ten_percent_owner,
             }
 
             query = """
@@ -220,6 +223,8 @@ async def store_batch(batch: list[dict], max_retries: int = 2) -> tuple[int, int
                     t.ownership_type = $own_type, t.is_derivative = $deriv,
                     t.insider_name = $name, t.insider_title = $title,
                     t.insider_cik = $insider_cik, t.is_10b5_1 = $is_plan,
+                    t.is_officer = $is_officer, t.is_director = $is_director,
+                    t.is_ten_percent_owner = $is_ten_percent_owner,
                     t.price_source = $price_source, t.pct_of_position_traded = $pct
                 MERGE (c)-[:INSIDER_TRADE_OF]->(t)
                 WITH t

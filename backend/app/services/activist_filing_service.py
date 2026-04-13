@@ -1,12 +1,60 @@
 """Service for Schedule 13D activist filing data."""
 
 import logging
+import time
 from typing import Optional
+
+import httpx
 
 from app.db.neo4j_client import Neo4jClient
 from ingestion.sec_edgar.parsers.schedule13_parser import Schedule13DResult
 
 logger = logging.getLogger(__name__)
+
+# Module-level ticker cache — CIK (unzero-padded int string) -> ticker
+_TICKER_CACHE: dict[str, str] = {}
+_TICKER_CACHE_TS: float = 0
+_TICKER_CACHE_TTL = 24 * 3600  # 24 hours
+SEC_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
+
+
+async def _load_ticker_cache() -> None:
+    """Fetch SEC company_tickers.json once per 24h."""
+    global _TICKER_CACHE, _TICKER_CACHE_TS
+    now = time.time()
+    if _TICKER_CACHE and (now - _TICKER_CACHE_TS) < _TICKER_CACHE_TTL:
+        return
+    try:
+        async with httpx.AsyncClient(
+            headers={"User-Agent": "LookInsight research@lookinsight.ai"},
+            timeout=30.0,
+        ) as client:
+            resp = await client.get(SEC_TICKERS_URL)
+            if resp.status_code != 200:
+                logger.warning(f"SEC tickers fetch returned {resp.status_code}")
+                return
+            data = resp.json()
+            cache = {}
+            for entry in data.values():
+                cik = str(entry.get("cik_str", ""))
+                ticker = entry.get("ticker", "")
+                if cik and ticker:
+                    cache[cik] = ticker
+            _TICKER_CACHE = cache
+            _TICKER_CACHE_TS = now
+            logger.info(f"Loaded {len(cache)} SEC tickers")
+    except Exception as e:
+        logger.warning(f"Failed to load SEC tickers: {e}")
+
+
+async def get_ticker_for_cik(cik: str) -> Optional[str]:
+    """Look up ticker for a CIK using the SEC company_tickers.json cache."""
+    if not cik:
+        return None
+    await _load_ticker_cache()
+    # SEC ticker file uses unpadded int string, but our CIKs are zero-padded
+    unpadded = str(int(cik)) if cik.isdigit() else cik
+    return _TICKER_CACHE.get(unpadded)
 
 
 def classify_signal_level(filing: Schedule13DResult) -> str:
@@ -69,11 +117,15 @@ class ActivistFilingService:
         # Truncate purpose text to 5000 chars to avoid storing huge blobs
         purpose_text = (filing.purpose_text or "")[:5000]
 
+        # Look up ticker from SEC tickers file
+        ticker = await get_ticker_for_cik(filing.target_cik)
+
         query = """
             MERGE (c:Company {cik: $target_cik})
             ON CREATE SET c.name = $target_name,
                           c.id = randomUUID()
-            SET c.name = COALESCE(c.name, $target_name)
+            SET c.name = COALESCE(c.name, $target_name),
+                c.ticker = COALESCE(c.ticker, $ticker)
 
             MERGE (af:ActivistFiling {accession_number: $accession_number})
             SET af.filing_type = $filing_type,
@@ -90,7 +142,9 @@ class ActivistFilingService:
                 af.signal_level = $signal_level,
                 af.signal_summary = $signal_summary,
                 af.filing_url = $filing_url,
-                af.citizenship = $citizenship
+                af.citizenship = $citizenship,
+                af.quality_flag = $quality_flag,
+                af.num_reporting_persons = $num_reporting_persons
 
             MERGE (af)-[:TARGETS]->(c)
 
@@ -116,6 +170,9 @@ class ActivistFilingService:
                 "signal_summary": signal_summary,
                 "filing_url": filing.filing_url,
                 "citizenship": filing.citizenship,
+                "ticker": ticker,
+                "quality_flag": filing.quality_flag,
+                "num_reporting_persons": len(filing.all_reporting_persons),
             })
 
             if result:

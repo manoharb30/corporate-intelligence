@@ -1532,4 +1532,50 @@ export const explorerApi = {
     api.get<ExplorerGraphData>(`/explorer/expand/company/${encodeURIComponent(ticker)}`),
 }
 
+// ============ Signal Returns (Performance Page) ============
+
+export interface SignalReturnRow {
+  signal_id: string
+  ticker: string
+  company_name: string
+  cik: string
+  signal_date: string
+  direction: 'buy' | 'sell'
+  signal_level: string
+  conviction_tier: string | null
+  num_insiders: number
+  total_value: number
+  industry: string | null
+  market_cap: number | null
+  is_mature: boolean
+  entry_price: number
+  current_price: number
+  current_date: string
+  return_pct: number
+  today_change_pct: number | null
+  in_profit: boolean
+}
+
+export interface SignalReturnsResponse {
+  signals: SignalReturnRow[]
+  count: number
+}
+
+export interface SignalReturnsSummary {
+  total: number
+  buy_count: number
+  sell_count: number
+  avg_return: number
+  total_conviction: number
+  hit_rate: number
+  in_profit_count: number
+}
+
+export const signalReturnsApi = {
+  getAll: (params?: { direction?: 'buy' | 'sell'; month?: number; year?: number; limit?: number }) =>
+    api.get<SignalReturnsResponse>('/signal-returns', { params }),
+  getSummary: (params?: { direction?: 'buy' | 'sell'; month?: number; year?: number }) =>
+    api.get<SignalReturnsSummary>('/signal-returns/summary', { params }),
+}
+
 export default api
