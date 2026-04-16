@@ -1,34 +1,40 @@
 # STATE.md — Current Loop Position
 
-## Loop Status
+## Current Position
 
-| Field | Value |
-|-------|-------|
-| Current Phase | Phase 2: Signal Quality |
-| Loop Stage | PLAN (risk scorer spec written, awaiting implementation) |
-| Active Plan | Signal Risk Scorer — Pre-trade Failure Filter |
-| Plan Location | docs/superpowers/specs/2026-04-16-signal-risk-scorer-design.md |
-| Blockers | None |
+Milestone: v1.0 Signal Quality
+Phase: 2 of 5 (Signal Quality) — Plan 01 COMPLETE
+Plan: 02-01 closed
+Status: Loop closed. Ready for next plan or phase.
+Last activity: 2026-04-16 — UNIFY complete
+
+Progress:
+- Phase 2: [████████░░] 80% (filter built + tested, deferred items remain)
+
+## Loop Position
+
+```
+PLAN ──▶ APPLY ──▶ UNIFY
+  ✓        ✓        ✓     [Loop closed]
+```
 
 ## Session Continuity
 
-**Last session:** 2026-04-16
-**What was accomplished:**
-- Backfilled 17 months of clean insider signal data (Dec 2024 – Apr 2026)
-- Built split pipeline architecture (prefilter → batch LLM → merge → ingest)
-- Validated 67% hit rate (concentration >70% filter), +5.5% alpha vs SPY
-- Designed signal risk scorer (11 factors, score-based pre-trade filter)
-- Installed Superpowers + PAUL frameworks
-
-**What's next:**
-- Implement signal risk scorer (backtest on 143 signals, calibrate threshold)
-- Prepare Neudata research brief
-- Build data delivery format for hedge fund clients
+Last session: 2026-04-16
+Stopped at: Plan 02-01 unified
+Next action: 
+  - Retroactively apply filter to historical data (deferred)
+  - OR proceed to Phase 3 (Institutional Positioning)
+  - OR create Plan 02-02 for deferred items
+Resume file: .paul/phases/02-signal-quality/02-01-SUMMARY.md
 
 ## Accumulated Decisions
 
-See PROJECT.md Key Decisions table.
+| Decision | Phase | Impact |
+|---|---|---|
+| Single earnings rule (earn<=60d) | Phase 2 | Simpler, doubles alpha, meets minimums |
+| CIK→ticker mapping from Neo4j | Phase 2 | Historical data works at merge time |
+| Rejected: purgatory zone, sector, volatility, momentum | Phase 2 | Not statistically significant enough |
 
 ---
-*STATE.md — Updated at each loop transition*
 *Last updated: 2026-04-16*
