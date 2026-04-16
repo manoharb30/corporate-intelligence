@@ -90,6 +90,7 @@ async def ingest_transaction(filing: dict, txn: dict, cls: dict, log) -> str:
         "classification": cls.get("classification", "GENUINE"),
         "cls_reason": cls.get("reason", "")[:500],
         "cls_rule": cls.get("rule_triggered", ""),
+        "has_hostile_activist": cls.get("has_hostile_activist", False),
         "now": now,
     }
 
@@ -132,6 +133,7 @@ async def ingest_transaction(filing: dict, txn: dict, cls: dict, log) -> str:
                 "classification": cls.get("classification", "GENUINE"),
                 "cls_reason": cls.get("reason", "")[:500],
                 "cls_rule": cls.get("rule_triggered", ""),
+                "has_hostile_activist": cls.get("has_hostile_activist", False),
                 "now": now,
             })
             return "updated"
@@ -172,7 +174,8 @@ async def ingest_transaction(filing: dict, txn: dict, cls: dict, log) -> str:
                 t.classification = $classification,
                 t.classification_reason = $cls_reason,
                 t.classification_rule = $cls_rule,
-                t.classified_at = $now
+                t.classified_at = $now,
+                t.has_hostile_activist = $has_hostile_activist
 
             MERGE (c)-[:INSIDER_TRADE_OF]->(t)
 

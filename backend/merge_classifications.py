@@ -263,6 +263,24 @@ def main():
     if skipped_no_ticker > 0:
         print(f"  Skipped {skipped_no_ticker} signals (no ticker resolved)")
 
+    # Run hostile activist flag on remaining GENUINE signals (informational only)
+    print(f"\n=== HOSTILE ACTIVIST FLAG ===")
+    hostile_count = 0
+    for r in merged_results:
+        if r.get("classification") != "GENUINE":
+            continue
+        cik = acc_cik_map.get(r.get("accession", ""), "")
+        if not cik:
+            r["has_hostile_activist"] = False
+            r["hostile_keywords"] = []
+            continue
+        hostile_result = SignalFilter.check_hostile_activist(cik)
+        r["has_hostile_activist"] = hostile_result.has_hostile
+        r["hostile_keywords"] = hostile_result.keywords
+        if hostile_result.has_hostile:
+            hostile_count += 1
+    print(f"  Flagged {hostile_count} signals with hostile activist text")
+
     # Classification counts (recount after detector)
     classification_counts = {}
     for r in merged_results:

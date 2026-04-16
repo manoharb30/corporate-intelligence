@@ -1,37 +1,49 @@
-"""Signal filter — earnings-based pre-trade exclusion rule.
+"""Signal filter — earnings exclusion rule + hostile activist flag.
 
-Rule: Exclude strong_buy signals where the next earnings report is >60 days away.
+Earnings rule: Exclude strong_buy signals where next earnings >60 days away.
+Hostile flag: Informational tag when activist filing has hostile keywords (not a filter).
 
-Rationale: Insiders buying within 60 days of earnings have informational edge
-on current quarter performance (68.5% HR vs 61.5% baseline, +10.6% alpha).
-Insiders buying right after earnings (60-90d from next) are trading on public
-information with no edge.
-
-Backed by research: p=0.003 statistical significance (earnings-sector-patterns.md).
+Research backing:
+  - Earnings: p=0.003 significance (earnings-sector-patterns.md)
+  - Hostile activist: 88% of losers-with-activist had hostile keywords vs 33% winners
+    Aligned with Brav 2008, Klein & Zur 2009, Greenwood & Schor 2009.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
 import yfinance as yf
 
 
-EARNINGS_THRESHOLD_DAYS = 60  # Max days to next earnings for signal to pass
+EARNINGS_THRESHOLD_DAYS = 60
+
+HOSTILE_KEYWORDS = [
+    "proxy", "remove", "replace", "strategic alternative", "inadequate",
+    "underperform", "oppose", "withhold", "hostile", "unsolicited",
+]
 
 
 @dataclass
 class FilterResult:
     """Result of applying the signal filter."""
     passed: bool
-    earnings_distance: Optional[int]  # days to next earnings, None if unavailable
+    earnings_distance: Optional[int]
     reason: str
 
 
+@dataclass
+class HostileCheckResult:
+    """Result of hostile activist check. Informational only — not a filter."""
+    has_hostile: bool
+    keywords: list[str] = field(default_factory=list)
+
+
 class SignalFilter:
-    """Earnings proximity filter for strong_buy signals."""
+    """Earnings proximity filter + hostile activist flag."""
 
     _earnings_cache: dict[str, list[str]] = {}
+    _hostile_cache: dict[str, HostileCheckResult] = {}
 
     @staticmethod
     def apply_filter(ticker: str, signal_date: str) -> FilterResult:
@@ -109,3 +121,51 @@ class SignalFilter:
         if ed is not None and len(ed) > 0:
             return sorted([d.strftime("%Y-%m-%d") for d in ed.index])
         return []
+
+    # --- Hostile activist flag (informational, not a filter) ---
+
+    @staticmethod
+    def check_hostile_activist(cik: str) -> HostileCheckResult:
+        """Check if company has activist filings with hostile keywords.
+
+        Informational only — does NOT affect signal classification.
+        88% of losers-with-activist had hostile keywords vs 33% of winners.
+        """
+        if cik in SignalFilter._hostile_cache:
+            return SignalFilter._hostile_cache[cik]
+
+        try:
+            purpose_texts = SignalFilter._get_activist_purpose_texts(cik)
+        except Exception:
+            result = HostileCheckResult(has_hostile=False, keywords=[])
+            SignalFilter._hostile_cache[cik] = result
+            return result
+
+        matched = []
+        for text in purpose_texts:
+            text_lower = text.lower()
+            for kw in HOSTILE_KEYWORDS:
+                if kw in text_lower and kw not in matched:
+                    matched.append(kw)
+
+        result = HostileCheckResult(has_hostile=len(matched) > 0, keywords=matched)
+        SignalFilter._hostile_cache[cik] = result
+        return result
+
+    @staticmethod
+    def _get_activist_purpose_texts(cik: str) -> list[str]:
+        """Fetch purpose_text from ActivistFiling nodes for a CIK. Override in tests."""
+        import asyncio
+        from app.db.neo4j_client import Neo4jClient
+
+        async def _fetch():
+            await Neo4jClient.connect()
+            r = await Neo4jClient.execute_query("""
+                MATCH (af:ActivistFiling)
+                WHERE af.target_cik = $cik AND af.purpose_text IS NOT NULL AND af.purpose_text <> ''
+                RETURN af.purpose_text AS text
+            """, {"cik": cik})
+            await Neo4jClient.disconnect()
+            return [row["text"] for row in r]
+
+        return asyncio.run(_fetch())

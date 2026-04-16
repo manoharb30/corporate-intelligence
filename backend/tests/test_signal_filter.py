@@ -1,13 +1,12 @@
-"""Tests for signal_filter.py — earnings-based pre-trade filter.
+"""Tests for signal_filter.py — earnings filter + hostile activist flag.
 
-Rule: Exclude signals where next earnings is >60 days away.
-Rationale: Mid-quarter buys (within 60d of earnings) have 68.5% HR vs 61.5% baseline.
-Insiders buying within 60d of earnings have informational edge on current quarter.
+Earnings rule: Exclude signals where next earnings is >60 days away.
+Hostile flag: Informational tag when activist filing has hostile keywords (not a filter).
 """
 
 import pytest
 from unittest.mock import patch
-from app.services.signal_filter import SignalFilter, FilterResult
+from app.services.signal_filter import SignalFilter, FilterResult, HostileCheckResult
 
 
 class TestSignalFilter:
@@ -138,3 +137,71 @@ class TestSignalFilter:
             SignalFilter.apply_filter("AAPL", "2025-06-01")
             SignalFilter.apply_filter("AAPL", "2025-06-15")
             assert call_count == 1  # only fetched once
+
+
+class TestHostileActivistFlag:
+    """Tests for the hostile activist informational flag."""
+
+    def setup_method(self):
+        """Clear hostile cache between tests."""
+        SignalFilter._hostile_cache.clear()
+
+    def test_hostile_true_when_proxy_keyword(self):
+        """Purpose text with 'proxy' → hostile = true."""
+        with patch.object(SignalFilter, '_get_activist_purpose_texts', return_value=[
+            "The reporting persons intend to solicit proxy votes for board changes."
+        ]):
+            result = SignalFilter.check_hostile_activist("0000123456")
+            assert result.has_hostile is True
+            assert "proxy" in result.keywords
+
+    def test_hostile_true_when_remove_keyword(self):
+        """Purpose text with 'remove' → hostile = true."""
+        with patch.object(SignalFilter, '_get_activist_purpose_texts', return_value=[
+            "We intend to remove the current CEO and replace with our nominee."
+        ]):
+            result = SignalFilter.check_hostile_activist("0000123456")
+            assert result.has_hostile is True
+            assert any(k in result.keywords for k in ["remove", "replace"])
+
+    def test_hostile_false_when_supportive_text(self):
+        """Purpose text without hostile keywords → hostile = false."""
+        with patch.object(SignalFilter, '_get_activist_purpose_texts', return_value=[
+            "The shares were acquired for investment purposes. The reporting person may engage in constructive dialogue with management."
+        ]):
+            result = SignalFilter.check_hostile_activist("0000123456")
+            assert result.has_hostile is False
+            assert result.keywords == []
+
+    def test_hostile_false_when_no_activist(self):
+        """No activist filings → hostile = false."""
+        with patch.object(SignalFilter, '_get_activist_purpose_texts', return_value=[]):
+            result = SignalFilter.check_hostile_activist("0000123456")
+            assert result.has_hostile is False
+            assert result.keywords == []
+
+    def test_hostile_case_insensitive(self):
+        """Keyword matching should be case insensitive."""
+        with patch.object(SignalFilter, '_get_activist_purpose_texts', return_value=[
+            "We plan to launch a PROXY contest to REPLACE the board."
+        ]):
+            result = SignalFilter.check_hostile_activist("0000123456")
+            assert result.has_hostile is True
+
+    def test_hostile_returns_all_matched_keywords(self):
+        """Multiple hostile keywords → all returned."""
+        with patch.object(SignalFilter, '_get_activist_purpose_texts', return_value=[
+            "We oppose management, demand strategic alternatives, and will solicit proxy votes."
+        ]):
+            result = SignalFilter.check_hostile_activist("0000123456")
+            assert result.has_hostile is True
+            assert len(result.keywords) >= 2
+
+    def test_hostile_result_structure(self):
+        """HostileCheckResult has required fields."""
+        with patch.object(SignalFilter, '_get_activist_purpose_texts', return_value=[]):
+            result = SignalFilter.check_hostile_activist("0000123456")
+            assert hasattr(result, 'has_hostile')
+            assert hasattr(result, 'keywords')
+            assert isinstance(result.has_hostile, bool)
+            assert isinstance(result.keywords, list)
