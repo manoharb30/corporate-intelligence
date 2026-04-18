@@ -54,3 +54,21 @@ frontend/dist/
 # Large data files
 backend/sp500_ciks.json
 backend/sp500_to_ingest.json
+
+# Pipeline data files (generated, large)
+backend/form4_index_*.json
+backend/backfill_checkpoints/
+backend/backfill_errors/
+backend/research_cache/
+backend/signal_autoresearch_results.json
+
+# Analysis scripts (one-off, not production)
+backend/check_*.py
+backend/analyze_*.py
+backend/db_*.py
+backend/find_*.py
+backend/verify_*.py
+backend/full_dead_code_audit.py
+
+# Superpowers brainstorm files
+.superpowers/
