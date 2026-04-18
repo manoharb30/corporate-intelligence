@@ -134,6 +134,7 @@ class TestSignalFilter:
 
         with patch.object(SignalFilter, '_fetch_earnings_dates', side_effect=mock_fetch):
             SignalFilter._earnings_cache.clear()
+            SignalFilter._caches_loaded = True  # prevent loading from disk
             SignalFilter.apply_filter("AAPL", "2025-06-01")
             SignalFilter.apply_filter("AAPL", "2025-06-15")
             assert call_count == 1  # only fetched once

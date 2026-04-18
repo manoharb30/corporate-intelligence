@@ -21,15 +21,20 @@ from app.db.neo4j_client import Neo4jClient
 sys.stdout.reconfigure(line_buffering=True)
 
 
-def match_classification(classified_results: list, accession: str,
-                         total_value: float, insider: str) -> dict | None:
-    """Find classification for a transaction by matching on accession + value + insider."""
+def build_classification_lookup(classified_results: list) -> dict:
+    """Build O(1) lookup dict from classified results. Key: (accession, rounded_value, insider)."""
+    lookup = {}
     for r in classified_results:
-        if (r.get("accession") == accession
-            and abs((r.get("total_value") or 0) - total_value) < 0.01
-            and (r.get("insider") or "") == insider):
-            return r
-    return None
+        key = (r.get("accession", ""), round(r.get("total_value", 0), 2), r.get("insider", ""))
+        lookup[key] = r
+    return lookup
+
+
+def match_classification(lookup: dict, accession: str,
+                         total_value: float, insider: str) -> dict | None:
+    """Find classification using O(1) dict lookup."""
+    key = (accession, round(total_value, 2), insider)
+    return lookup.get(key)
 
 
 async def ingest_transaction(filing: dict, txn: dict, cls: dict, log) -> str:
@@ -95,50 +100,8 @@ async def ingest_transaction(filing: dict, txn: dict, cls: dict, log) -> str:
     }
 
     try:
-        # Step 1: Look up existing record by natural key
-        existing = await Neo4jClient.execute_query("""
-            MATCH (c:Company {cik: $cik})-[:INSIDER_TRADE_OF]->(t:InsiderTransaction)
-            WHERE t.accession_number = $accession
-              AND t.insider_name = $insider_name
-              AND t.shares = $shares
-              AND t.price_per_share = $price
-              AND t.transaction_date = $txn_date
-              AND t.transaction_code = 'P'
-            RETURN t.id AS existing_id
-            LIMIT 1
-        """, {
-            "cik": issuer_cik,
-            "accession": accession,
-            "insider_name": insider_name,
-            "shares": shares,
-            "price": price,
-            "txn_date": txn_date,
-        })
-
-        if existing:
-            # Update existing record — only enrich with classification and footnotes
-            existing_id = existing[0]["existing_id"]
-            await Neo4jClient.execute_query("""
-                MATCH (t:InsiderTransaction {id: $existing_id})
-                SET t.footnotes = COALESCE($footnotes, t.footnotes),
-                    t.primary_document = COALESCE($primary_document, t.primary_document),
-                    t.classification = $classification,
-                    t.classification_reason = $cls_reason,
-                    t.classification_rule = $cls_rule,
-                    t.classified_at = $now
-            """, {
-                "existing_id": existing_id,
-                "footnotes": footnotes if footnotes else None,
-                "primary_document": primary_document if primary_document else None,
-                "classification": cls.get("classification", "GENUINE"),
-                "cls_reason": cls.get("reason", "")[:500],
-                "cls_rule": cls.get("rule_triggered", ""),
-                "has_hostile_activist": cls.get("has_hostile_activist", False),
-                "now": now,
-            })
-            return "updated"
-
-        # Step 2: No existing record — create new with natural-key txn_id
+        # All records for this date were deleted before ingestion (delete-then-insert pattern),
+        # so we go straight to create — no need to check for existing records.
         txn_id = f"{accession}_P_{txn_date}_{int(shares)}_{price}"
         params["txn_id"] = txn_id
 
@@ -236,6 +199,7 @@ async def main():
     log(f"Deleted: {deleted} existing transactions\n")
 
     classified_results = classified_data["results"]
+    cls_lookup = build_classification_lookup(classified_results)
     total_txns = sum(len(f.get("p_transactions", [])) for f in parsed_data["parsed"])
     log(f"Total P transactions to process: {total_txns}")
 
@@ -253,7 +217,7 @@ async def main():
         for txn in filing.get("p_transactions", []):
             total_value = txn.get("total_value", 0)
             cls = match_classification(
-                classified_results, filing["accession"], total_value, insider_name
+                cls_lookup, filing["accession"], total_value, insider_name
             )
             if cls is None:
                 counts["skipped_no_match"] += 1

@@ -6,7 +6,7 @@ An alternative data product that surfaces high-conviction insider buying signals
 
 ## Core Value
 
-Hedge funds get pre-filtered insider conviction signals with 67% hit rate and +5.5% alpha vs SPY at 90 days, eliminating months of data engineering on raw SEC filings.
+Hedge funds get pre-filtered insider conviction signals with 67.4% hit rate and +9.0% alpha vs SPY at 90 days, eliminating months of data engineering on raw SEC filings.
 
 ## Current State
 
@@ -29,8 +29,6 @@ Hedge funds get pre-filtered insider conviction signals with 67% hit rate and +5
 - Multi-insider cluster detection (2+ buyers, $100K+, midcap)
 - Structured deal detector (5+ same-price exclusions)
 - Forward return analysis (90d vs SPY alpha)
-- Signal risk scorer (pre-trade failure filter) — IN PROGRESS
-
 ### Validated (Shipped)
 
 - [x] Form 4 pipeline (fetch → filter → parse → classify → ingest) — split architecture
@@ -43,10 +41,15 @@ Hedge funds get pre-filtered insider conviction signals with 67% hit rate and +5
 - [x] ISO filing_date normalization
 - [x] primary_document capture for Form 4 direct URLs
 - [x] Hit rate analysis across full FY 2025 (309 matured signals)
+- [x] Earnings proximity filter (earn<=60d, p=0.003) — single evidence-based rule
+- [x] Retroactive filter applied to 17 months (3,433 txns → FILTERED)
+- [x] Data integrity verified (20% sample, 0.000% discrepancy vs live yfinance)
+- [x] Hostile activist flag (informational tag, not filter) — 88% loser predictor
+- [x] Activist temporal hypothesis tested (before/after/none — directional, not actionable)
+- [x] Failure attribution research (momentum, earnings, sector, volatility, cluster composition)
 
 ### Active (In Progress)
 
-- [ ] Signal risk scorer — multi-factor pre-trade filter targeting 70%+ hit rate
 - [ ] Product repositioning for institutional hedge fund clients
 
 ### Planned (Next)
@@ -120,16 +123,18 @@ Hedge funds get pre-filtered insider conviction signals with 67% hit rate and +5
 | AMBIGUOUS written to DB | Preserves data for review without polluting GENUINE signals | 2026-04-15 | Active |
 | Structured deals flagged at 5+ buyers same price | Catches IPO allocations, private placements | 2026-04-15 | Active |
 | Strong_buy = midcap + $100K + 2+ buyers | Academic-backed + our data validates | 2026-04-15 | Active |
-| Score-based risk filter (not hard rules or ML) | Tunable, explainable, transparent for institutional clients | 2026-04-16 | Active |
+| Single earnings rule over multi-factor scorer | p=0.003 significance; stacking 3 weak rules lost signals for <1pp gain | 2026-04-16 | Active |
+| Hostile activist = informational flag, not filter | Small sample (8 losers), 88% predictor ratio — directional, not conclusive | 2026-04-16 | Active |
 
 ## Success Metrics
 
 | Metric | Target | Current | Status |
 |--------|--------|---------|--------|
-| Strong_buy hit rate (90d) | 70%+ | 67.1% | At risk |
-| Alpha vs SPY (90d) | +7%+ | +5.5% | At risk |
-| Monthly signal count | 15-30 | ~20 avg | On track |
+| Strong_buy hit rate (90d) | 70%+ | **65.9%** | Improved (+4.4pp from 61.5%), pursuing further |
+| Alpha vs SPY (90d) | +7%+ | **+8.0%** | **Met** ✓ |
+| Signal count | 100+ matured | **164** | **Met** ✓ |
 | Data coverage | 18+ months | 17 months | On track |
+| Data integrity | Verified | **0.000% discrepancy** | **Met** ✓ |
 | Neudata article | Published | Call scheduled | In progress |
 | First paid institutional client | Signed | In discussions | In progress |
 

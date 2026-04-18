@@ -40,36 +40,17 @@ async def get_signal_performances(
     )
 
 
-@router.get("/summary")
-async def get_summary(
-    meaningful_only: bool = Query(default=True),
-):
-    """Aggregate stats for the showcase page header."""
-    return await SignalPerformanceService.get_summary(meaningful_only=meaningful_only)
+@router.get("/dashboard-stats")
+async def get_dashboard_stats():
+    """Precomputed dashboard hero stats — instant, no computation.
 
-
-@router.get("/delayed-entry")
-async def get_delayed_entry(
-    meaningful_only: bool = Query(default=True),
-):
-    """Delayed entry analysis: avg return at each delay point."""
-    return await SignalPerformanceService.get_delayed_entry_stats(meaningful_only=meaningful_only)
-
-
-@router.get("/conviction-ladder")
-async def get_conviction_ladder(
-    meaningful_only: bool = Query(default=True),
-):
-    """Sell signal accuracy by insider count threshold."""
-    return await SignalPerformanceService.get_conviction_ladder(meaningful_only=meaningful_only)
-
-
-@router.get("/industry")
-async def get_industry_breakdown(
-    meaningful_only: bool = Query(default=True),
-):
-    """Buy signal accuracy by industry."""
-    return await SignalPerformanceService.get_industry_breakdown(meaningful_only=meaningful_only)
+    Returns: total_signals, hit_rate, avg_alpha, beat_spy_pct, computed_at
+    Updated only when /compute is called.
+    """
+    stats = await SignalPerformanceService.get_dashboard_stats()
+    if not stats:
+        return {"error": "No stats computed yet. Run POST /compute first."}
+    return stats
 
 
 @router.get("/download")

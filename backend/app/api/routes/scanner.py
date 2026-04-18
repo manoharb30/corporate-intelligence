@@ -53,9 +53,23 @@ async def scanner_health():
             "total_runs": 0, "last_error": None,
         }
 
+    # 8-K scanner
+    eightk = await _get_scanner_state("8k_scanner", [
+        "last_run_at", "last_status", "companies_discovered",
+        "companies_scanned", "events_stored",
+        "total_runs", "last_error",
+    ])
+    if not eightk:
+        eightk = {
+            "last_run_at": None, "last_status": "never_run",
+            "companies_discovered": 0, "companies_scanned": 0,
+            "events_stored": 0, "total_runs": 0, "last_error": None,
+        }
+
     return {
         "form4_scanner": form4,
         "activist_scanner": activist,
+        "8k_scanner": eightk,
     }
 
 
@@ -89,3 +103,20 @@ async def trigger_activist_scanner(background_tasks: BackgroundTasks):
     """Manually trigger the activist scanner."""
     background_tasks.add_task(_run_activist_scanner)
     return {"status": "triggered", "message": "Activist scanner started in background"}
+
+
+async def _run_8k_scanner():
+    """Run the 8-K scanner in-process."""
+    try:
+        import importlib
+        mod = importlib.import_module("scanner.8k_scanner")
+        await mod.run_scanner()
+    except Exception as e:
+        logger.error(f"Manual 8-K scanner trigger failed: {e}")
+
+
+@router.post("/trigger/8k")
+async def trigger_8k_scanner(background_tasks: BackgroundTasks):
+    """Manually trigger the 8-K scanner."""
+    background_tasks.add_task(_run_8k_scanner)
+    return {"status": "triggered", "message": "8-K scanner started in background"}

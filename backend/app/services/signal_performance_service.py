@@ -1,232 +1,216 @@
-"""Service for computing and storing signal performance data in Neo4j.
+"""Signal performance service — computes returns, alpha, conviction tiers.
 
-Pre-computes delayed entry prices and returns for the showcase/track record page.
-Runs during daily scanner or on-demand via API. The showcase page just queries
-Neo4j — no yfinance calls, instant load.
+Uses STORED data only (Company.price_series, Company.market_cap).
+Zero yfinance calls during computation.
+Historical market cap estimated from price ratio.
+Deletes all SignalPerformance before recomputing (no stale nodes).
+
+Rewritten 2026-04-17 via TDD. 33 tests define the contract.
 """
 
 import asyncio
+import json
 import logging
 import time
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from typing import Optional
 
-import yfinance as yf
-
 from app.db.neo4j_client import Neo4jClient
 from app.services.insider_cluster_service import InsiderClusterService
-from app.services.stock_price_service import StockPriceService
 
 logger = logging.getLogger(__name__)
 
-_executor = ThreadPoolExecutor(max_workers=6)
-
-# Delay points to compute prices at
 DELAY_DAYS = [0, 1, 2, 3, 5, 7]
 HORIZON_DAYS = 90
-MIN_AGE_DAYS = HORIZON_DAYS + max(DELAY_DAYS)  # 97 days
+MIN_AGE_DAYS = HORIZON_DAYS + max(DELAY_DAYS)  # 97
 
 
-def _fetch_spy_history_sync(days: int = 400) -> dict[str, float]:
-    """Fetch SPY price history. Returns {date_str: close_price}."""
+# === Pure computation functions (no DB, fully testable) ===
+
+
+def find_price(series: list[dict] | None, target_date: str, max_skip: int = 5) -> Optional[float]:
+    """Find closing price on or up to max_skip days after target_date.
+
+    Args:
+        series: list of {"d": "YYYY-MM-DD", "c": float} sorted by date
+        target_date: date string "YYYY-MM-DD"
+        max_skip: max days to scan forward (for weekends/holidays)
+
+    Returns:
+        closing price or None if not found within window
+    """
+    if not series:
+        return None
     try:
-        end = datetime.now()
-        start = end - timedelta(days=days)
-        df = yf.download(
-            "SPY",
-            start=start.strftime("%Y-%m-%d"),
-            end=end.strftime("%Y-%m-%d"),
-            progress=False,
-        )
-        if hasattr(df.columns, "levels"):
-            df.columns = df.columns.get_level_values(0)
-        result = {}
-        for date, row in df.iterrows():
-            result[date.strftime("%Y-%m-%d")] = float(row["Close"])
-        return result
-    except Exception as e:
-        logger.warning(f"Failed to fetch SPY history: {e}")
-        return {}
-
-
-def _find_price(prices: dict[str, float], target_date: str, max_skip: int = 5) -> Optional[float]:
-    """Find closing price on or up to max_skip trading days after target_date."""
-    try:
-        target = datetime.strptime(target_date, "%Y-%m-%d")
+        target = datetime.strptime(target_date[:10], "%Y-%m-%d")
     except (ValueError, TypeError):
         return None
+
+    by_date = {e["d"]: float(e["c"]) for e in series if "d" in e and "c" in e}
     for skip in range(max_skip + 1):
         check = (target + timedelta(days=skip)).strftime("%Y-%m-%d")
-        if check in prices:
-            return prices[check]
+        if check in by_date:
+            return by_date[check]
     return None
 
 
-def _compute_signal_perf(cluster, spy_prices: dict[str, float], direction: str) -> Optional[dict]:
-    """Compute performance data for a single cluster signal. Runs in thread pool."""
-    if not cluster.ticker:
+def estimate_historical_mcap(
+    current_mcap: Optional[float],
+    current_price: Optional[float],
+    signal_price: Optional[float],
+) -> Optional[float]:
+    """Estimate market cap at signal date from price ratio.
+
+    Formula: historical_mcap = current_mcap × (signal_price / current_price)
+    Assumes shares outstanding stayed roughly constant.
+    """
+    if not current_mcap or not current_price or not signal_price:
         return None
-
-    signal_date = cluster.window_end
-    try:
-        signal_dt = datetime.strptime(signal_date, "%Y-%m-%d")
-        age = (datetime.now() - signal_dt).days
-    except (ValueError, TypeError):
+    if current_price <= 0:
         return None
+    return round(current_mcap * (signal_price / current_price))
 
-    # Fetch price history
-    try:
-        price_data = StockPriceService.get_price_data(cluster.ticker, "2y")
-    except Exception:
+
+def compute_returns(
+    entry_prices: dict[int, float], exit_price: Optional[float]
+) -> dict[int, float]:
+    """Compute 90-day return from each delay entry point.
+
+    Args:
+        entry_prices: {delay_day: price} e.g., {0: 50.0, 1: 51.0}
+        exit_price: price at day 90
+
+    Returns:
+        {delay_day: return_pct} e.g., {0: 20.0, 1: 17.65}
+    """
+    if exit_price is None:
+        return {}
+    results = {}
+    for day, entry in entry_prices.items():
+        if entry and entry > 0:
+            ret = round((exit_price - entry) / entry * 100, 2)
+            results[day] = float(ret)
+    return results
+
+
+def compute_conviction_tier(
+    historical_mcap: Optional[float],
+    total_value: float,
+    num_buyers: int,
+) -> str:
+    """Compute conviction tier from historical market cap and cluster criteria.
+
+    strong_buy: midcap ($300M-$5B) + $100K+ value + 2+ buyers
+    buy: midcap OR $100K+ (one condition met, 2+ buyers)
+    watch: below both thresholds or single buyer
+
+    Upper cap tightened from $10B to $5B based on analysis:
+    $5B-$10B bucket had 38.1% HR vs 67.4% for <$5B (p=0.018, CIs don't overlap).
+    """
+    if num_buyers < 2:
+        return "watch"
+
+    is_midcap = (
+        historical_mcap is not None
+        and 300_000_000 <= historical_mcap <= 5_000_000_000
+    )
+    has_value = total_value >= 100_000
+
+    if is_midcap and has_value:
+        return "strong_buy"
+    if is_midcap or has_value:
+        return "buy"
+    return "watch"
+
+
+def compute_alpha(
+    signal_return: Optional[float], spy_return: Optional[float]
+) -> Optional[float]:
+    """Compute alpha: signal return minus SPY return."""
+    if signal_return is None or spy_return is None:
         return None
-    if not price_data:
+    return round(signal_return - spy_return, 2)
+
+
+def compute_pct_of_mcap(
+    total_value: float, historical_mcap: Optional[float]
+) -> Optional[float]:
+    """Compute buy value as percentage of market cap."""
+    if not historical_mcap or historical_mcap <= 0:
         return None
+    return round((total_value / historical_mcap) * 100, 6)
 
-    prices = {p["date"]: p["close"] for p in price_data}
 
-    # Get prices at each delay point
-    delay_prices = {}
-    for d in DELAY_DAYS:
-        entry_date = (signal_dt + timedelta(days=d)).strftime("%Y-%m-%d")
-        p = _find_price(prices, entry_date)
-        if p is not None:
-            delay_prices[d] = float(round(p, 2))
+def check_maturity(age_days: int, price_day90: Optional[float]) -> bool:
+    """Check if signal is mature (97+ days old with day-90 price available)."""
+    return age_days >= MIN_AGE_DAYS and price_day90 is not None
 
-    if 0 not in delay_prices:
-        return None  # Can't even find signal-date price
 
-    # Get price at horizon (90 days)
-    exit_date = (signal_dt + timedelta(days=HORIZON_DAYS)).strftime("%Y-%m-%d")
-    price_day90 = _find_price(prices, exit_date)
-    is_mature = age >= MIN_AGE_DAYS and price_day90 is not None
-
-    # Compute 90-day returns from each entry point
-    returns = {}
-    if price_day90 is not None:
-        price_day90 = float(round(price_day90, 2))
-        for d, entry_price in delay_prices.items():
-            if entry_price > 0:
-                ret = round((price_day90 - entry_price) / entry_price * 100, 2)
-                returns[d] = float(ret)
-
-    # SPY 90-day return from signal date
-    spy_at_signal = _find_price(spy_prices, signal_date)
-    spy_at_exit = _find_price(spy_prices, exit_date) if is_mature else None
-    spy_return_90d = None
-    if spy_at_signal and spy_at_exit and spy_at_signal > 0:
-        spy_return_90d = float(round(
-            (spy_at_exit - spy_at_signal) / spy_at_signal * 100, 2
-        ))
-
-    # Market cap and trade-as-% calculation
-    market_cap = None
-    pct_of_mcap = None
-    try:
-        market_cap = StockPriceService.get_market_cap(cluster.ticker)
-        if market_cap and market_cap > 0:
-            pct_of_mcap = round((cluster.total_buy_value / market_cap) * 100, 6)
-    except Exception:
-        pass
-
-    result = {
-        "signal_id": cluster.accession_number,
-        "ticker": cluster.ticker,
-        "company_name": cluster.company_name,
-        "cik": cluster.cik,
-        "signal_date": signal_date,
-        "direction": direction,
-        "signal_level": cluster.signal_level,
-        "num_insiders": cluster.num_buyers,
-        "total_value": float(cluster.total_buy_value),
-        "conviction_tier": getattr(cluster, "conviction_tier", "watch"),
-        "market_cap": market_cap,
-        "pct_of_mcap": pct_of_mcap,
-        "is_mature": is_mature,
-        "computed_at": datetime.now().isoformat(),
-        "price_day90": price_day90,
-        "spy_return_90d": spy_return_90d,
-    }
-
-    # Add delay prices and returns
-    for d in DELAY_DAYS:
-        result[f"price_day{d}"] = delay_prices.get(d)
-        result[f"return_day{d}"] = returns.get(d)
-
-    return result
+# === Service class (DB interaction) ===
 
 
 class SignalPerformanceService:
     """Computes and stores signal performance data in Neo4j."""
 
     @staticmethod
-    async def compute_all(days: int = 365) -> dict:
-        """Detect all clusters, compute performance, store in Neo4j.
+    async def compute_all(days: int = 730) -> dict:
+        """Detect all clusters, compute performance from stored data, store in Neo4j.
 
-        Returns summary of what was computed.
+        1. DELETE all existing SignalPerformance nodes
+        2. Detect clusters
+        3. Batch-fetch price_series + market_cap for all companies + SPY
+        4. Compute performance for each cluster
+        5. Batch-store via UNWIND
         """
         start_time = time.time()
 
-        # 1. Detect clusters
+        # 1. Clean slate
+        del_result = await Neo4jClient.execute_query(
+            "MATCH (sp:SignalPerformance) DETACH DELETE sp RETURN count(sp) as deleted"
+        )
+        deleted = del_result[0]["deleted"] if del_result else 0
+        logger.info(f"Deleted {deleted} existing SignalPerformance nodes")
+
+        # 2. Detect clusters
         buy_clusters = await InsiderClusterService.detect_clusters(
             days=days, min_level="medium", direction="buy"
         )
         sell_clusters = await InsiderClusterService.detect_clusters(
             days=days, min_level="medium", direction="sell"
         )
+        logger.info(
+            f"Detected {len(buy_clusters)} buy + {len(sell_clusters)} sell clusters"
+        )
 
-        logger.info(f"Computing performance for {len(buy_clusters)} buy + {len(sell_clusters)} sell clusters")
+        # 3. Batch-fetch company data + SPY + filing dates
+        all_ciks = list(
+            set(c.cik for c in buy_clusters + sell_clusters if c.cik)
+        )
+        company_data = await SignalPerformanceService._fetch_company_data(all_ciks)
+        spy_series = await SignalPerformanceService._fetch_spy_series()
+        industry_map = await SignalPerformanceService._fetch_industries(all_ciks)
+        filing_date_map = await SignalPerformanceService._fetch_filing_dates(all_ciks)
 
-        # 2. Fetch SPY history once
-        loop = asyncio.get_event_loop()
-        spy_prices = await loop.run_in_executor(_executor, _fetch_spy_history_sync, days + 60)
+        now = datetime.now()
 
-        # 3. Fetch industry for each CIK
-        ciks = list(set(
-            [c.cik for c in buy_clusters] + [c.cik for c in sell_clusters]
-        ))
-        industry_map = await SignalPerformanceService._fetch_industries(ciks)
-
-        # 4. Compute performance in thread pool
-        all_clusters = [(c, "buy") for c in buy_clusters] + [(c, "sell") for c in sell_clusters]
-        tasks = [
-            loop.run_in_executor(_executor, _compute_signal_perf, c, spy_prices, d)
-            for c, d in all_clusters
+        # 4. Compute performance for each cluster
+        performances = []
+        all_clusters = [(c, "buy") for c in buy_clusters] + [
+            (c, "sell") for c in sell_clusters
         ]
-        results = await asyncio.gather(*tasks)
-        performances = [r for r in results if r is not None]
 
-        # Add industry
-        for perf in performances:
-            perf["industry"] = industry_map.get(perf["cik"])
+        for cluster, direction in all_clusters:
+            perf = SignalPerformanceService._compute_one(
+                cluster, direction, company_data, spy_series, industry_map, filing_date_map, now
+            )
+            if perf:
+                performances.append(perf)
 
-        # 5. Check 8-K follow for buy signals
-        buy_ciks = list(set(p["cik"] for p in performances if p["direction"] == "buy"))
-        eight_k_map = await SignalPerformanceService._fetch_8k_follow(buy_ciks)
-        for perf in performances:
-            if perf["direction"] == "buy":
-                follow = eight_k_map.get(perf["cik"], {})
-                # Find 8-K events AFTER signal date
-                events_after = [
-                    e for e in follow.get("events", [])
-                    if e["filing_date"] and e["filing_date"] > perf["signal_date"]
-                ]
-                perf["followed_by_8k"] = len(events_after) > 0
-                if events_after:
-                    try:
-                        first_dt = datetime.strptime(events_after[0]["filing_date"], "%Y-%m-%d")
-                        signal_dt = datetime.strptime(perf["signal_date"], "%Y-%m-%d")
-                        perf["days_to_8k"] = (first_dt - signal_dt).days
-                    except (ValueError, TypeError):
-                        perf["days_to_8k"] = None
-                else:
-                    perf["days_to_8k"] = None
-            else:
-                perf["followed_by_8k"] = None
-                perf["days_to_8k"] = None
-
-        # 6. Store in Neo4j
+        # 5. Batch-store
         stored = await SignalPerformanceService._store_batch(performances)
+
+        # 6. Precompute dashboard hero stats and save as blob
+        await SignalPerformanceService._save_dashboard_stats(performances)
 
         elapsed = round(time.time() - start_time, 1)
         summary = {
@@ -238,97 +222,277 @@ class SignalPerformanceService:
             "mature_count": sum(1 for p in performances if p["is_mature"]),
             "elapsed_seconds": elapsed,
         }
-        logger.info(f"Signal performance computation complete: {summary}")
+        logger.info(f"Signal performance complete: {summary}")
         return summary
 
     @staticmethod
-    async def _fetch_industries(ciks: list[str]) -> dict[str, Optional[str]]:
+    def _compute_one(
+        cluster,
+        direction: str,
+        company_data: dict,
+        spy_series: list[dict],
+        industry_map: dict,
+        filing_date_map: dict,
+        now: datetime,
+    ) -> Optional[dict]:
+        """Compute performance for a single cluster using stored data.
+
+        Returns are calculated from the FILING DATE (when public knows),
+        not the transaction date (when insider traded). This avoids look-ahead bias.
+        signal_date (transaction date) is kept for display purposes.
+        """
+        if not cluster.ticker or not cluster.cik:
+            return None
+
+        signal_date = cluster.window_end  # transaction date — for display
+        try:
+            signal_dt = datetime.strptime(signal_date[:10], "%Y-%m-%d")
+        except (ValueError, TypeError):
+            return None
+
+        # Actionable date = latest filing_date for this cluster's transactions
+        # This is when a hedge fund could first act on the information
+        cik_filings = filing_date_map.get(cluster.cik, {})
+        actionable_date = cik_filings.get(signal_date, signal_date)  # fall back to signal_date
+        try:
+            actionable_dt = datetime.strptime(actionable_date[:10], "%Y-%m-%d")
+            age = (now - actionable_dt).days
+        except (ValueError, TypeError):
+            actionable_dt = signal_dt
+            age = (now - signal_dt).days
+
+        cd = company_data.get(cluster.cik, {})
+        series = cd.get("series", [])
+        current_mcap = cd.get("market_cap")
+
+        if not series:
+            return None
+
+        # Entry prices at each delay point — FROM ACTIONABLE DATE (filing date)
+        delay_prices = {}
+        for d in DELAY_DAYS:
+            entry_date = (actionable_dt + timedelta(days=d)).strftime("%Y-%m-%d")
+            p = find_price(series, entry_date)
+            if p is not None:
+                delay_prices[d] = float(round(p, 2))
+
+        if 0 not in delay_prices:
+            return None
+
+        # Exit price at day 90 FROM ACTIONABLE DATE
+        exit_date = (actionable_dt + timedelta(days=HORIZON_DAYS)).strftime("%Y-%m-%d")
+        price_day90 = find_price(series, exit_date)
+        if price_day90 is not None:
+            price_day90 = float(round(price_day90, 2))
+
+        # Maturity
+        is_mature = check_maturity(age, price_day90)
+
+        # Returns
+        returns = compute_returns(delay_prices, price_day90)
+
+        # Current price (latest in series) + current return
+        current_price = float(round(series[-1]["c"], 2)) if series else None
+        current_date = series[-1]["d"] if series else None
+        signal_price = delay_prices.get(0)
+        return_current = None
+        if current_price and signal_price and signal_price > 0:
+            return_current = float(round((current_price - signal_price) / signal_price * 100, 2))
+
+        # Historical market cap (uses signal_date price for estimation, not actionable)
+        hist_price = find_price(series, signal_date)
+        historical_mcap = estimate_historical_mcap(current_mcap, current_price, hist_price)
+
+        # Conviction tier (using historical market cap)
+        conviction_tier = compute_conviction_tier(
+            historical_mcap, cluster.total_buy_value, cluster.num_buyers
+        )
+
+        # SPY return + alpha FROM ACTIONABLE DATE
+        spy_at_actionable = find_price(spy_series, actionable_date)
+        spy_at_exit = find_price(spy_series, exit_date) if is_mature else None
+        spy_return_90d = None
+        if spy_at_actionable and spy_at_exit and spy_at_actionable > 0:
+            spy_return_90d = float(
+                round((spy_at_exit - spy_at_actionable) / spy_at_actionable * 100, 2)
+            )
+
+        # pct_of_mcap
+        pct_of_mcap = compute_pct_of_mcap(cluster.total_buy_value, historical_mcap)
+
+        result = {
+            "signal_id": cluster.accession_number,
+            "ticker": cluster.ticker,
+            "company_name": cluster.company_name,
+            "cik": cluster.cik,
+            "signal_date": signal_date,
+            "actionable_date": actionable_date,
+            "direction": direction,
+            "signal_level": cluster.signal_level,
+            "num_insiders": cluster.num_buyers,
+            "total_value": float(cluster.total_buy_value),
+            "conviction_tier": conviction_tier,
+            "industry": industry_map.get(cluster.cik),
+            "market_cap": historical_mcap,
+            "pct_of_mcap": pct_of_mcap,
+            "price_day90": price_day90,
+            "price_current": current_price,
+            "price_current_date": current_date,
+            "return_current": return_current,
+            "spy_return_90d": spy_return_90d,
+            "is_mature": is_mature,
+            "computed_at": now.isoformat(),
+        }
+
+        for d in DELAY_DAYS:
+            result[f"price_day{d}"] = delay_prices.get(d)
+            result[f"return_day{d}"] = returns.get(d)
+
+        return result
+
+    @staticmethod
+    async def _fetch_company_data(ciks: list[str]) -> dict:
+        """Batch-fetch price_series + market_cap for all companies."""
+        if not ciks:
+            return {}
+        results = await Neo4jClient.execute_query(
+            "UNWIND $ciks AS cik "
+            "MATCH (c:Company {cik: cik}) "
+            "RETURN c.cik AS cik, c.market_cap AS market_cap, c.price_series AS price_series",
+            {"ciks": ciks},
+        )
+        data = {}
+        for r in results:
+            series = []
+            if r.get("price_series"):
+                try:
+                    series = json.loads(r["price_series"])
+                except (ValueError, TypeError):
+                    pass
+            data[r["cik"]] = {
+                "market_cap": r.get("market_cap"),
+                "series": series,
+            }
+        return data
+
+    @staticmethod
+    async def _fetch_spy_series() -> list[dict]:
+        """Fetch SPY price_series from Company node."""
+        result = await Neo4jClient.execute_query(
+            "MATCH (c:Company {ticker: 'SPY'}) RETURN c.price_series AS ps"
+        )
+        if result and result[0].get("ps"):
+            try:
+                return json.loads(result[0]["ps"])
+            except (ValueError, TypeError):
+                pass
+        return []
+
+    @staticmethod
+    async def _fetch_filing_dates(ciks: list[str]) -> dict:
+        """Fetch latest filing_date per (CIK, transaction_date) for actionable date.
+
+        Returns: {cik: {transaction_date: latest_filing_date}}
+        For each cluster, the actionable date is the latest filing_date
+        among transactions on the cluster's window_end date.
+        """
+        if not ciks:
+            return {}
+        results = await Neo4jClient.execute_query(
+            "MATCH (c:Company)-[:INSIDER_TRADE_OF]->(t:InsiderTransaction) "
+            "WHERE c.cik IN $ciks AND t.transaction_code = 'P' "
+            "AND t.classification = 'GENUINE' AND t.filing_date IS NOT NULL "
+            "RETURN c.cik AS cik, t.transaction_date AS txn_date, "
+            "max(t.filing_date) AS latest_filing_date",
+            {"ciks": ciks},
+        )
+        filing_map: dict[str, dict[str, str]] = {}
+        for r in results:
+            cik = r["cik"]
+            txn_date = str(r["txn_date"] or "")[:10]
+            filing_date = str(r["latest_filing_date"] or "")[:10]
+            if cik not in filing_map:
+                filing_map[cik] = {}
+            # Keep the latest filing_date for each transaction_date
+            existing = filing_map[cik].get(txn_date, "")
+            if filing_date > existing:
+                filing_map[cik][txn_date] = filing_date
+        return filing_map
+
+    @staticmethod
+    async def _fetch_industries(ciks: list[str]) -> dict:
         """Fetch SIC description for each CIK."""
         if not ciks:
             return {}
-        query = """
-            MATCH (c:Company)
-            WHERE c.cik IN $ciks
-            RETURN c.cik as cik, c.sic_description as industry
-        """
-        results = await Neo4jClient.execute_query(query, {"ciks": ciks})
+        results = await Neo4jClient.execute_query(
+            "MATCH (c:Company) WHERE c.cik IN $ciks "
+            "RETURN c.cik AS cik, c.sic_description AS industry",
+            {"ciks": ciks},
+        )
         return {r["cik"]: r["industry"] for r in results}
 
     @staticmethod
-    async def _fetch_8k_follow(ciks: list[str]) -> dict[str, dict]:
-        """Fetch 8-K events for given CIKs, grouped by CIK."""
-        if not ciks:
-            return {}
-        query = """
-            MATCH (c:Company)-[:FILED_EVENT]->(e:Event)
-            WHERE c.cik IN $ciks AND e.is_ma_signal = true
-            RETURN c.cik as cik, e.filing_date as filing_date,
-                   e.item_number as item_number
-            ORDER BY c.cik, e.filing_date
-        """
-        results = await Neo4jClient.execute_query(query, {"ciks": ciks})
-        grouped: dict[str, dict] = {}
-        for r in results:
-            cik = r["cik"]
-            if cik not in grouped:
-                grouped[cik] = {"events": []}
-            grouped[cik]["events"].append({
-                "filing_date": r["filing_date"],
-                "item_number": r["item_number"],
-            })
-        return grouped
-
-    @staticmethod
     async def _store_batch(performances: list[dict]) -> int:
-        """Store SignalPerformance nodes in Neo4j via MERGE."""
+        """Batch-store SignalPerformance nodes via UNWIND."""
         if not performances:
             return 0
 
+        # Process in chunks of 100
         stored = 0
-        for perf in performances:
-            query = """
-                MERGE (sp:SignalPerformance {signal_id: $signal_id})
-                SET sp.ticker = $ticker,
-                    sp.company_name = $company_name,
-                    sp.cik = $cik,
-                    sp.signal_date = $signal_date,
-                    sp.direction = $direction,
-                    sp.signal_level = $signal_level,
-                    sp.num_insiders = $num_insiders,
-                    sp.total_value = $total_value,
-                    sp.conviction_tier = $conviction_tier,
-                    sp.industry = $industry,
-                    sp.market_cap = $market_cap,
-                    sp.pct_of_mcap = $pct_of_mcap,
-                    sp.price_day0 = $price_day0,
-                    sp.price_day1 = $price_day1,
-                    sp.price_day2 = $price_day2,
-                    sp.price_day3 = $price_day3,
-                    sp.price_day5 = $price_day5,
-                    sp.price_day7 = $price_day7,
-                    sp.price_day90 = $price_day90,
-                    sp.return_day0 = $return_day0,
-                    sp.return_day1 = $return_day1,
-                    sp.return_day2 = $return_day2,
-                    sp.return_day3 = $return_day3,
-                    sp.return_day5 = $return_day5,
-                    sp.return_day7 = $return_day7,
-                    sp.spy_return_90d = $spy_return_90d,
-                    sp.followed_by_8k = $followed_by_8k,
-                    sp.days_to_8k = $days_to_8k,
-                    sp.is_mature = $is_mature,
-                    sp.computed_at = $computed_at
-                WITH sp
-                MATCH (c:Company {cik: $cik})
-                MERGE (c)-[:HAS_SIGNAL_PERF]->(sp)
-            """
+        for i in range(0, len(performances), 100):
+            chunk = performances[i : i + 100]
             try:
-                await Neo4jClient.execute_write(query, perf)
-                stored += 1
+                await Neo4jClient.execute_query(
+                    """
+                    UNWIND $batch AS row
+                    CREATE (sp:SignalPerformance {
+                        signal_id: row.signal_id,
+                        ticker: row.ticker,
+                        company_name: row.company_name,
+                        cik: row.cik,
+                        signal_date: row.signal_date,
+                        actionable_date: COALESCE(row.actionable_date, row.signal_date),
+                        direction: row.direction,
+                        signal_level: row.signal_level,
+                        num_insiders: row.num_insiders,
+                        total_value: row.total_value,
+                        conviction_tier: row.conviction_tier,
+                        industry: row.industry,
+                        market_cap: row.market_cap,
+                        pct_of_mcap: row.pct_of_mcap,
+                        price_day0: row.price_day0,
+                        price_day1: row.price_day1,
+                        price_day2: row.price_day2,
+                        price_day3: row.price_day3,
+                        price_day5: row.price_day5,
+                        price_day7: row.price_day7,
+                        price_day90: row.price_day90,
+                        price_current: row.price_current,
+                        price_current_date: row.price_current_date,
+                        return_current: row.return_current,
+                        return_day0: row.return_day0,
+                        return_day1: row.return_day1,
+                        return_day2: row.return_day2,
+                        return_day3: row.return_day3,
+                        return_day5: row.return_day5,
+                        return_day7: row.return_day7,
+                        spy_return_90d: row.spy_return_90d,
+                        is_mature: row.is_mature,
+                        computed_at: row.computed_at
+                    })
+                    WITH sp, row
+                    MATCH (c:Company {cik: row.cik})
+                    MERGE (c)-[:HAS_SIGNAL_PERF]->(sp)
+                    """,
+                    {"batch": chunk},
+                )
+                stored += len(chunk)
             except Exception as e:
-                logger.warning(f"Failed to store SignalPerformance {perf['signal_id']}: {e}")
+                logger.warning(f"Failed to store batch {i}-{i+len(chunk)}: {e}")
 
         return stored
+
+    # === Query methods (unchanged interface for routes) ===
 
     @staticmethod
     async def get_all(
@@ -337,11 +501,7 @@ class SignalPerformanceService:
         meaningful_only: bool = False,
         limit: int = 500,
     ) -> list[dict]:
-        """Query all SignalPerformance nodes from Neo4j.
-
-        Args:
-            meaningful_only: Filter to trades 0.01-1% of market cap (removes noise).
-        """
+        """Query SignalPerformance nodes from Neo4j."""
         conditions = []
         params: dict = {"limit": limit}
 
@@ -367,27 +527,26 @@ class SignalPerformanceService:
 
     @staticmethod
     async def get_summary(meaningful_only: bool = False) -> dict:
-        """Aggregate stats for the showcase page header."""
-        mcap_filter = "AND sp.pct_of_mcap >= 0.01 AND sp.pct_of_mcap <= 1.0" if meaningful_only else ""
+        """Aggregate stats for the dashboard header."""
+        mcap_filter = (
+            "AND sp.pct_of_mcap >= 0.01 AND sp.pct_of_mcap <= 1.0"
+            if meaningful_only
+            else ""
+        )
         query = f"""
             MATCH (sp:SignalPerformance)
             WHERE sp.is_mature = true {mcap_filter}
             WITH sp,
-                 CASE WHEN sp.direction = 'buy' THEN 1 ELSE 0 END as is_buy,
-                 CASE WHEN sp.direction = 'sell' THEN 1 ELSE 0 END as is_sell
-            RETURN count(sp) as total,
-                   sum(is_buy) as buy_count,
-                   sum(is_sell) as sell_count,
+                 CASE WHEN sp.direction = 'buy' THEN 1 ELSE 0 END AS is_buy,
+                 CASE WHEN sp.direction = 'sell' THEN 1 ELSE 0 END AS is_sell
+            RETURN count(sp) AS total,
+                   sum(is_buy) AS buy_count,
+                   sum(is_sell) AS sell_count,
                    avg(CASE WHEN sp.direction = 'buy' AND sp.return_day0 IS NOT NULL
-                       THEN sp.return_day0 END) as buy_avg_return,
-                   avg(CASE WHEN sp.direction = 'sell' AND sp.return_day0 IS NOT NULL
-                       THEN -sp.return_day0 END) as sell_avg_short_return,
-                   avg(sp.spy_return_90d) as avg_spy_return,
+                       THEN sp.return_day0 END) AS buy_avg_return,
+                   avg(sp.spy_return_90d) AS avg_spy_return,
                    sum(CASE WHEN sp.direction = 'buy' AND sp.return_day0 IS NOT NULL
-                       AND sp.return_day0 > 0 THEN 1 ELSE 0 END) as buy_wins,
-                   sum(CASE WHEN sp.direction = 'sell' AND sp.return_day0 IS NOT NULL
-                       AND sp.return_day0 < 0 THEN 1 ELSE 0 END) as sell_correct,
-                   sum(CASE WHEN sp.followed_by_8k = true THEN 1 ELSE 0 END) as followed_by_8k
+                       AND sp.return_day0 > 0 THEN 1 ELSE 0 END) AS buy_wins
         """
         results = await Neo4jClient.execute_query(query, {})
         if not results:
@@ -395,117 +554,90 @@ class SignalPerformanceService:
 
         r = results[0]
         buy_count = r["buy_count"] or 0
-        sell_count = r["sell_count"] or 0
 
         return {
             "total_mature": r["total"],
             "buy_count": buy_count,
-            "sell_count": sell_count,
-            "buy_avg_return_90d": round(r["buy_avg_return"], 2) if r["buy_avg_return"] else None,
-            "buy_win_rate": round((r["buy_wins"] or 0) / buy_count * 100, 1) if buy_count > 0 else None,
-            "sell_avg_short_return": round(r["sell_avg_short_return"], 2) if r["sell_avg_short_return"] else None,
-            "sell_correct_rate": round((r["sell_correct"] or 0) / sell_count * 100, 1) if sell_count > 0 else None,
-            "avg_spy_return": round(r["avg_spy_return"], 2) if r["avg_spy_return"] else None,
-            "eight_k_follow_rate": round((r["followed_by_8k"] or 0) / buy_count * 100, 1) if buy_count > 0 else None,
+            "sell_count": r["sell_count"] or 0,
+            "buy_avg_return_90d": (
+                round(r["buy_avg_return"], 2) if r["buy_avg_return"] else None
+            ),
+            "buy_win_rate": (
+                round((r["buy_wins"] or 0) / buy_count * 100, 1)
+                if buy_count > 0
+                else None
+            ),
+            "avg_spy_return": (
+                round(r["avg_spy_return"], 2) if r["avg_spy_return"] else None
+            ),
         }
 
     @staticmethod
-    async def get_delayed_entry_stats(meaningful_only: bool = False) -> dict:
-        """Aggregate delayed entry analysis: avg return at each delay point."""
-        mcap_filter = "AND sp.pct_of_mcap >= 0.01 AND sp.pct_of_mcap <= 1.0" if meaningful_only else ""
-        query = f"""
-            MATCH (sp:SignalPerformance)
-            WHERE sp.is_mature = true {mcap_filter}
-            RETURN sp.direction as direction,
-                   avg(sp.return_day0) as avg_day0,
-                   avg(sp.return_day1) as avg_day1,
-                   avg(sp.return_day2) as avg_day2,
-                   avg(sp.return_day3) as avg_day3,
-                   avg(sp.return_day5) as avg_day5,
-                   avg(sp.return_day7) as avg_day7,
-                   count(sp) as n,
-                   avg(sp.spy_return_90d) as avg_spy
-        """
-        results = await Neo4jClient.execute_query(query, {})
-        stats = {}
-        for r in results:
-            d = r["direction"]
-            spy = r["avg_spy"] or 0
-            entries = {}
-            for day in [0, 1, 2, 3, 5, 7]:
-                avg = r[f"avg_day{day}"]
-                if avg is not None:
-                    ret = round(float(avg), 2)
-                    # For sell: invert return (short profit)
-                    if d == "sell":
-                        ret = round(-ret, 2)
-                    entries[f"day{day}"] = {
-                        "avg_return": ret,
-                        "alpha": round(ret - (float(-spy) if d == "sell" else float(spy)), 2) if spy else None,
-                    }
-            stats[d] = {
-                "entries": entries,
-                "n": r["n"],
-                "avg_spy_return": round(float(spy), 2) if spy else None,
-            }
-        return stats
+    async def _save_dashboard_stats(performances: list[dict]) -> None:
+        """Precompute and save dashboard hero stats as a single node.
 
-    @staticmethod
-    async def get_conviction_ladder(meaningful_only: bool = False) -> list[dict]:
-        """Win rate by num_insiders threshold for sell signals."""
-        mcap_filter = "AND sp.pct_of_mcap >= 0.01 AND sp.pct_of_mcap <= 1.0" if meaningful_only else ""
-        query = f"""
-            MATCH (sp:SignalPerformance)
-            WHERE sp.is_mature = true AND sp.direction = 'sell' {mcap_filter}
-            RETURN sp.num_insiders as num_insiders,
-                   count(sp) as total,
-                   sum(CASE WHEN sp.return_day0 < 0 THEN 1 ELSE 0 END) as correct,
-                   avg(-sp.return_day0) as avg_short_return
-            ORDER BY num_insiders
+        Called after compute_all. Dashboard reads this blob instead of
+        fetching all 500+ SignalPerformance records.
         """
-        results = await Neo4jClient.execute_query(query, {})
-
-        # Build cumulative thresholds (4+, 5+, 6+, 7+, 8+)
-        ladder = []
-        for threshold in [4, 5, 6, 7, 8]:
-            matching = [r for r in results if (r["num_insiders"] or 0) >= threshold]
-            if not matching:
-                continue
-            total = sum(r["total"] for r in matching)
-            correct = sum(r["correct"] or 0 for r in matching)
-            avg_ret = sum((r["avg_short_return"] or 0) * r["total"] for r in matching) / total if total > 0 else 0
-            ladder.append({
-                "threshold": f"{threshold}+",
-                "total": total,
-                "correct": correct,
-                "correct_rate": round(correct / total * 100, 1) if total > 0 else None,
-                "avg_short_return": round(float(avg_ret), 2),
-            })
-        return ladder
-
-    @staticmethod
-    async def get_industry_breakdown(meaningful_only: bool = False) -> list[dict]:
-        """Win rate by industry for buy signals."""
-        mcap_filter = "AND sp.pct_of_mcap >= 0.01 AND sp.pct_of_mcap <= 1.0" if meaningful_only else ""
-        query = f"""
-            MATCH (sp:SignalPerformance)
-            WHERE sp.is_mature = true AND sp.direction = 'buy'
-              AND sp.industry IS NOT NULL {mcap_filter}
-            RETURN sp.industry as industry,
-                   count(sp) as total,
-                   sum(CASE WHEN sp.return_day0 > 0 THEN 1 ELSE 0 END) as wins,
-                   avg(sp.return_day0) as avg_return
-            ORDER BY total DESC
-        """
-        results = await Neo4jClient.execute_query(query, {})
-        return [
-            {
-                "industry": r["industry"],
-                "total": r["total"],
-                "wins": r["wins"] or 0,
-                "win_rate": round((r["wins"] or 0) / r["total"] * 100, 1) if r["total"] > 0 else None,
-                "avg_return": round(float(r["avg_return"]), 2) if r["avg_return"] else None,
-            }
-            for r in results
-            if r["total"] >= 3  # Min 3 signals for meaningful stats
+        strong_buy_mature = [
+            p for p in performances
+            if p["direction"] == "buy"
+            and p["conviction_tier"] == "strong_buy"
+            and p["is_mature"]
         ]
+
+        n = len(strong_buy_mature)
+        if n == 0:
+            return
+
+        wins = sum(1 for p in strong_buy_mature if (p.get("return_day0") or 0) > 0)
+        hit_rate = round(wins / n * 100, 1)
+
+        with_spy = [p for p in strong_buy_mature if p.get("spy_return_90d") is not None]
+        alphas = [(p.get("return_day0") or 0) - (p.get("spy_return_90d") or 0) for p in with_spy]
+        avg_alpha = round(sum(alphas) / len(alphas), 1) if alphas else 0
+        beat_spy = sum(1 for a in alphas if a > 0)
+        beat_spy_pct = round(beat_spy / len(with_spy) * 100, 1) if with_spy else 0
+
+        avg_return = round(
+            sum(p.get("return_day0") or 0 for p in strong_buy_mature) / n, 1
+        )
+
+        stats = {
+            "total_signals": n,
+            "wins": wins,
+            "losses": n - wins,
+            "hit_rate": hit_rate,
+            "avg_return": avg_return,
+            "avg_alpha": avg_alpha,
+            "beat_spy_pct": beat_spy_pct,
+            "computed_at": datetime.now().isoformat(),
+        }
+
+        await Neo4jClient.execute_query(
+            "MERGE (ds:DashboardStats {id: 'hero'}) "
+            "SET ds.total_signals = $total_signals, "
+            "    ds.wins = $wins, "
+            "    ds.losses = $losses, "
+            "    ds.hit_rate = $hit_rate, "
+            "    ds.avg_return = $avg_return, "
+            "    ds.avg_alpha = $avg_alpha, "
+            "    ds.beat_spy_pct = $beat_spy_pct, "
+            "    ds.computed_at = $computed_at",
+            stats,
+        )
+        logger.info(f"Dashboard stats saved: {stats}")
+
+    @staticmethod
+    async def get_dashboard_stats() -> Optional[dict]:
+        """Read precomputed dashboard hero stats. Instant — no computation."""
+        results = await Neo4jClient.execute_query(
+            "MATCH (ds:DashboardStats {id: 'hero'}) "
+            "RETURN ds.total_signals as total_signals, ds.wins as wins, "
+            "ds.losses as losses, ds.hit_rate as hit_rate, "
+            "ds.avg_return as avg_return, ds.avg_alpha as avg_alpha, "
+            "ds.beat_spy_pct as beat_spy_pct, ds.computed_at as computed_at"
+        )
+        if not results:
+            return None
+        return dict(results[0])

@@ -9,6 +9,9 @@ Research backing:
     Aligned with Brav 2008, Klein & Zur 2009, Greenwood & Schor 2009.
 """
 
+import json
+import os
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
@@ -17,6 +20,9 @@ import yfinance as yf
 
 
 EARNINGS_THRESHOLD_DAYS = 60
+_EARNINGS_CACHE_PATH = "/tmp/lookinsight_earnings_cache.json"
+_HOSTILE_CACHE_PATH = "/tmp/lookinsight_hostile_cache.json"
+_CACHE_FILE_TTL = 24 * 60 * 60  # 24 hours
 
 HOSTILE_KEYWORDS = [
     "proxy", "remove", "replace", "strategic alternative", "inadequate",
@@ -39,11 +45,60 @@ class HostileCheckResult:
     keywords: list[str] = field(default_factory=list)
 
 
+def _load_json_cache(path: str) -> dict:
+    """Load cache from JSON file if it exists and is <24h old."""
+    if not os.path.exists(path):
+        return {}
+    try:
+        if time.time() - os.path.getmtime(path) > _CACHE_FILE_TTL:
+            return {}
+        with open(path) as f:
+            return json.load(f)
+    except (ValueError, OSError):
+        return {}
+
+
+def _save_json_cache(path: str, data: dict) -> None:
+    """Save cache to JSON file."""
+    try:
+        with open(path, "w") as f:
+            json.dump(data, f)
+    except OSError:
+        pass
+
+
 class SignalFilter:
     """Earnings proximity filter + hostile activist flag."""
 
     _earnings_cache: dict[str, list[str]] = {}
     _hostile_cache: dict[str, HostileCheckResult] = {}
+    _caches_loaded: bool = False
+
+    @classmethod
+    def _load_persistent_caches(cls):
+        """Load caches from disk on first use. Persists across subprocess invocations."""
+        if cls._caches_loaded:
+            return
+        earnings_data = _load_json_cache(_EARNINGS_CACHE_PATH)
+        if earnings_data:
+            cls._earnings_cache.update(earnings_data)
+        hostile_data = _load_json_cache(_HOSTILE_CACHE_PATH)
+        if hostile_data:
+            cls._hostile_cache.update({
+                k: HostileCheckResult(has_hostile=v["has_hostile"], keywords=v["keywords"])
+                for k, v in hostile_data.items()
+            })
+        cls._caches_loaded = True
+
+    @classmethod
+    def _save_persistent_caches(cls):
+        """Save caches to disk."""
+        _save_json_cache(_EARNINGS_CACHE_PATH, cls._earnings_cache)
+        hostile_serializable = {
+            k: {"has_hostile": v.has_hostile, "keywords": v.keywords}
+            for k, v in cls._hostile_cache.items()
+        }
+        _save_json_cache(_HOSTILE_CACHE_PATH, hostile_serializable)
 
     @staticmethod
     def apply_filter(ticker: str, signal_date: str) -> FilterResult:
@@ -106,12 +161,14 @@ class SignalFilter:
 
     @staticmethod
     def _get_earnings_dates(ticker: str) -> list[str]:
-        """Get sorted list of historical + future earnings dates. Cached per ticker."""
+        """Get sorted list of historical + future earnings dates. Cached per ticker, persisted to disk."""
+        SignalFilter._load_persistent_caches()
         if ticker in SignalFilter._earnings_cache:
             return SignalFilter._earnings_cache[ticker]
 
         dates = SignalFilter._fetch_earnings_dates(ticker)
         SignalFilter._earnings_cache[ticker] = dates
+        SignalFilter._save_persistent_caches()
         return dates
 
     @staticmethod
@@ -131,6 +188,7 @@ class SignalFilter:
         Informational only — does NOT affect signal classification.
         88% of losers-with-activist had hostile keywords vs 33% of winners.
         """
+        SignalFilter._load_persistent_caches()
         if cik in SignalFilter._hostile_cache:
             return SignalFilter._hostile_cache[cik]
 
@@ -150,6 +208,7 @@ class SignalFilter:
 
         result = HostileCheckResult(has_hostile=len(matched) > 0, keywords=matched)
         SignalFilter._hostile_cache[cik] = result
+        SignalFilter._save_persistent_caches()
         return result
 
     @staticmethod

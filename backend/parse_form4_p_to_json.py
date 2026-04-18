@@ -8,7 +8,7 @@ For each Form 4 filing:
   - Keep only P transactions
   - Output to JSON (no Neo4j writes)
 
-2 parallel workers, 1-second pace per worker = 2 req/sec (safe).
+8 parallel workers, 1-second pace per worker = 8 req/sec (under SEC's 10/sec limit).
 
 Usage:
     python parse_form4_p_to_json.py --input /tmp/form4_index_20251001_p_only.json

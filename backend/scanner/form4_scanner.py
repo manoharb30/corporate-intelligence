@@ -10,9 +10,14 @@ Usage:
 """
 
 import asyncio
+import json
 import logging
 import sys
+import time
 from datetime import datetime, timedelta
+from typing import Optional
+
+import yfinance as yf
 
 from app.db.neo4j_client import Neo4jClient
 from app.services.alert_service import AlertService
@@ -160,7 +165,15 @@ async def filter_and_classify_filers(filers: list[dict]) -> tuple[list[dict], di
                     entity_type = info.entity_type
                     tickers = info.tickers or []
 
-                    # Cache both SIC and entity_type to Neo4j for future runs
+                    # Apply reject rules BEFORE creating the node — avoids empty shells
+                    if entity_type and entity_type != "operating":
+                        rejected_new += 1
+                        continue
+                    if sic and sic in EXCLUDED_SIC_CODES:
+                        rejected_new += 1
+                        continue
+
+                    # Only cache accepted companies — prevents shell node accumulation
                     await Neo4jClient.execute_query(
                         """
                         MERGE (c:Company {cik: $cik})
@@ -170,14 +183,6 @@ async def filter_and_classify_filers(filers: list[dict]) -> tuple[list[dict], di
                         """,
                         {"cik": cik, "sic": sic, "entity_type": entity_type, "tickers": tickers},
                     )
-
-                    # Apply reject rules
-                    if entity_type and entity_type != "operating":
-                        rejected_new += 1
-                        continue
-                    if sic and sic in EXCLUDED_SIC_CODES:
-                        rejected_new += 1
-                        continue
 
                     filtered.append(filer)
                     company_info[cik] = {
@@ -372,6 +377,112 @@ async def _check_large_purchases(cik: str) -> None:
         )
 
 
+def _fetch_price_series(ticker: str) -> Optional[list[dict]]:
+    """Fetch daily close prices for a ticker from yfinance (2 years)."""
+    try:
+        df = yf.Ticker(ticker).history(period="2y")
+        if df.empty:
+            return None
+        series = []
+        for date, row in df.iterrows():
+            close = row.get("Close")
+            if close is None or close <= 0:
+                continue
+            series.append({
+                "d": date.strftime("%Y-%m-%d"),
+                "c": round(float(close), 2),
+            })
+        return series if series else None
+    except Exception as e:
+        logger.warning(f"Price fetch failed for {ticker}: {type(e).__name__}: {str(e)[:80]}")
+        return None
+
+
+async def update_signal_prices() -> int:
+    """Update Company.price_series for all companies with signals.
+
+    Runs after cluster detection. Only updates companies whose prices
+    are stale (updated >20 hours ago or never).
+    """
+    logger.info("Updating daily prices for signal companies...")
+
+    # Get all companies with signals that need price updates
+    result = await Neo4jClient.execute_query("""
+        MATCH (sp:SignalPerformance)
+        WHERE sp.ticker IS NOT NULL AND sp.ticker <> ""
+        WITH DISTINCT sp.ticker AS ticker, sp.cik AS cik
+        OPTIONAL MATCH (c:Company {cik: cik})
+        WHERE c.prices_updated_at IS NOT NULL
+          AND c.prices_updated_at > toString(datetime() - duration({hours: 20}))
+        WITH ticker, cik, c
+        WHERE c IS NULL
+        RETURN ticker, cik
+        ORDER BY ticker
+    """)
+
+    if not result:
+        logger.info("All signal prices are up to date")
+        return 0
+
+    logger.info(f"Updating prices for {len(result)} companies")
+    updated = 0
+
+    for i, r in enumerate(result):
+        ticker = r["ticker"]
+        cik = r["cik"]
+
+        series = _fetch_price_series(ticker)
+        if not series:
+            continue
+
+        series_json = json.dumps(series, separators=(",", ":"))
+        try:
+            await Neo4jClient.execute_query("""
+                MATCH (c:Company {cik: $cik})
+                SET c.price_series = $series_json,
+                    c.prices_updated_at = $now,
+                    c.price_count = $count
+            """, {
+                "cik": cik,
+                "series_json": series_json,
+                "now": datetime.utcnow().isoformat(),
+                "count": len(series),
+            })
+            updated += 1
+        except Exception as e:
+            logger.warning(f"Failed to store prices for {ticker}: {e}")
+
+        # Rate limit yfinance — 1.5s between calls
+        if i < len(result) - 1:
+            time.sleep(1.5)
+
+        if (i + 1) % 25 == 0:
+            logger.info(f"  Prices: {i + 1}/{len(result)} processed, {updated} updated")
+
+    # Always update SPY for alpha calculations
+    spy_series = _fetch_price_series("SPY")
+    if spy_series:
+        spy_json = json.dumps(spy_series, separators=(",", ":"))
+        try:
+            await Neo4jClient.execute_query("""
+                MERGE (c:Company {ticker: 'SPY'})
+                SET c.name = 'SPDR S&P 500 ETF Trust',
+                    c.price_series = $series_json,
+                    c.prices_updated_at = $now,
+                    c.price_count = $count
+            """, {
+                "series_json": spy_json,
+                "now": datetime.utcnow().isoformat(),
+                "count": len(spy_series),
+            })
+            logger.info("SPY prices updated")
+        except Exception as e:
+            logger.warning(f"SPY price update failed: {e}")
+
+    logger.info(f"Price update complete: {updated}/{len(result)} updated")
+    return updated
+
+
 async def run_scanner() -> dict:
     """
     Orchestrate the full scanner flow.
@@ -458,7 +569,11 @@ async def run_scanner() -> dict:
             alerts = await detect_and_alert(affected_ciks)
             counts["alerts_created"] = alerts
 
-        # 5. Update checkpoint
+        # 5. Update daily prices for all companies with signals
+        prices_updated = await update_signal_prices()
+        counts["prices_updated"] = prices_updated
+
+        # 6. Update checkpoint
         status = "success" if counts["errors"] == 0 else "partial_success"
         await update_checkpoint(today, status, counts)
 
@@ -467,6 +582,7 @@ async def run_scanner() -> dict:
             f"{counts['companies_scanned']} companies, "
             f"{counts['transactions_stored']} transactions, "
             f"{counts['alerts_created']} alerts, "
+            f"{prices_updated} prices updated, "
             f"{counts['errors']} errors"
         )
 

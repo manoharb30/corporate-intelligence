@@ -1,25 +1,18 @@
 """Weekly snapshot service — live scorecard for recent signals.
 
 Shows how signals from the last 30 days are performing right now,
-with live price comparisons, alpha vs SPY, and win/loss tracking.
+using stored daily prices from Company.price_series (no yfinance calls).
 Buy side: strong_buy conviction only. Sell side: high clusters, separate stats.
 """
 
-import asyncio
+import json
 import logging
 import time
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from typing import Optional
 
-import yfinance as yf
-
 from app.db.neo4j_client import Neo4jClient
 from app.services.insider_cluster_service import InsiderClusterService
-from app.services.compound_signal_service import CompoundSignalService
-from app.services.stock_price_service import StockPriceService
-
-_price_executor = ThreadPoolExecutor(max_workers=4)
 
 logger = logging.getLogger(__name__)
 
@@ -31,12 +24,37 @@ _CACHE_TTL = 15 * 60
 MATURE_DAYS = 14
 
 
+def _parse_series(series_json: Optional[str]) -> list[dict]:
+    if not series_json:
+        return []
+    try:
+        return json.loads(series_json)
+    except (ValueError, TypeError):
+        return []
+
+
+def _find_close(series: list[dict], target_date: str, max_skip: int = 7) -> Optional[float]:
+    """Find close on or after target_date, within max_skip days."""
+    if not series:
+        return None
+    try:
+        target = datetime.strptime(target_date[:10], "%Y-%m-%d")
+    except (ValueError, TypeError):
+        return None
+    by_date = {e.get("d"): float(e.get("c", 0)) for e in series if e.get("d")}
+    for skip in range(max_skip + 1):
+        check = (target + timedelta(days=skip)).strftime("%Y-%m-%d")
+        if check in by_date:
+            return by_date[check]
+    return None
+
+
 class SnapshotService:
     """Generates live scorecards for recent signals."""
 
     @staticmethod
-    async def get_weekly_snapshot(days: int = 30) -> dict:
-        cache_key = f"weekly_{days}"
+    async def get_weekly_snapshot(days: int = 30, date: str = None) -> dict:
+        cache_key = f"weekly_{days}" if not date else f"weekly_{days}_{date}"
         if cache_key in _snapshot_cache:
             ts, data = _snapshot_cache[cache_key]
             if time.time() - ts < _CACHE_TTL:
@@ -49,7 +67,6 @@ class SnapshotService:
             days=days, min_level="high", direction="buy"
         )
         buy_clusters = InsiderClusterService.apply_market_cap_filter(buy_clusters)
-        # Only strong_buy conviction for the scorecard
         buy_clusters = [c for c in buy_clusters if c.conviction_tier == "strong_buy"]
 
         sell_clusters = await InsiderClusterService.detect_clusters(
@@ -57,15 +74,7 @@ class SnapshotService:
         )
         sell_clusters = InsiderClusterService.apply_market_cap_filter(sell_clusters)
 
-        compounds = await CompoundSignalService.detect_compound_signals(days=days)
-
-        # Filter compounds to only those with cluster (insider_activist, triple_convergence)
-        compounds = [
-            c for c in compounds
-            if c.compound_type in ("insider_activist", "triple_convergence")
-        ]
-
-        # 2. Build unified signal list
+        # 2. Build unified signal list (insider clusters only — compound signals excluded per research)
         raw_signals = []
 
         for c in buy_clusters:
@@ -98,22 +107,7 @@ class SnapshotService:
                 "conviction_tier": "watch",
             })
 
-        for c in compounds:
-            raw_signals.append({
-                "ticker": c.ticker,
-                "company_name": c.company_name,
-                "cik": c.cik,
-                "signal_type": "compound",
-                "signal_date": c.signal_date,
-                "signal_level": "high",
-                "num_insiders": 0,
-                "total_value": 0,
-                "accession_number": c.accession_number,
-                "signal_action": c.decision,
-                "conviction_tier": "buy",
-            })
-
-        # 3. Deduplicate by ticker+action (keep highest-level signal per ticker per side)
+        # 3. Deduplicate by ticker+action
         level_rank = {"high": 0, "medium": 1, "low": 2}
         seen: dict[str, dict] = {}
         for sig in raw_signals:
@@ -126,155 +120,118 @@ class SnapshotService:
                 seen[key] = sig
         deduped_signals = list(seen.values())
 
-        # Sort by level then value
         deduped_signals.sort(
             key=lambda s: (level_rank.get(s["signal_level"], 2), -(s.get("total_value") or 0))
         )
 
-        # Batch-fetch SIC codes for all companies (async, before threaded price fetch)
+        # 4. Batch-fetch price_series + SIC codes for all companies
         all_ciks = list(set(s["cik"] for s in deduped_signals if s.get("cik")))
-        sic_map: dict[str, str] = {}
+        company_data: dict[str, dict] = {}
         if all_ciks:
-            sic_results = await Neo4jClient.execute_query(
-                "UNWIND $ciks as cik MATCH (c:Company {cik: cik}) WHERE c.sic IS NOT NULL "
-                "RETURN c.cik as cik, c.sic as sic",
+            results = await Neo4jClient.execute_query(
+                "UNWIND $ciks as cik MATCH (c:Company {cik: cik}) "
+                "RETURN c.cik as cik, c.sic as sic, c.price_series as price_series",
                 {"ciks": all_ciks},
             )
-            sic_map = {r["cik"]: r["sic"] for r in sic_results}
-
-        # Fetch SPY price history once for per-signal alpha computation
-        def _fetch_spy_history() -> list[dict]:
-            try:
-                end_dt = now
-                start_dt = now - timedelta(days=days + 10)
-                spy_df = yf.download(
-                    "SPY",
-                    start=start_dt.strftime("%Y-%m-%d"),
-                    end=end_dt.strftime("%Y-%m-%d"),
-                    progress=False,
-                )
-                # Handle MultiIndex columns from yfinance
-                if hasattr(spy_df.columns, "nlevels") and spy_df.columns.nlevels > 1:
-                    spy_df.columns = spy_df.columns.get_level_values(0)
-                if len(spy_df) < 2:
-                    return []
-                result = []
-                for date, row in spy_df.iterrows():
-                    close = row.iloc[0] if "Close" not in spy_df.columns else row["Close"]
-                    result.append({
-                        "date": date.strftime("%Y-%m-%d"),
-                        "close": float(close),
-                    })
-                return result
-            except Exception as e:
-                logger.warning(f"SPY history fetch failed: {e}")
-                return []
-
-        loop = asyncio.get_event_loop()
-        spy_history = await loop.run_in_executor(_price_executor, _fetch_spy_history)
-
-        # Build SPY date->close lookup for per-signal alpha
-        spy_prices: dict[str, float] = {p["date"]: p["close"] for p in spy_history}
-        spy_latest = spy_history[-1]["close"] if spy_history else None
-
-        def _find_spy_price_near(target_date: str) -> Optional[float]:
-            """Find SPY close on or nearest to target_date, within 7 days."""
-            if not spy_history:
-                return None
-            try:
-                target = datetime.strptime(target_date[:10], "%Y-%m-%d")
-            except (ValueError, TypeError):
-                return None
-            best_price = None
-            best_diff = None
-            for p in spy_history:
-                d = datetime.strptime(p["date"], "%Y-%m-%d")
-                diff = abs((d - target).days)
-                if best_diff is None or diff < best_diff:
-                    best_price = p["close"]
-                    best_diff = diff
-            if best_diff is not None and best_diff <= 7:
-                return best_price
-            return None
-
-        # Fetch prices in a thread pool so we don't block the event loop
-        def _fetch_price(sig: dict) -> Optional[dict]:
-            ticker = sig["ticker"]
-            signal_date = sig["signal_date"]
-            try:
-                price_data = StockPriceService.get_price_at_date(ticker, signal_date)
-                if not price_data or not price_data.get("price_at_date"):
-                    return None
-                entry_price = price_data["price_at_date"]
-                current_price = price_data["price_current"]
-                if entry_price <= 0:
-                    return None
-                return_pct = round(
-                    (current_price - entry_price) / entry_price * 100, 2
-                )
-                try:
-                    sig_dt = datetime.strptime(signal_date[:10], "%Y-%m-%d")
-                    days_held = (now - sig_dt).days
-                except (ValueError, TypeError):
-                    days_held = 0
-
-                # Compute per-signal SPY return and alpha
-                spy_return_pct = None
-                alpha_pct = None
-                spy_entry = _find_spy_price_near(signal_date)
-                if spy_entry and spy_latest and spy_entry > 0:
-                    spy_return_pct = round(
-                        (spy_latest - spy_entry) / spy_entry * 100, 2
-                    )
-                    alpha_pct = round(return_pct - spy_return_pct, 2)
-
-                is_pass = sig["signal_action"] == "PASS"
-                return {
-                    "ticker": ticker,
-                    "company_name": sig["company_name"],
-                    "cik": sig["cik"],
-                    "signal_type": sig["signal_type"],
-                    "signal_date": signal_date,
-                    "signal_level": sig["signal_level"],
-                    "signal_action": sig["signal_action"],
-                    "num_insiders": sig["num_insiders"],
-                    "total_value": sig["total_value"],
-                    "accession_number": sig["accession_number"],
-                    "conviction_tier": sig.get("conviction_tier", "watch"),
-                    "entry_price": float(round(entry_price, 2)),
-                    "current_price": float(round(current_price, 2)),
-                    "return_pct": float(return_pct),
-                    "spy_return_pct": float(spy_return_pct) if spy_return_pct is not None else None,
-                    "alpha_pct": float(alpha_pct) if alpha_pct is not None else None,
-                    "days_held": days_held,
-                    "status": "winning" if return_pct > 0 else "losing",
-                    # PASS-specific fields
-                    "pass_correct": bool(is_pass and return_pct <= 0),
-                    "avoided_loss_pct": float(round(abs(min(return_pct, 0)), 2)) if is_pass else None,
+            for r in results:
+                company_data[r["cik"]] = {
+                    "sic": r.get("sic") or "",
+                    "series": _parse_series(r.get("price_series")),
                 }
-            except Exception as e:
-                logger.warning(f"Snapshot price fetch failed for {ticker}: {e}")
+
+        # 5. Fetch SPY price series from stored data (or fall back to any company's SPY-like approach)
+        spy_series: list[dict] = []
+        spy_result = await Neo4jClient.execute_query(
+            "MATCH (c:Company) WHERE c.ticker = 'SPY' RETURN c.price_series as ps LIMIT 1"
+        )
+        if spy_result and spy_result[0].get("ps"):
+            spy_series = _parse_series(spy_result[0]["ps"])
+
+        spy_prices: dict[str, float] = {p["d"]: p["c"] for p in spy_series}
+        spy_latest = spy_series[-1]["c"] if spy_series else None
+
+        def _find_spy_near(target_date: str) -> Optional[float]:
+            if not spy_series:
                 return None
+            return _find_close(spy_series, target_date)
 
-        tasks = [
-            loop.run_in_executor(_price_executor, _fetch_price, sig)
-            for sig in deduped_signals
-        ]
-        results = await asyncio.gather(*tasks)
-        scored_signals = [r for r in results if r is not None]
+        # 6. Score each signal using stored prices
+        scored_signals = []
+        for sig in deduped_signals:
+            cik = sig.get("cik")
+            ticker = sig.get("ticker")
+            signal_date = sig.get("signal_date")
+            if not cik or not ticker or not signal_date:
+                continue
 
-        # Inject SIC codes from pre-fetched map
-        for sig in scored_signals:
-            sig["sic_code"] = sic_map.get(sig.get("cik"), "")
+            cd = company_data.get(cik, {})
+            series = cd.get("series", [])
+            if not series:
+                continue
+
+            entry_price = _find_close(series, signal_date)
+            if not entry_price or entry_price <= 0:
+                continue
+
+            # Current price = latest in the series
+            latest = series[-1]
+            current_price = float(latest.get("c", 0))
+            if current_price <= 0:
+                continue
+
+            return_pct = round((current_price - entry_price) / entry_price * 100, 2)
+
+            try:
+                sig_dt = datetime.strptime(signal_date[:10], "%Y-%m-%d")
+                days_held = (now - sig_dt).days
+            except (ValueError, TypeError):
+                days_held = 0
+
+            # SPY alpha
+            spy_return_pct = None
+            alpha_pct = None
+            spy_entry = _find_spy_near(signal_date)
+            if spy_entry and spy_latest and spy_entry > 0:
+                spy_return_pct = round((spy_latest - spy_entry) / spy_entry * 100, 2)
+                alpha_pct = round(return_pct - spy_return_pct, 2)
+
+            is_pass = sig["signal_action"] == "PASS"
+            scored_signals.append({
+                "ticker": ticker,
+                "company_name": sig["company_name"],
+                "cik": cik,
+                "signal_type": sig["signal_type"],
+                "signal_date": signal_date,
+                "signal_level": sig["signal_level"],
+                "signal_action": sig["signal_action"],
+                "num_insiders": sig["num_insiders"],
+                "total_value": sig["total_value"],
+                "accession_number": sig["accession_number"],
+                "conviction_tier": sig.get("conviction_tier", "watch"),
+                "entry_price": float(round(entry_price, 2)),
+                "current_price": float(round(current_price, 2)),
+                "return_pct": float(return_pct),
+                "spy_return_pct": float(spy_return_pct) if spy_return_pct is not None else None,
+                "alpha_pct": float(alpha_pct) if alpha_pct is not None else None,
+                "days_held": days_held,
+                "status": "winning" if return_pct > 0 else "losing",
+                "pass_correct": bool(is_pass and return_pct <= 0),
+                "avoided_loss_pct": float(round(abs(min(return_pct, 0)), 2)) if is_pass else None,
+                "sic_code": cd.get("sic", ""),
+            })
 
         # Sort by return descending
         scored_signals.sort(key=lambda s: s["return_pct"], reverse=True)
+
+        # Apply date filter if provided
+        if date:
+            scored_signals = [s for s in scored_signals if s["signal_date"][:10] == date[:10]]
 
         # Split into buy and sell
         buy_signals = [s for s in scored_signals if s["signal_action"] != "PASS"]
         sell_signals = [s for s in scored_signals if s["signal_action"] == "PASS"]
 
-        # === BUY STATS (strong_buy only) ===
+        # === BUY STATS ===
         def _compute_buy_stats(signals: list[dict]) -> dict:
             total = len(signals)
             if total == 0:
@@ -313,7 +270,7 @@ class SnapshotService:
                 "worst": worst,
             }
 
-        # === SELL STATS (high sell clusters) ===
+        # === SELL STATS ===
         def _compute_sell_stats(signals: list[dict]) -> dict:
             total = len(signals)
             if total == 0:
@@ -358,23 +315,18 @@ class SnapshotService:
 
         # SPY benchmark return over the full period
         spy_return = None
-        if spy_history and len(spy_history) >= 2:
-            spy_start_price = spy_history[0]["close"]
-            spy_end_price = spy_history[-1]["close"]
-            if spy_start_price > 0:
-                spy_return = round(
-                    (spy_end_price - spy_start_price) / spy_start_price * 100, 2
-                )
-
-        # Legacy top-level fields (backward compat) — now driven by buy-side only
-        total = len(scored_signals)
+        if spy_series and len(spy_series) >= 2:
+            cutoff = (now - timedelta(days=days)).strftime("%Y-%m-%d")
+            spy_start = _find_close(spy_series, cutoff)
+            spy_end = spy_series[-1]["c"] if spy_series else None
+            if spy_start and spy_end and spy_start > 0:
+                spy_return = round((spy_end - spy_start) / spy_start * 100, 2)
 
         result = {
             "period_days": days,
             "generated_at": now.isoformat(),
             "mature_days": MATURE_DAYS,
             "spy_return": spy_return,
-            # Buy-side headline stats (strong_buy only)
             "total_signals": buy_stats["total"],
             "win_count": buy_stats["win_count"],
             "loss_count": buy_stats["loss_count"],
@@ -386,10 +338,8 @@ class SnapshotService:
             "mature_avg_alpha": buy_stats["mature_avg_alpha"],
             "best_performer": buy_stats["best"],
             "worst_performer": buy_stats["worst"],
-            # Structured buy/sell stats
             "buy_stats": buy_stats,
             "sell_stats": sell_stats,
-            # Legacy pass_stats (now superseded by sell_stats)
             "pass_stats": {
                 "total": sell_stats["total"],
                 "mature": sell_stats["mature_total"],
@@ -397,7 +347,6 @@ class SnapshotService:
                 "correct_rate": sell_stats["mature_correct_rate"],
                 "avg_avoided_loss": sell_stats["avg_avoided_loss"],
             },
-            # All signals for the table
             "signals": scored_signals,
         }
 
