@@ -1,25 +1,49 @@
-# Corporate Intelligence Graph
+# LookInsight
 
-A beneficial ownership intelligence platform built with Neo4j, FastAPI, and React.
+**Insider conviction signals for institutional alpha seekers.**
 
-## Overview
+LookInsight surfaces high-conviction insider buying signals from SEC Form 4 filings. We classify genuine open-market purchases (filtering out RSU vesting, DRIP, private placements, and structured deals), detect multi-insider clusters, apply an evidence-based earnings-proximity filter, and deliver pre-filtered signals with measured alpha vs SPY.
 
-This platform enables analysis of corporate ownership structures, identifying beneficial owners, and detecting potential risk indicators such as:
+🔗 **Production:** https://ci.lookinsight.ai
 
-- Complex ownership chains
-- Circular ownership structures
-- Connections to Politically Exposed Persons (PEPs)
-- Connections to sanctioned individuals
-- Entities in secrecy jurisdictions
-- Suspicious address clustering
+## Performance (v1.0)
+
+| Metric | Value | Significance |
+|--------|-------|--------------|
+| Mature strong_buy signals | **141** | — |
+| Hit Rate (90d return > 0) | **67.4%** | p < 0.001 |
+| Avg Alpha vs SPY (90d) | **+9.0%** | p < 0.001 |
+| Avg Return (90d) | +14.2% | — |
+| Data integrity | 0.000% discrepancy | Verified 20% sample |
+| Data coverage | 22 months | Jun 2024 – Apr 2026 |
+
+## What a Signal Looks Like
+
+A **strong_buy** is emitted when, on a given date for a given company:
+
+- 2+ distinct insiders made GENUINE open-market P purchases
+- $100K+ total cluster value
+- $300M–$5B historical market cap (midcap)
+- Within 60 days of next earnings (`earn≤60d`)
+- Returns tracked from filing date (actionable), not transaction date
+
+Each signal is tagged with an informational rider:
+- **High Conviction** (≤5 insiders, <$1M, buy/mcap ≥0.01%) — 71.3% HR, +11.8% alpha
+- **Standard** (does not match High Conviction)
+- **⚠ Hostile Activist** — overlay when the company has a 13D with hostile keywords
 
 ## Tech Stack
 
-- **Database**: Neo4j (graph database)
-- **Backend**: FastAPI + Python
-- **Validation**: Pydantic
-- **Frontend**: React 18 + TypeScript + Tailwind CSS
-- **LLM**: Anthropic Claude API (for structured extraction)
+| Layer | Technology |
+|-------|------------|
+| Backend | FastAPI (Python 3.13) |
+| Database | Neo4j Aura (graph) |
+| Frontend | React 18 + TypeScript + Vite + Tailwind |
+| LLM | Claude Haiku 4.5 (P-transaction classification, batch) |
+| Prices | yfinance (market cap + 2y daily closes) |
+| Data Sources | SEC EDGAR (Form 4, Schedule 13D) |
+| Hosting | Vercel (frontend) + Railway (backend) |
+| DNS | GoDaddy |
 
 ## Project Structure
 
@@ -27,165 +51,154 @@ This platform enables analysis of corporate ownership structures, identifying be
 corporate-intelligence-graph/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py              # FastAPI app entry
-│   │   ├── config.py            # Application settings
-│   │   ├── api/routes/          # API endpoints
-│   │   ├── models/              # Pydantic models
-│   │   ├── services/            # Business logic
-│   │   └── db/
-│   │       └── neo4j_client.py  # Neo4j connection
-│   ├── ingestion/
-│   │   ├── sec_edgar/           # SEC EDGAR data fetchers
-│   │   └── common/              # Shared parsing utilities
+│   │   ├── main.py                     # FastAPI app entry (7 routes)
+│   │   ├── config.py                   # Settings (env-driven)
+│   │   ├── api/routes/                 # activist, event_detail, explorer, health, scanner, signal_performance, snapshot
+│   │   ├── services/                   # signal_filter, signal_performance_service, insider_cluster_service, snapshot_service, trade_classifier, ...
+│   │   ├── models/                     # Pydantic models
+│   │   └── db/neo4j_client.py          # Neo4j connection (with reconnect)
+│   ├── ingestion/sec_edgar/            # EDGAR fetchers + parsers (Form 4, 13D)
+│   ├── scanner/                        # form4_scanner, activist_scanner (8k_scanner deprecated)
+│   ├── run_month.py, run_multiple_months.py, run_week.py    # pipeline entry points
+│   ├── prefilter_p.py, classify_p_with_prefilter.py,
+│   │   batch_llm_classify.py, merge_classifications.py       # split-architecture pipeline
+│   ├── backfill_*.py                   # operational backfills
+│   ├── tests/                          # test_signal_filter (19), test_signal_performance (34), ...
 │   ├── requirements.txt
 │   └── .env.example
 ├── frontend/
 │   ├── src/
-│   │   ├── components/          # Reusable UI components
-│   │   ├── pages/               # Page components
-│   │   └── services/            # API client
+│   │   ├── pages/                      # SignalList, SignalDetail, PerformanceTracker
+│   │   ├── components/                 # Layout + shared UI
+│   │   ├── services/api.ts             # typed API client
+│   │   ├── App.tsx, main.tsx
+│   │   └── index.css
 │   ├── package.json
 │   └── tailwind.config.js
 ├── neo4j/
-│   ├── constraints.cypher       # Database constraints
-│   └── indexes.cypher           # Database indexes
+│   ├── constraints.cypher              # database constraints
+│   ├── indexes.cypher                  # database indexes
+│   └── schema-report.md                # current schema reference
+├── .paul/                              # PAUL framework: milestones, plans, state
 └── README.md
 ```
 
 ## Prerequisites
 
-- Python 3.11+
+- Python 3.11+ (3.13 recommended)
 - Node.js 18+
-- Neo4j 5.x (local installation or Neo4j Aura)
-- Anthropic API key (optional, for LLM features)
+- Neo4j 5.x (Aura recommended) or local install
+- Anthropic API key (required for P-transaction classification)
+- yfinance works over public endpoints (no key)
 
 ## Setup
 
-### 1. Neo4j Database
+### 1. Neo4j
 
-#### Option A: Local Installation
+**Option A — Neo4j Aura (recommended):** create a free account, create an instance, note the bolt URI + credentials.
 
-1. [Download and install Neo4j](https://neo4j.com/download/)
-2. Start Neo4j and set a password
-3. Note the connection URI (default: `bolt://localhost:7687`)
+**Option B — Local:** download from https://neo4j.com/download/, start it, set a password.
 
-#### Option B: Neo4j Aura (Cloud)
-
-1. Create a free account at [Neo4j Aura](https://neo4j.com/cloud/aura/)
-2. Create a new database instance
-3. Note the connection URI, username, and password
-
-#### Initialize Schema
-
-Connect to your Neo4j instance and run the schema files:
-
-```cypher
-// Run constraints first
-:source neo4j/constraints.cypher
-
-// Then run indexes
-:source neo4j/indexes.cypher
-```
-
-Or via cypher-shell:
+Apply schema:
 
 ```bash
 cat neo4j/constraints.cypher | cypher-shell -u neo4j -p <password>
 cat neo4j/indexes.cypher | cypher-shell -u neo4j -p <password>
 ```
 
-### 2. Backend Setup
+### 2. Backend
 
 ```bash
 cd backend
-
-# Create virtual environment
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
+source venv/bin/activate              # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-
-# Configure environment
 cp .env.example .env
-# Edit .env with your Neo4j credentials and other settings
+# Edit .env with your credentials
 ```
 
-#### Environment Variables
-
-Edit `backend/.env`:
+**Environment variables** (`backend/.env`):
 
 ```env
-NEO4J_URI=bolt://localhost:7687
+# Neo4j
+NEO4J_URI=neo4j+s://<your-aura-host>:7687    # or bolt://localhost:7687
 NEO4J_USER=neo4j
-NEO4J_PASSWORD=your_password_here
-ANTHROPIC_API_KEY=sk-ant-your-api-key-here  # Optional
-SEC_EDGAR_USER_AGENT=YourCompany admin@yourcompany.com
+NEO4J_PASSWORD=your_password
+
+# LLM classification (required)
+ANTHROPIC_API_KEY=sk-ant-...
+
+# SEC EDGAR (required by SEC)
+SEC_EDGAR_USER_AGENT=YourName your-email@example.com
+
+# CORS
+CORS_ORIGINS=["http://localhost:3000", "http://localhost:5173"]
 ```
 
-#### Run Backend
+Run the backend:
 
 ```bash
-cd backend
 uvicorn app.main:app --reload --port 8000
+# API: http://localhost:8000   |   Docs: http://localhost:8000/docs
 ```
 
-The API will be available at `http://localhost:8000`. API documentation at `http://localhost:8000/docs`.
-
-### 3. Frontend Setup
+### 3. Frontend
 
 ```bash
 cd frontend
-
-# Install dependencies
 npm install
-
-# Run development server
 npm run dev
+# UI: http://localhost:3000 (or 5173)
 ```
 
-The frontend will be available at `http://localhost:3000`.
+## Pipeline Usage
+
+The insider-signal pipeline is split into stages for cost and throughput:
+
+```bash
+cd backend && source venv/bin/activate
+
+# Run a single month through the full pipeline
+python run_month.py 2026-03
+
+# Backfill a quarter / multi-month range
+python run_multiple_months.py 2025-10 2025-12
+
+# Individual stages
+python prefilter_p.py <input.json> <output.json>
+python classify_p_with_prefilter.py <input.json> <output.json>
+python batch_llm_classify.py <input.json> <output.json>
+python merge_classifications.py <dir> <output.json>
+
+# Operational backfills
+python backfill_signal_coverage.py
+python backfill_market_cap.py
+python backfill_company_prices.py
+```
+
+Daily incremental ingest is on the v1.1 roadmap (Operations milestone — cron/scheduler, not yet wired).
 
 ## API Endpoints
 
+All routes are under `/api/*`. The surface is deliberately small — 7 routes total.
+
 ### Health
-- `GET /health` - Basic health check
-- `GET /health/db` - Database connectivity check
+- `GET /api/health` — service + DB health
 
-### Companies
-- `GET /api/companies` - List companies (paginated)
-- `GET /api/companies/search?q=<query>` - Search companies
-- `GET /api/companies/{id}` - Get company details
-- `GET /api/companies/{id}/ownership-chain` - Get ownership chain
-- `GET /api/companies/{id}/subsidiaries` - Get subsidiaries
-- `POST /api/companies` - Create company
-- `PATCH /api/companies/{id}` - Update company
-- `DELETE /api/companies/{id}` - Delete company
+### Signals
+- `GET /api/snapshot` — Signal List (strong_buy clusters with returns)
+- `POST /api/snapshot/precompute` — rebuild precomputed blobs
+- `GET /api/signal-performance/dashboard-stats` — precomputed dashboard stats
+- `GET /api/signal-performance/...` — performance tracker data (all signals, winners + losers)
+- `GET /api/event-detail/{accession_number}` — Signal Detail (buyers, Form 4 URLs, decision card, hostile flag)
 
-### Persons
-- `GET /api/persons` - List persons (paginated)
-- `GET /api/persons/search?q=<query>` - Search persons
-- `GET /api/persons/pep` - List Politically Exposed Persons
-- `GET /api/persons/sanctioned` - List sanctioned persons
-- `GET /api/persons/{id}` - Get person details
-- `GET /api/persons/{id}/companies` - Get associated companies
-- `POST /api/persons` - Create person
-- `PATCH /api/persons/{id}` - Update person
-- `DELETE /api/persons/{id}` - Delete person
+### Exploration + Scanning
+- `GET /api/explorer/...` — cross-company connections + graph exploration
+- `GET /api/activist/...` — Schedule 13D data
+- `POST /api/scanner/form4/scan` — trigger Form 4 scan
+- `POST /api/scanner/activist/scan` — trigger 13D scan
 
-### Filings
-- `GET /api/filings` - List SEC filings
-- `GET /api/filings/form-types` - Get form type counts
-- `GET /api/filings/{id}` - Get filing details
-- `GET /api/filings/{id}/entities` - Get entities in filing
-
-### Graph Exploration
-- `GET /api/graph/entity/{id}` - Get entity neighborhood
-- `GET /api/graph/ownership/{id}` - Get ownership structure
-- `GET /api/graph/path?source_id=<id>&target_id=<id>` - Find path between entities
-- `GET /api/graph/address-clusters` - Find address clusters
-- `GET /api/graph/secrecy-jurisdictions` - Find entities in secrecy jurisdictions
-- `GET /api/graph/risk-indicators/{id}` - Analyze entity risk indicators
+See `/docs` (Swagger UI) for live endpoint details.
 
 ## Neo4j Schema
 
@@ -193,56 +206,70 @@ The frontend will be available at `http://localhost:3000`.
 
 | Node | Key Properties |
 |------|----------------|
-| Company | id, name, cik, lei, jurisdiction, status |
-| Person | id, name, is_pep, is_sanctioned |
-| Address | id, full_address, entity_count |
-| Filing | id, accession_number, form_type, filing_date |
-| Jurisdiction | code, name, secrecy_score, is_secrecy_jurisdiction |
+| Company | cik, ticker, name, market_cap, price_series (stored), has_hostile_activist |
+| Person | id, normalized_name, is_officer, is_director |
+| InsiderTransaction | accession, filing_date, transaction_date, shares, price, value, classification (GENUINE / FILTERED / AMBIGUOUS), rule_triggered |
+| ActivistFiling | cik, filing_date, purpose_text, stake_percent, has_hostile_keywords |
+| SignalPerformance | cluster_id, signal_date, day0_price, spy_return, return_90d, alpha_90d |
+| Event | (8-K events — legacy, not used in v1.0 signals) |
 
 ### Relationship Types
 
-| Relationship | Description |
-|--------------|-------------|
-| OWNS | Ownership (percentage, is_beneficial) |
-| OFFICER_OF | Officer position (title) |
-| DIRECTOR_OF | Director position |
-| REGISTERED_AT | Entity registration address |
-| INCORPORATED_IN | Jurisdiction of incorporation |
-| FILED | Company filed SEC document |
-| MENTIONED_IN | Entity mentioned in filing |
-| RELATED_TO | Generic relationship |
-| SAME_AS | Entity resolution match |
+| Relationship | From → To | Purpose |
+|--------------|-----------|---------|
+| INSIDER_TRADE_OF | (Company)→(InsiderTransaction) | Transaction ownership |
+| TRADED_BY | (Person)→(InsiderTransaction) | Actor on transaction |
+| FILED_EVENT | (Company)→(Event) | 8-K events (legacy) |
+| FILED_ACTIVIST | (Company)→(ActivistFiling) | 13D filings |
+
+The SPY ETF is stored as a Company node with 755 days of price_series so return/alpha computations run without live yfinance calls.
 
 ## Development
 
-### Running Tests
+### Tests
 
 ```bash
-cd backend
-pytest
+cd backend && venv/bin/python -m pytest tests/ -v
 ```
 
-### Code Formatting
+Key suites: `test_signal_filter.py` (19 tests), `test_signal_performance.py` (34 tests).
+
+### Architecture Governance
+
+This project uses **sentrux** for structural quality scoring:
+
+```bash
+sentrux gate --save .      # snapshot baseline
+# ... make changes ...
+sentrux gate .             # compare vs baseline
+sentrux check .            # all rules must pass
+```
+
+Rules:
+- Architecture grade ≥ B
+- Zero dependency cycles
+- No files > 500 lines
+- Layer order enforced (ingestion → domain → api → delivery)
+
+### Formatting & Typing
 
 ```bash
 cd backend
 black .
 ruff check .
-```
-
-### Type Checking
-
-```bash
-cd backend
 mypy app
 ```
 
-## Next Steps
+## Roadmap
 
-This is a skeleton project. To build a full beneficial ownership intelligence platform:
+**v1.0 Signal Quality — ✅ Complete (2026-04-18)**
+Clean insider cluster pipeline, earnings filter, verified data, production dashboard.
 
-1. **Data Ingestion**: Implement SEC EDGAR parsers in `backend/ingestion/sec_edgar/`
-2. **Entity Resolution**: Add logic to match and merge duplicate entities
-3. **Graph Visualization**: Integrate D3.js or Cytoscape.js in the frontend
-4. **Risk Scoring**: Implement weighted risk scoring algorithms
-5. **Additional Data Sources**: Add parsers for other data sources (OpenCorporates, GLEIF, etc.)
+**v1.1 — 📋 Pending scope** (marketing + operations)
+Daily auto-ingest, alert system, monitoring, S3 signal delivery, Neudata article, first paid institutional client, extended backfill.
+
+See `.paul/ROADMAP.md` for detail and `.paul/MILESTONES.md` for history.
+
+## License
+
+Proprietary — © LookInsight. Contact the author for licensing terms.
