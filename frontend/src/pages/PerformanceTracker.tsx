@@ -33,13 +33,13 @@ export default function PerformanceTracker() {
     return () => { ignore = true }
   }, [])
 
-  // Available years/months
+  // Available years
   const years = useMemo(() => {
     const s = new Set(allSignals.map(s => s.signal_date?.slice(0, 4)).filter(Boolean))
     return Array.from(s).sort().reverse()
   }, [allSignals])
 
-  const months = [
+  const allMonths = [
     { value: '01', label: 'January' }, { value: '02', label: 'February' },
     { value: '03', label: 'March' }, { value: '04', label: 'April' },
     { value: '05', label: 'May' }, { value: '06', label: 'June' },
@@ -48,6 +48,18 @@ export default function PerformanceTracker() {
     { value: '11', label: 'November' }, { value: '12', label: 'December' },
   ]
 
+  // Available months — filtered to only months with data for selected year
+  const availableMonths = useMemo(() => {
+    if (!selectedYear) return []
+    const monthsWithData = new Set(
+      allSignals
+        .filter(s => s.signal_date?.startsWith(selectedYear))
+        .map(s => s.signal_date?.slice(5, 7))
+        .filter(Boolean)
+    )
+    return allMonths.filter(m => monthsWithData.has(m.value))
+  }, [allSignals, selectedYear])
+
   // Filter signals
   const filtered = useMemo(() => {
     const now = new Date()
@@ -55,7 +67,8 @@ export default function PerformanceTracker() {
       if (!s.signal_date) return false
       if (filterMode === 'all') return true
       if (filterMode === 'custom') {
-        if (selectedYear && !s.signal_date.startsWith(selectedYear)) return false
+        if (!selectedYear) return true
+        if (!s.signal_date.startsWith(selectedYear)) return false
         if (selectedMonth && s.signal_date.slice(5, 7) !== selectedMonth) return false
         return true
       }
@@ -133,7 +146,12 @@ export default function PerformanceTracker() {
           <span className="hidden sm:inline text-gray-300 px-1">|</span>
           <select
             value={selectedYear}
-            onChange={(e) => { setSelectedYear(e.target.value); setFilterMode('custom') }}
+            onChange={(e) => {
+              setSelectedYear(e.target.value)
+              setSelectedMonth('')  // clear month when year changes
+              if (e.target.value) setFilterMode('custom')
+              else { setFilterMode('30d'); setSelectedMonth('') }
+            }}
             className="bg-gray-100 border-none rounded-md px-3 py-1.5 text-sm text-gray-500 font-medium"
           >
             <option value="">Year</option>
@@ -142,10 +160,15 @@ export default function PerformanceTracker() {
           <select
             value={selectedMonth}
             onChange={(e) => { setSelectedMonth(e.target.value); setFilterMode('custom') }}
-            className="bg-gray-100 border-none rounded-md px-3 py-1.5 text-sm text-gray-500 font-medium"
+            disabled={!selectedYear}
+            className={`border-none rounded-md px-3 py-1.5 text-sm font-medium ${
+              selectedYear
+                ? 'bg-gray-100 text-gray-500'
+                : 'bg-gray-50 text-gray-300 cursor-not-allowed'
+            }`}
           >
-            <option value="">All months</option>
-            {months.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+            <option value="">{selectedYear ? 'All months' : 'Select year first'}</option>
+            {availableMonths.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
           </select>
         </div>
         <a

@@ -82,6 +82,8 @@ export interface EventDetailResponse {
   }
   signal_type?: 'insider_cluster' | 'insider_sell_cluster'
   cluster_detail?: ClusterDetail
+  has_hostile_activist?: boolean
+  hostile_keywords?: string[]
 }
 
 export const eventDetailApi = {

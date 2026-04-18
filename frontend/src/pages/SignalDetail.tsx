@@ -197,6 +197,31 @@ export default function SignalDetail() {
         )}
       </div>
 
+      {/* Hostile activist warning */}
+      {data.has_hostile_activist && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 flex items-start gap-3">
+          <span className="text-lg">⚠</span>
+          <div>
+            <div className="font-bold text-sm text-red-800">Hostile Activist Detected</div>
+            <div className="text-sm text-red-700 mt-1">
+              13D filing contains hostile language:
+              {data.hostile_keywords && data.hostile_keywords.length > 0 && (
+                <span className="ml-1">
+                  {data.hostile_keywords.map((kw) => (
+                    <span key={kw} className="inline-block bg-red-100 px-1.5 py-0.5 rounded text-xs font-semibold mx-0.5">
+                      {kw}
+                    </span>
+                  ))}
+                </span>
+              )}
+            </div>
+            <div className="text-xs text-red-600 mt-1">
+              88% of signals with hostile activist text underperform. Informational flag — not filtered.
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Buyers table */}
       {buyers.length > 0 && (
         <div className="mb-8">

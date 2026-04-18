@@ -50,7 +50,7 @@ def _find_close(series: list[dict], target_date: str, max_skip: int = 7) -> Opti
 
 
 class SnapshotService:
-    """Generates live scorecards for recent signals."""
+    """Generates scorecards for recent signals. Uses precomputed blob when available."""
 
     @staticmethod
     async def get_weekly_snapshot(days: int = 30, date: str = None) -> dict:
@@ -59,6 +59,13 @@ class SnapshotService:
             ts, data = _snapshot_cache[cache_key]
             if time.time() - ts < _CACHE_TTL:
                 return data
+
+        # Try precomputed blob first (for default 30d/60d/90d without date filter)
+        if not date and days in (30, 60, 90):
+            blob = await SnapshotService._load_precomputed(days)
+            if blob:
+                _snapshot_cache[cache_key] = (time.time(), blob)
+                return blob
 
         now = datetime.now()
 
@@ -352,3 +359,48 @@ class SnapshotService:
 
         _snapshot_cache[cache_key] = (time.time(), result)
         return result
+
+    @staticmethod
+    async def _load_precomputed(days: int) -> Optional[dict]:
+        """Load precomputed snapshot blob from Neo4j."""
+        result = await Neo4jClient.execute_query(
+            "MATCH (ss:SnapshotBlob {days: $days}) RETURN ss.data as data",
+            {"days": days},
+        )
+        if result and result[0].get("data"):
+            try:
+                return json.loads(result[0]["data"])
+            except (ValueError, TypeError):
+                pass
+        return None
+
+    @staticmethod
+    async def precompute_and_save(days_list: list[int] = None) -> dict:
+        """Precompute snapshots for common day ranges and save as blobs.
+
+        Called after signal performance compute. Saves 30d, 60d, 90d snapshots
+        so dashboard loads instantly without live cluster detection.
+        """
+        if days_list is None:
+            days_list = [30, 60, 90]
+
+        saved = 0
+        for days in days_list:
+            # Clear in-memory cache to force fresh computation
+            cache_key = f"weekly_{days}"
+            _snapshot_cache.pop(cache_key, None)
+
+            # Compute fresh
+            result = await SnapshotService.get_weekly_snapshot(days=days)
+
+            # Save as blob
+            data_json = json.dumps(result, default=str)
+            await Neo4jClient.execute_query(
+                "MERGE (ss:SnapshotBlob {days: $days}) "
+                "SET ss.data = $data, ss.computed_at = $computed_at",
+                {"days": days, "data": data_json, "computed_at": datetime.now().isoformat()},
+            )
+            saved += 1
+            logger.info(f"Snapshot blob saved for {days}d ({len(result.get('signals', []))} signals)")
+
+        return {"saved": saved, "days": days_list}

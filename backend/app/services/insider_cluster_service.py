@@ -964,16 +964,32 @@ class InsiderClusterService:
             except Exception as e:
                 logger.warning(f"Failed to get price data for cluster detail: {e}")
 
-        # Add confidence badge from precomputed stats
-        if confidence_stats:
-            from app.services.event_detail_service import EventDetailService
-            price_current = decision_card.get("price_current")
-            confidence = EventDetailService._match_confidence_pattern(
-                insider_context, [], price_current, confidence_stats,
-                signal_level=signal_level,
-            )
-            if confidence:
-                decision_card["confidence"] = confidence
+        # Check hostile activist flag from transactions
+        hostile_query = """
+            MATCH (c:Company {cik: $cik})-[:INSIDER_TRADE_OF]->(t:InsiderTransaction)
+            WHERE t.has_hostile_activist = true AND t.classification = 'GENUINE'
+            RETURN count(t) as cnt
+        """
+        hostile_result = await Neo4jClient.execute_query(hostile_query, {"cik": cik})
+        has_hostile = (hostile_result[0]["cnt"] or 0) > 0 if hostile_result else False
+
+        # Get hostile keywords if flagged
+        hostile_keywords = []
+        if has_hostile:
+            kw_query = """
+                MATCH (af:ActivistFiling)-[:TARGETS]->(c:Company {cik: $cik})
+                WHERE af.purpose_text IS NOT NULL
+                RETURN af.purpose_text as text
+                LIMIT 5
+            """
+            kw_result = await Neo4jClient.execute_query(kw_query, {"cik": cik})
+            keyword_list = ["proxy", "remove", "replace", "strategic alternative", "inadequate",
+                            "underperform", "oppose", "withhold", "hostile", "unsolicited"]
+            for row in kw_result:
+                text_lower = (row["text"] or "").lower()
+                for kw in keyword_list:
+                    if kw in text_lower and kw not in hostile_keywords:
+                        hostile_keywords.append(kw)
 
         signal_type = "insider_sell_cluster" if is_sell else "insider_cluster"
         agreement_type = "Insider Sell Cluster" if is_sell else "Insider Cluster"
@@ -1032,4 +1048,6 @@ class InsiderClusterService:
                 "direction": direction,
                 "conviction_tier": conviction_tier,
             },
+            "has_hostile_activist": has_hostile,
+            "hostile_keywords": hostile_keywords,
         }

@@ -38,13 +38,28 @@
 
 ## Phase 3: Institutional Positioning 🔄 IN PROGRESS
 **Goal:** Dashboard as proof + accountability tool for hedge fund demo calls
-- [ ] **03-01** Frontend cleanup (remove 15+ deprecated pages, strip to clean shell)
-- [ ] **Visual design discussion** (brainstorming skill — page layouts before building)
-- [ ] **03-02** Signal List + Signal Detail (proof layer — buyers, EDGAR links) + backend date filter
-- [ ] **03-03** Performance Tracker (accountability — daily P&L through 90d lifecycle)
-- [ ] Sample data CSV with alpha metrics
+**Numbers:** 141 strong_buy, 67.4% HR, +9.0% alpha (p<0.001), $300M-$5B midcap
+
+### Completed
+- [x] **03-01** Frontend cleanup — deleted 14 pages, 14 components, stripped to clean shell
+- [x] **03-02** Backend cleanup — deleted 17 routes, 15 services (14K lines removed)
+- [x] **Visual design** — brainstorming with mockups (Minimal/Modern style)
+- [x] **03-03** Signal pattern research — buy/mcap, insider count, value buckets
+- [x] **03-04** Backfill Jun-Nov 2024 — full pipeline, 6 months, earnings filter applied
+- [x] **03-05** Data verification — coverage 94.5%, Oct-Nov 2025 patched, all months verified
+- [x] **03-06** Signal performance service rewrite (TDD, 34 tests, stored data, historical mcap)
+- [x] **03-07** Frontend pages built — Signal List (hero+cards), Signal Detail (buyers+SEC), Performance Tracker
+- [x] **03-08** Dead code cleanup — 6 more services deleted, event_detail stripped, api.ts cleaned
+- [x] Filing date fix — returns from actionable date, not transaction date
+- [x] Midcap cap $5B (was $10B, p=0.018)
+- [x] Precomputed dashboard stats blob
+- [x] Signal riders — High Conviction / Standard with pattern profile
+
+### Remaining
+- [ ] Hostile activist flag in Signal Detail (API needs to return it)
+- [ ] Precompute snapshot data (avoid live cluster detection on dashboard load)
 - [ ] S3 bucket signal delivery
-- [ ] Dashboard stripped of all deprecated 8-K/M&A references
+- [ ] Sample data CSV with alpha metrics
 
 ## Phase 4: Operations 📋 PLANNED
 **Goal:** Daily automated signal generation
