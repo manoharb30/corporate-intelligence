@@ -5,40 +5,65 @@
 | Version | Milestone | Status | Date |
 |---------|-----------|--------|------|
 | v1.0 | Signal Quality | ✅ Complete | 2026-04-18 |
-| v1.1 | _TBD (marketing + operations)_ | 📋 Pending scope | — |
+| v1.1 | Hedge Fund Research Delivery | 🚧 In Progress | Started 2026-04-19 |
 
 ## Current Milestone
 
-**v1.0 Signal Quality** (1.0.0)
-Status: ✅ Complete
-Completed: 2026-04-18
-See: .paul/MILESTONES.md · .paul/milestones/v1.0.0-ROADMAP.md
+**v1.1 Hedge Fund Research Delivery** (1.1.0-dev)
+Status: 🚧 In Progress
+Started: 2026-04-19
+Phases: 1 of 3 complete (Phase 4 ✅)
 
-## Next Milestone
+**Theme:** Package v1.0's signal methodology and performance data as a defensible institutional research brief for Citadel, Squarepoint, and Final. The funnel *is* the product — 141 mature strong_buy signals is the destination; the methodology narrative is the moat.
 
-_To be scoped — focus will be marketing + operational work._
-Run `/paul:discuss-milestone` to explore and articulate the vision,
-or `/paul:milestone` to create one directly.
+**Scope anchors:**
+- 141 mature strong_buy signals (Jun 2024 – Apr 2026, 22 months)
+- Methodology story: raw Form 4 → P classification → cluster detection → midcap → earnings proximity → hostile filter → maturity
+- Fresh write — no reference to 8-K M&A, congressional trades, or ownership-network hypotheses
+- One master PDF (not per-fund customized)
+- Targeted delivery to Citadel, Squarepoint, Final
 
-## Deferred Phases (carried from v1.0, available for next milestone)
+### Phases
 
-### Phase 4: Operations 📋 DEFERRED
-**Goal:** Daily automated signal generation
+| Phase | Name | Plans | Status | Completed |
+|-------|------|-------|--------|-----------|
+| 4 | Signal Data Export | 1/1 | ✅ Complete | 2026-04-19 |
+| 5 | Research Brief PDF | TBD | Not started | — |
+| 6 | Per-Fund Delivery | TBD | Not started | — |
+
+### Phase 4: Signal Data Export
+
+**Focus:** Export all `SignalPerformance` data from Neo4j into CSV + Parquet with full provenance — filing URL, Form 4 URLs per cluster member, CIK, ticker, cluster members, filing date, signal date, returns at 30/60/90d, SPY alpha, maturity flag, hostile flag, market cap tier. This becomes the data appendix of the research brief and the artifact attached to delivery emails.
+Plans: TBD (defined during /paul:plan)
+
+### Phase 5: Research Brief PDF
+
+**Focus:** Methodology-first research brief. Funnel diagram with drop-off counts at each filter stage, headline performance table across all 141 signals, statistical significance (hit rate, alpha, p-values), caveats (sample size, survivorship, market regime). Clean narrative — no deprecated-framework references. Output: one master PDF, polished for institutional readers.
+Plans: TBD (defined during /paul:plan)
+
+### Phase 6: Per-Fund Delivery
+
+**Focus:** Distribute master PDF + data appendix to Citadel, Squarepoint, Final with short personalized cover notes. Set up tracking (opens, replies) and follow-up cadence. Capture feedback into a structured log for future milestone input.
+Plans: TBD (defined during /paul:plan)
+
+## Backlog (not scheduled)
+
+Carried forward from v1.0 but not part of v1.1 scope:
+
+### Operations
 - [ ] Daily auto-ingest (cron/scheduler)
 - [ ] Signal alert system (new strong_buy → notify)
 - [ ] Price/market cap freshness automation
 - [ ] Monitoring/health checks
 
-### Phase 5: Scale 📋 DEFERRED
-**Goal:** Revenue + growth
-- [ ] First paid institutional client
+### Scale
+- [ ] First paid institutional client (may be partially addressed by v1.1 delivery outcomes)
 - [ ] Neudata marketplace listing
 - [ ] Historical data licensing
 - [ ] Extended coverage (2023-2024 backfill)
 - [ ] S3 bucket signal delivery
-- [ ] Sample data CSV with alpha metrics
 
-### Other Deferred Items
+### Research
 - [ ] Window size experiment (30d vs 40d) — needs non-destructive analysis approach
 
 ## Completed Milestones
@@ -62,4 +87,4 @@ Milestone log: `.paul/MILESTONES.md`
 
 ---
 *ROADMAP.md — Updated when phases complete or scope changes*
-*Last updated: 2026-04-18 after v1.0 Signal Quality*
+*Last updated: 2026-04-19 — Phase 4 (Signal Data Export) complete*

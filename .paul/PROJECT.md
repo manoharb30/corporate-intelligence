@@ -13,9 +13,9 @@ Hedge funds get pre-filtered insider conviction signals with 67.4% hit rate and 
 | Attribute | Value |
 |-----------|-------|
 | Type | Application (Data Product) |
-| Version | 1.0.0 |
-| Status | Production (ci.lookinsight.ai) — v1.0 Signal Quality shipped |
-| Last Updated | 2026-04-18 |
+| Version | 1.1.0-dev |
+| Status | Production (ci.lookinsight.ai) — v1.1 Phase 4 (Signal Data Export) shipped; Phase 5 (Research Brief) in progress |
+| Last Updated | 2026-04-19 |
 
 **Production URLs:**
 - https://ci.lookinsight.ai: Web dashboard (Vercel + Railway)
@@ -52,22 +52,27 @@ Hedge funds get pre-filtered insider conviction signals with 67.4% hit rate and 
 - [x] Signal Performance Service rewrite (TDD, 34 tests, stored data) — v1.0 Signal Quality
 - [x] Precomputed dashboard + snapshot blobs — v1.0 Signal Quality
 - [x] 22 months backfilled (Jun 2024 – Apr 2026) — v1.0 Signal Quality
+- [x] 141-signal CSV + Parquet export with 32-column provenance schema — v1.1 Phase 4
+- [x] DATA_DICTIONARY.md with cohort definition, derived formulas, caveats, reproducibility — v1.1 Phase 4
+- [x] verify_export.py — Neo4j-live audit tool (row count + null audit + 5-signal spot-check) — v1.1 Phase 4
+- [x] backend/exports/ as layer-3 delivery module — v1.1 Phase 4
 
 ### Active (In Progress)
 
-_None — v1.0 closed. Next milestone (marketing + operations) pending scope via /paul:discuss-milestone._
+- [ ] v1.1 Phase 5: Research Brief PDF — methodology-first write of the funnel story, built on the Phase 4 data appendix
+- [ ] v1.1 Phase 6: Per-Fund Delivery — email + attachments to Citadel, Squarepoint, Final with tracking
 
-### Deferred (Next Milestone)
+### Deferred (Backlog, post-v1.1)
 
 - [ ] Daily auto-ingest automation (cron/scheduler)
 - [ ] Signal alert system (new strong_buy → notify)
 - [ ] Price/market cap freshness automation
 - [ ] Monitoring/health checks
-- [ ] S3 bucket signal delivery
-- [ ] Sample data CSV with alpha metrics
-- [ ] First paid institutional client
+- [ ] S3 bucket signal delivery (hedge-fund delivery channel)
+- [ ] First paid institutional client (v1.1 delivery may partially address this)
 - [ ] Neudata marketplace listing
 - [ ] Extended coverage backfill (2023–2024)
+- [ ] Industry enrichment beyond SEC SIC metadata (24% SIC-null rate observed in Phase 4)
 - [ ] Window size experiment (30d vs 40d) — non-destructive analysis
 
 ### Out of Scope
@@ -141,6 +146,11 @@ _None — v1.0 closed. Next milestone (marketing + operations) pending scope via
 | Historical market cap via price ratio | current_mcap × (signal_price / current_price); 5/5 spot checks | 2026-04-17 | Active |
 | Confidence tiers informational, not filters | p=0.11 for High vs Standard — directional, not proven | 2026-04-17 | Active |
 | v1.0 Signal Quality closed with 3 phases | Pivoting to marketing + operations; Phases 4-5 deferred to new milestone | 2026-04-18 | Active |
+| v1.1 milestone = Hedge Fund Research Delivery (3 phases) | Methodology story is the product; one master PDF; fresh write excluding deprecated frameworks | 2026-04-19 | Active |
+| 32-column signal schema locked for v1.1 data appendix | Reproducible delivery format with type-enforced Parquet + self-referencing CSV | 2026-04-19 | Active |
+| hostile_flag exported as informational column (3/141 true) | v1.0 classification preserved; data freely available; buyer can weight the flag independently | 2026-04-19 | Active |
+| backend/exports/ as layer-3 delivery module | Keeps export scripts out of backend/ root; imports only from domain+data, never api | 2026-04-19 | Active |
+| Reuse InsiderClusterService.get_cluster_detail for buyer provenance | Avoids reimplementing cluster-window logic; 100% semantically aligned with v1.0 cluster definition | 2026-04-19 | Active |
 
 ## Success Metrics
 
@@ -177,4 +187,4 @@ _None — v1.0 closed. Next milestone (marketing + operations) pending scope via
 
 ---
 *PROJECT.md — Updated when requirements or context change*
-*Last updated: 2026-04-18 after v1.0 Signal Quality*
+*Last updated: 2026-04-19 after v1.1 Phase 4 (Signal Data Export)*

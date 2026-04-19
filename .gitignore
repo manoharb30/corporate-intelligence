@@ -72,3 +72,6 @@ backend/full_dead_code_audit.py
 
 # Superpowers brainstorm files
 .superpowers/
+
+# Data exports (v1.1+)
+backend/exports/out/

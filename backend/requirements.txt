@@ -28,6 +28,9 @@ anthropic>=0.18.0
 # Stock price data
 yfinance>=0.2.0
 
+# Data export (v1.1)
+pyarrow>=15.0
+
 # Development
 pytest>=7.4.0
 pytest-asyncio>=0.23.0
