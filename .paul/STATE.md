@@ -4,28 +4,65 @@
 
 Version: 1.1.0-dev
 Milestone: v1.1 Hedge Fund Research Delivery — 🚧 In Progress
-Phase: 5 of 6 (Research Brief PDF) — Ready to plan
-Plan: Not started
-Status: Phase 4 complete; ready to plan Phase 5
-Last activity: 2026-04-19 — Phase 4 transition complete (PROJECT.md evolved, ROADMAP marked complete, git commit pending user approval)
+Phase: 5 of 6 (Research Brief PDF) — Plan 05-02 created, awaiting approval
+Plan: 05-02 created (PDF rendering)
+Status: PLAN created, ready for APPLY
+Last activity: 2026-04-19 — Created .paul/phases/05-research-brief-pdf/05-02-PLAN.md
 
 Progress:
-- v1.1 Hedge Fund Research Delivery: [███░░░░░░░] 33% (1/3 phases complete)
-- Phase 5 (Research Brief PDF): [░░░░░░░░░░] 0%
+- v1.1 Hedge Fund Research Delivery: [████░░░░░░] 40% (Phase 4 ✓, Phase 5 plan 05-01 ✓, 05-02 planning)
+- Phase 5 (Research Brief PDF): [███████░░░] 70% (05-01 content done, 05-02 planning)
 
 ## Loop Position
 
 ```
 PLAN ──▶ APPLY ──▶ UNIFY
-  ○        ○        ○     [Ready for Phase 5 PLAN]
+  ✓        ○        ○     [Plan 05-02 created, awaiting approval]
 ```
 
 ## Session Continuity
 
-Last session: 2026-04-19
-Stopped at: Phase 4 transitioned; git commit for the phase pending user approval
-Next action: Approve Phase 4 commit, then /paul:plan for Phase 5 (Research Brief PDF)
-Resume file: .paul/ROADMAP.md
+Last session: 2026-04-20
+Stopped at: Scoping-only session — confirmed next action is APPLY on Plan 05-02 (unchanged from 2026-04-19)
+Next action: /paul:apply .paul/phases/05-research-brief-pdf/05-02-PLAN.md
+Resume file: .paul/HANDOFF-2026-04-20.md
+Resume context:
+- No code changes this session — discussion only
+- User chose Option A: finish v1.1 before opening any 2024-backfill work
+- Post-v1.1 parking lot: new milestone "Data Coverage Expansion" → Phase 1 = Jan–May 2024 backfill (optionally 2023)
+- DB earliest coverage confirmed: Jun 2024 – Apr 2026 (22 months, per PROJECT.md)
+
+APPLY notes for UNIFY (plan 05-01):
+- Tasks completed: 3 auto + 1 checkpoint (all PASS, user-approved)
+- Significant spec changes during execution (user-directed, documented as scope additions):
+  1. Section 2 reframed from "Background and Thesis" to confident "Thesis"
+  2. Section 6 REPLACED: "Caveats" → "Academic Foundation" with 4 cited papers
+  3. Section 4.1-4.6 each extended with academic citations (Jeng/Metrick/Zeckhauser 2003, Cohen/Malloy/Pomorski 2012, Lakonishok & Lee 2001, Seyhun 1986, Ke/Huddart/Petroni 2003)
+  4. Section 5: added 5.5 high-conviction subset (signal_level), 5.6 hostile overlap (renumbered), 5.7 Signal-level performance log (month-grouped with "Month Year" subheadings, 17 months)
+  5. signal_level added as 33rd column in Phase 4 CSV (scope-creep, user-approved option A) — DATA_DICTIONARY.md updated, verify_export still passes 0/5 mismatches
+- New artifacts:
+  - backend/exports/brief_stats.py (computes funnel, headline, CI, p-values, breakdowns)
+  - backend/exports/brief_charts.py (3 PNG charts: funnel, return distribution, alpha waterfall)
+  - backend/exports/brief_signal_table.py (month-grouped per-signal markdown emitter)
+  - .paul/phases/05-research-brief-pdf/stats.json (machine-readable facts for the brief)
+  - .paul/phases/05-research-brief-pdf/charts/*.png (3 files)
+  - .paul/phases/05-research-brief-pdf/brief_v1_1.md (533 lines, 6477 words, 8 sections)
+  - .paul/phases/05-research-brief-pdf/per_signal_table.md (generated intermediate, 261 lines)
+- Dependencies added: scipy>=1.11, matplotlib>=3.8 (backend/requirements.txt)
+- Data fact discovered: alpha p-value is 0.0022 (two-sided t-test), not <0.001 as PROJECT.md asserted; brief honors the computed value
+
+### Git State
+
+Last commit: 5f29237 — feat(exports): v1.1 Phase 4 — hedge fund signal data export
+Branch: main
+Feature branches merged: none (worked directly on main)
+Pending untracked (deferred from 04-18 handoff cleanup):
+  - backend/ pipeline scripts (backfill_*, run_*, prefilter_p, classify_p_with_prefilter, etc.)
+  - .paul/phases/03-institutional-positioning/ (v1.0 phase dir never committed)
+  - Root PDFs, create_ppt.py, export_neudata_samples.py, generate_data_catalog.py
+  - Neo4j-*.txt files (likely credentials — needs inspection)
+  - .design-review/, .jez/, docs/superpowers/, neo4j/*.md
+  - backend/lookinsight-implementation-plan.md, lookinsight-roadmap.docx
 
 APPLY notes for UNIFY:
 - Tasks completed: 2 of 2
