@@ -9,6 +9,55 @@ Completed milestone log for this project.
 | v1.2 Signal Integrity — matured immutability | 2026-04-20 | same-day | 1 phase, 1 plan; +4 regression tests |
 | v1.3 Pipeline Simplification — strong_buy only | 2026-04-20 | same-day | 1 phase, 1 plan; +3 regression tests; 372 legacy rows deleted |
 | v1.4 Signal Quality Audit — ground-truth mcap + per-signal post-mortem | 2026-04-20 | same-day | 4 phases, 4 plans; +11 tests; 141/142 mcap corrected; zero new filters (Bonferroni) |
+| v1.5 Signal Tier Extension — REJECTED | 2026-04-20 | same-day | 3 phases, 3 plans; 441 clusters analyzed; no tier adopted per Bonferroni |
+
+---
+
+## ✅ v1.5 Signal Tier Extension — small_cap + large_cap (investigated, REJECTED)
+
+**Version:** 1.5.0
+**Completed:** 2026-04-20
+**Duration:** Same-day (single session, 3 phases, autonomous execution per user grant)
+
+### Stats
+
+| Metric | Value |
+|---|---|
+| Phases | 3 (13, 14, 15) |
+| Plans | 3 |
+| Candidate clusters analyzed | 441 |
+| Ground-truth XBRL resolved | 431 (97.7%) |
+| Tiers adopted | 0 |
+| Neo4j mutations | 0 |
+
+### Key results
+
+| Tier | n_mature | Hit rate | Avg return | p_bonferroni | Verdict |
+|---|---|---|---|---|---|
+| small ($100M–$300M) | 51 | 52.94% | +11.77% | 0.5301 | REJECT |
+| midcap ($300M–$5B) baseline | 137 | 64.96% | +12.64% | — | baseline |
+| large (>$5B) | 61 | 52.46% | +7.58% | 0.3443 | REJECT |
+| small + large combined | 112 | 52.68% | +9.50% | 0.1587 | REJECT |
+
+### Key accomplishments
+
+**Phase 13:** Reused v1.4's XBRL client over full cluster-detection output. 441-row tier candidates CSV.
+
+**Phase 14:** Per-tier significance analysis. Small and large sub-pools have ~53% hit rate vs midcap 65% — substantive ~12pp gap but fails multiple-testing bar.
+
+**Phase 15:** NO ADOPTION. conviction_tier stays `{'strong_buy'}`. All prior invariants (v1.2 matured-immutability, v1.3 strong_buy-only, v1.4 methodology_version) preserved.
+
+### Key decision
+
+Tier extension rejected. Midcap is load-bearing, not arbitrary. Dataset growth is the precondition for any future tier adoption (combined pool hit raw p=0.053 — a few hundred more signals would likely cross the bar).
+
+### Commit
+
+`e63cbd5` — feat(v1.5): Signal tier extension investigated, REJECTED (3 phases)
+
+### Headline numbers (unchanged by design)
+
+**142 mature strong_buy · 66.9% hit rate · +14.04% avg return · +8.72% avg alpha.**
 
 ---
 
