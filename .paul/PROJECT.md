@@ -77,6 +77,7 @@ Hedge funds get pre-filtered insider conviction signals with 67.4% hit rate and 
 
 - [x] Ground-truth market cap via SEC EDGAR XBRL — `mcap_at_signal_true` backfilled on 141/142 mature strong_buy signals (99.3%). XBRL client + backfill script + 11 unit tests. Top ratio-estimate errors revealed: ANDG/RPAY/ONDS/SEI each off by 60–93%. (Phase 9)
 - [x] Per-signal audit template — `signal_audit_v1_4.csv` (142 rows × 33 cols) produced deterministically from stored data only. Used as input for Phase 11 classification. Key finding: naive midcap filter on TRUE mcap would drop 10 signals with 80% hit rate / +33% return — the old ratio-estimate was effectively a different filter, not a worse one. Phase 11 to investigate with p-values. (Phase 10)
+- [x] Classification + significance testing — 22 filter candidates tested with Fisher's exact + Mann-Whitney U + Bonferroni correction. **Zero pass p<0.05 Bonferroni bar**. Per-loser detail emitted (47 blocks, unclassified placeholders). Naive true-mcap midcap filter formally rejected. Product implication: 142 signals too small to support filter discovery under multiple-testing discipline; growing the dataset is the highest-leverage next move. (Phase 11)
 
 ### Active (In Progress)
 
@@ -182,6 +183,8 @@ _No milestone currently defined. Run `/paul:discuss-milestone` to scope next._
 | Post-signal XBRL fallback (within 90d) for late-XBRL issuers | 2 signals (ANDG, CRGY) had no pre-signal XBRL because the first 10-Q/10-K XBRL filing postdates signal_date. Using nearest-quarter-after is <5% different for stable issuers and preferred over null. Labeled distinctly as `xbrl_post_signal_approx` in provenance. | 2026-04-20 | Active |
 | Audit CSV is deterministic (no exported_at column) | Byte-level reproducibility is an AC for the audit; any non-deterministic field (timestamps) excluded. Re-running the generator with unchanged inputs must produce an identical file. | 2026-04-20 | Active |
 | Midcap band on true mcap NOT obviously correct (Phase 10 finding) | Tightening the filter using ground-truth mcap drops 10 winners with 80% hit rate. The old noisy ratio-estimate was effectively a different filter, not a worse one. Phase 11 must test with p-values before committing to any new band. | 2026-04-20 | Active |
+| No new filters adopted in v1.4 (Phase 11 finding) | 22 candidates tested. Zero cleared Bonferroni p<0.05. 142-signal pool too small for filter discovery under strict multiple-testing discipline. Dataset growth is a statistical precondition for future filter refinement. | 2026-04-20 | Active |
+| "Leaked winners" are mislabeled, not useful as midcap strong_buys | 10 signals in the 142 pool have true mcap outside the $300M–$5B band (8 small-cap + 2 large-cap). They are real winners, but they are not midcap signals. They leaked in due to the ratio-estimate error. Treating them as midcap is incorrect; extending tier definitions (small_cap_strong_buy, large_cap_strong_buy) is the principled fix. Deferred to v1.5. | 2026-04-20 | Active |
 
 ## Success Metrics
 
@@ -218,4 +221,4 @@ _No milestone currently defined. Run `/paul:discuss-milestone` to scope next._
 
 ---
 *PROJECT.md — Updated when requirements or context change*
-*Last updated: 2026-04-20 after v1.4 Phase 10 (per-signal audit template)*
+*Last updated: 2026-04-20 after v1.4 Phase 11 (classification + significance)*

@@ -4,10 +4,10 @@
 
 Version: 1.4.0-dev
 Milestone: v1.4 Signal Quality Audit — ground-truth mcap + per-signal post-mortem
-Phase: 10 of 12 (Per-signal audit template) — ✅ Complete
-Plan: 10-01 UNIFIED
-Status: Ready to plan Phase 11 (Classification + significance testing)
-Last activity: 2026-04-20 — Phase 10 complete; audit CSV at backend/exports/out/signal_audit_v1_4.csv
+Phase: 11 of 12 (Classification + significance testing) — ✅ Complete
+Plan: 11-01 UNIFIED
+Status: Ready to plan Phase 12 (Filter redesign + re-export) — narrow scope
+Last activity: 2026-04-20 — Phase 11 complete; 22 candidates tested, zero pass Bonferroni; Phase 12 guidance: don't add filters, just add methodology_version column
 
 Progress:
 - v1.4 Signal Quality Audit: [██░░░░░░░░] 16% (phase 9 apply done, 3 phases pending)
@@ -17,8 +17,19 @@ Progress:
 
 ```
 PLAN ──▶ APPLY ──▶ UNIFY
-  ✓        ✓        ✓     [Phase 10 complete — ready to plan Phase 11]
+  ✓        ✓        ✓     [Phase 11 complete — ready to plan Phase 12]
 ```
+
+### Phase 11 UNIFY result
+- 1 of 1 plans complete (11-01)
+- Tasks: 3 of 3 DONE, all 4 ACs satisfied
+- Zero filter candidates pass Bonferroni p<0.05.
+- Naive true-mcap midcap filter formally REJECTED with evidence.
+- v1.0 earnings rule confirmed operational (0 mature rows violate it).
+- 47 loser blocks emitted with `root_cause_tag: unclassified` placeholders.
+- Phase 12 guidance: NO new filters. Just methodology_version column + display decision.
+- Product implication: dataset growth is the next highest-leverage move.
+- Scope carved out for v1.5: tier extension (small_cap + large_cap) — 299 clusters out of pool; user granted autonomous-mode execution.
 
 ### Phase 10 UNIFY result
 - 1 of 1 plans complete (10-01)
@@ -40,7 +51,7 @@ PLAN ──▶ APPLY ──▶ UNIFY
 - Top ratio-estimate errors corrected: ANDG -93%, RPAY -92%, ONDS -88%, SEI -86%, MRVI -60%, DNA -19%.
 
 ### Git State
-Last commit: 8fb4853 — feat(09-ground-truth-mcap): SEC XBRL shares-outstanding backfill (v1.4 Phase 9)
+Last commit: 7743111 — feat(10-signal-audit-template): per-signal audit CSV (v1.4 Phase 10)
 Branch: main
 Feature branches merged: none
 
@@ -66,14 +77,14 @@ Feature branches merged: none
 ## Session Continuity
 
 Last session: 2026-04-20
-Stopped at: Phase 9 complete (commit 8fb4853); ready to plan Phase 10
-Next action: /paul:plan (plan Phase 10: Per-signal audit template)
-Resume file: .paul/phases/09-ground-truth-mcap/09-01-SUMMARY.md
+Stopped at: Phase 10 complete (commit 7743111); ready to plan Phase 11
+Next action: /paul:plan (plan Phase 11: Classification + significance testing)
+Resume file: .paul/phases/10-signal-audit-template/10-01-SUMMARY.md
 Resume context:
-- Phase 9 shipped: 141/142 mature strong_buy have mcap_at_signal_true (139 exact + 2 approx; 1 unresolved GAM closed-end fund).
-- Big ratio-estimate corrections revealed (ANDG/RPAY/ONDS/SEI/MRVI all off 60-93%); these will be focus signals for Phase 11 classification testing.
-- Phase 10 goal: produce signal_audit_v1_4.csv (142 rows × 20+ deterministic columns) using the new mcap_at_signal_true + existing stored data.
-- Constraint: v1.2 immutability holds; additive properties only.
+- Phases 9-10 shipped. Audit CSV at backend/exports/out/signal_audit_v1_4.csv (142 × 33).
+- Unexpected Phase 10 finding: naive midcap filter on TRUE mcap DROPS 10 signals with 80% HR / +33% return — making the filter worse, not better. Phase 11 must investigate with p-values, not intuition.
+- Phase 11 consumes the audit CSV. Its output: per-loser root-cause tagging + validated filter candidates (p<0.05).
+- Constraint: v1.2 immutability holds; audit CSV is the only input to Phase 11 (no re-queries during analysis).
 
 ## Accumulated Decisions
 
