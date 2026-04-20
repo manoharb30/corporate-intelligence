@@ -6,6 +6,97 @@ Completed milestone log for this project.
 |-----------|-----------|----------|-------|
 | v1.0 Signal Quality | 2026-04-18 | 3 phases | 3 phases, 14 plans, production deployment |
 | v1.1 Hedge Fund Research Delivery | 2026-04-20 | 2 days | 2 phases shipped, 1 dropped; brief + data appendix |
+| v1.2 Signal Integrity — matured immutability | 2026-04-20 | same-day | 1 phase, 1 plan; +4 regression tests |
+| v1.3 Pipeline Simplification — strong_buy only | 2026-04-20 | same-day | 1 phase, 1 plan; +3 regression tests; 372 legacy rows deleted |
+
+---
+
+## ✅ v1.3 Pipeline Simplification — strong_buy only
+
+**Version:** 1.3.0
+**Completed:** 2026-04-20
+**Duration:** Same-day (created and shipped 2026-04-20)
+
+### Stats
+
+| Metric | Value |
+|--------|-------|
+| Phases | 1 (Phase 8 — Strong_buy-only pipeline) |
+| Plans | 1 (08-01) |
+| Files changed | 6 (signal_performance_service.py, snapshot_service.py, signal_performance.py API route, test_signal_performance_service.py, frontend/api.ts, neo4j/schema-report.md) |
+| New tests | 3 (TestComputeAllStrongBuyOnly) |
+| Total tests | 41 pass |
+| Legacy rows deleted | 372 (266 mature + 106 immature non-strong_buy) |
+| Mature strong_buy preserved | 142 (byte-identical) |
+
+### Key Accomplishments
+
+**Phase 8: Strong_buy-only pipeline**
+- `compute_all` no longer calls `detect_clusters(direction="sell")`; `_compute_one` short-circuits any cluster whose `conviction_tier != 'strong_buy'`. Sell + non-strong_buy tiers never enter SignalPerformance.
+- `snapshot_service.get_signal_list` stripped of sell detection, `insider_sell_cluster` emission, `_compute_sell_stats`, and `sell_stats` / `pass_stats` blob fields.
+- `signal_performance` API route `direction` regex tightened to `^(buy)$`.
+- Frontend `signal_type` type union narrowed to `'insider_cluster'`.
+- One-time Cypher migration deleted 372 legacy SignalPerformance rows.
+- v1.2 matured-immutability invariant upheld (142 matured strong_buy byte-identical before/after migration).
+- `InsiderClusterService` intentionally left parameterized for sell — unit tests still exercise it; only live callers changed.
+
+### Key Decisions
+
+| Decision | Rationale | Date |
+|----------|-----------|------|
+| Pipeline scope narrowed to strong_buy buy only | Sell + non-strong_buy tiers were legacy from pre-v1.0; never surfaced by product. Cleanup cuts compute cycles, storage, and confusion. | 2026-04-20 |
+| Keep `direction` + `conviction_tier` columns on SignalPerformance | Future-proofs schema if tiers/directions reintroduced later. Always `'buy'` / `'strong_buy'` now. | 2026-04-20 |
+| Keep InsiderClusterService parameterized for sell | Utility stays flexible (tests exercise it); only live callers changed — lower blast radius. | 2026-04-20 |
+
+### Commit
+
+`edf6a41` — feat(08-strong-buy-only): narrow pipeline to strong_buy buy only (v1.3 complete)
+
+---
+
+## ✅ v1.2 Signal Integrity — matured immutability
+
+**Version:** 1.2.0
+**Completed:** 2026-04-20
+**Duration:** Same-day (created and shipped 2026-04-20)
+
+### Stats
+
+| Metric | Value |
+|--------|-------|
+| Phases | 1 (Phase 7 — mcap snapshot / matured immutability) |
+| Plans | 1 (07-01) |
+| Files changed | 4 (signal_performance_service.py, signal_filter.py, test_signal_performance_service.py, neo4j/schema-report.md) |
+| New tests | 4 (TestComputeAllPreservesMatured) |
+| Total tests | 38 pass |
+| Matured rows preserved | 408 (byte-identical across recompute) |
+
+### Key Accomplishments
+
+**Phase 7: mcap snapshot (Matured-signal Immutability)**
+- Initially proposed as "add `market_cap_at_signal` snapshot column"; during design the simpler root-cause fix emerged: **never recompute matured rows**. Dropped the snapshot field in favor of immutability.
+- `compute_all` now reads matured `signal_id`s BEFORE any DELETE; the DELETE clause filters `WHERE is_mature = false OR is_mature IS NULL` so matured rows survive untouched.
+- `_compute_one` short-circuits (returns `None`) when the cluster's prospective `signal_id` is already matured.
+- New `_fetch_all_for_dashboard` helper reshapes the full SignalPerformance set (preserved matured + freshly computed) for `_save_dashboard_stats`.
+- `signal_filter.py` TZ-suffix fix (`signal_date[:10]`) — surfaced by May 2024 backfill where some `transaction_date` values carry `-05:00`.
+- Four new regression tests (AC-1 short-circuit, AC-2 new-cluster, AC-3 immature-refresh, backward-compat).
+
+### Key Decisions
+
+| Decision | Rationale | Date |
+|----------|-----------|------|
+| Matured SignalPerformance nodes are immutable | A matured signal is a frozen historical record; recompute should never drift classifications. | 2026-04-20 |
+| Drop `market_cap_at_signal` field in favor of matured-preservation | Snapshot field was redundant once we stopped touching matured rows entirely. Simpler and respects the same invariant. | 2026-04-20 |
+
+### Also Completed During Session
+
+- May 2024 Form 4 backfill (first extended-coverage month).
+- Hardened schema discipline: added `Before writing database queries` rule to `CLAUDE.md` + expanded SignalPerformance section in `neo4j/schema-report.md`.
+- `.paul/backfill-log.md` scaffold for opportunistic monthly-backfill journaling.
+
+### Commit
+
+`df2bb8f` — feat(07-mcap-snapshot): matured-signal immutability invariant (v1.2 complete)
 
 ---
 

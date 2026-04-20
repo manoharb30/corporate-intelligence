@@ -13,8 +13,8 @@ Hedge funds get pre-filtered insider conviction signals with 67.4% hit rate and 
 | Attribute | Value |
 |-----------|-------|
 | Type | Application (Data Product) |
-| Version | 1.1.0 |
-| Status | Production (ci.lookinsight.ai) — v1.1 complete; awaiting v1.2 definition |
+| Version | 1.3.0 |
+| Status | Production (ci.lookinsight.ai) — v1.3 complete; awaiting v1.4 definition |
 | Last Updated | 2026-04-20 |
 
 **Production URLs:**
