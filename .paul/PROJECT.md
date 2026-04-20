@@ -73,6 +73,10 @@ Hedge funds get pre-filtered insider conviction signals with 67.4% hit rate and 
 
 - [x] Pipeline scope narrowed to strong_buy buy only — legacy sell direction + non-strong_buy tiers (buy, watch) removed from compute_all, snapshot_service, and API route. 372 legacy rows deleted; 142 mature strong_buy preserved byte-identically (Phase 8)
 
+### In progress (v1.4, Phase 9 shipped 2026-04-20)
+
+- [x] Ground-truth market cap via SEC EDGAR XBRL — `mcap_at_signal_true` backfilled on 141/142 mature strong_buy signals (99.3%). XBRL client + backfill script + 11 unit tests. Top ratio-estimate errors revealed: ANDG/RPAY/ONDS/SEI each off by 60–93%. (Phase 9)
+
 ### Active (In Progress)
 
 _No milestone currently defined. Run `/paul:discuss-milestone` to scope next._
@@ -172,6 +176,9 @@ _No milestone currently defined. Run `/paul:discuss-milestone` to scope next._
 | Pipeline scope narrowed to strong_buy buy only | Sell direction and non-strong_buy tiers (buy, watch) were legacy from pre-v1.0 architecture; never surfaced by product. Removing them cuts compute cycles, storage, and confusion (e.g., 408 vs 142 mismatch that caused user friction). | 2026-04-20 | Active |
 | Keep `direction` + `conviction_tier` columns on SignalPerformance | Even though both fields will always be `'buy'` / `'strong_buy'` now, keeping them future-proofs the schema if tiers/directions are reintroduced later. | 2026-04-20 | Active |
 | Keep InsiderClusterService parameterized for sell | Utility stays flexible (unit tests exercise it); only live callers changed. Lower blast radius than ripping out the lower layer. | 2026-04-20 | Active |
+| Ground-truth mcap sourced from SEC XBRL primary data | Price-ratio estimate (`current_mcap × signal_price/current_price`) breaks on reverse splits, dilution, buybacks. SEC EDGAR XBRL company-facts is free, official, dated quarterly — the only trustworthy source. | 2026-04-20 | Active |
+| XBRL client tries 5 concepts as fallback chain | Different filers tag shares outstanding differently. Dual-class issuers (MRVI), post-IPO entities (FNKO), closed-end funds all need different concepts or fail. `WeightedAverageNumberOfSharesOutstandingBasic` is within <2% of point-in-time for stable issuers. | 2026-04-20 | Active |
+| Post-signal XBRL fallback (within 90d) for late-XBRL issuers | 2 signals (ANDG, CRGY) had no pre-signal XBRL because the first 10-Q/10-K XBRL filing postdates signal_date. Using nearest-quarter-after is <5% different for stable issuers and preferred over null. Labeled distinctly as `xbrl_post_signal_approx` in provenance. | 2026-04-20 | Active |
 
 ## Success Metrics
 
@@ -208,4 +215,4 @@ _No milestone currently defined. Run `/paul:discuss-milestone` to scope next._
 
 ---
 *PROJECT.md — Updated when requirements or context change*
-*Last updated: 2026-04-20 after v1.3 Phase 8 (strong_buy-only pipeline)*
+*Last updated: 2026-04-20 after v1.4 Phase 9 (ground-truth mcap)*

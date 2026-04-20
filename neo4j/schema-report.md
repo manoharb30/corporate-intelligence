@@ -308,6 +308,22 @@ Computed nodes produced by `SignalPerformanceService.compute_all()` (delete-then
 | `is_mature`           | bool    | True when `price_day90` is available                    |
 | `computed_at`         | string  | ISO timestamp                                           |
 
+### Ground-truth market cap (v1.4, Phase 9)
+
+`mcap_at_signal_true` is the primary-source market cap at signal date:
+- **Source:** SEC EDGAR XBRL company-facts API (`data.sec.gov/api/xbrl/companyfacts/`)
+- **Formula:** `avg_raw_Form4_price × shares_outstanding_from_nearest_prior_10Q_or_10K`
+- Survives reverse splits, dilution, buybacks because it uses the primary-source shares count, not a yfinance ratio.
+- Introduced in v1.4 Phase 9 and populated on the 142 mature strong_buy rows **without mutating any existing field**.
+- Provenance sidecar properties:
+  - `mcap_at_signal_true_source` — always `'xbrl'` for v1.4
+  - `mcap_at_signal_true_shares` — the shares-outstanding integer used
+  - `mcap_at_signal_true_shares_end_date` — end date of the 10-Q/10-K that reported this value
+  - `mcap_at_signal_true_avg_raw_px` — value-weighted avg Form 4 `price_per_share` for the cluster's buys
+  - `mcap_at_signal_true_computed_at` — ISO timestamp of the backfill run
+
+**Don't replace `market_cap` with this field yet.** Phase 12 decides whether to use it for classification. Forward-going ingest-time capture (populating this field for new signals at creation time) is explicitly scoped OUT of v1.4 — will be its own phase/milestone.
+
 ### Scope invariant (enforced 2026-04-20, v1.3)
 
 `SignalPerformance` only stores rows where `direction = 'buy' AND conviction_tier = 'strong_buy'`.
