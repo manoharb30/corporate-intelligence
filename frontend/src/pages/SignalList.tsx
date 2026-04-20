@@ -13,12 +13,12 @@ function formatDate(dateStr: string): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
+// "High Conviction" = backend signal_level='high' (3+ distinct buyers).
+// Medium conviction = 2 buyers (the minimum strong_buy threshold).
+// The snapshot response doesn't carry signal_level directly; num_insiders is the 1:1 proxy
+// since the backend rule is exactly num_insiders >= 3 → 'high'.
 function isHighConviction(signal: SnapshotSignal): boolean {
-  return (
-    signal.num_insiders <= 5 &&
-    signal.total_value < 1_000_000 &&
-    signal.conviction_tier === 'strong_buy'
-  )
+  return signal.num_insiders >= 3 && signal.conviction_tier === 'strong_buy'
 }
 
 type ViewMode = '30d' | '60d' | '90d'
@@ -171,7 +171,7 @@ export default function SignalList() {
                         </span>
                       ) : (
                         <span className="bg-gray-100 text-gray-500 px-2 py-0.5 rounded text-xs font-bold uppercase">
-                          Standard
+                          Medium Conviction
                         </span>
                       )}
                     </div>

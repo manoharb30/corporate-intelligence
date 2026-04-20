@@ -55,10 +55,14 @@ export default function SignalDetail() {
   const totalValue = buyers.reduce((sum, b) => sum + b.total_value, 0)
   const numInsiders = cluster?.num_buyers || buyers.length
 
-  // Conviction assessment
+  // Conviction level — read directly from backend signal_level.
+  // Backend definition: 'high' = 3+ distinct buyers; 'medium' = 2 buyers (minimum strong_buy).
+  // Previously this was a frontend heuristic (≤5 buyers AND <$1M) that mislabeled medium as high.
+  const isHighConviction = data.event.signal_level === 'high'
+
+  // Local color hints for the per-attribute HR breakdown below (NOT used for conviction label).
   const isSmallCluster = numInsiders <= 5
   const isModestValue = totalValue < 1_000_000
-  const isHighConviction = isSmallCluster && isModestValue
 
   // Market cap bucket HR (from FINAL-NUMBERS.md)
   const mcapHR = perf?.market_cap
@@ -98,15 +102,15 @@ export default function SignalDetail() {
           </span>
         ) : (
           <span className="self-start bg-slate-100 text-slate-700 border border-slate-200 px-3 py-1 rounded-md text-sm font-bold uppercase">
-            Standard
+            Medium Conviction
           </span>
         )}
       </div>
 
-      {/* Conviction reasoning */}
+      {/* Signal profile */}
       <div className={`rounded-lg p-4 mb-6 ${isHighConviction ? 'bg-green-50 border border-green-200' : 'bg-gray-50 border border-gray-200'}`}>
         <div className="text-sm font-semibold mb-2">
-          {isHighConviction ? 'Why High Conviction' : 'Signal Profile'}
+          Signal Profile
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-2 text-sm">
           <div>
@@ -134,8 +138,8 @@ export default function SignalDetail() {
         </div>
         <div className="text-xs text-gray-500 mt-2">
           {isHighConviction
-            ? 'Signals matching this profile historically have 71% hit rate with +11.8% alpha vs SPY (94 signals).'
-            : 'Signals outside the high-conviction criteria historically have 58% hit rate with +2.4% alpha vs SPY (69 signals).'}
+            ? 'High conviction (3+ distinct buyers) historically: 68.4% hit rate, +9.5% alpha vs SPY (79 mature signals).'
+            : 'Medium conviction (2 buyers, the minimum strong_buy threshold) historically: 65.1% hit rate, +7.8% alpha vs SPY (63 mature signals).'}
         </div>
       </div>
 
