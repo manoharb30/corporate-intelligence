@@ -17,6 +17,7 @@ from typing import Optional
 
 from app.db.neo4j_client import Neo4jClient
 from app.services.insider_cluster_service import InsiderClusterService
+from ingestion.sec_edgar.xbrl_client import SharesOutstandingEntry, XBRLClient
 
 logger = logging.getLogger(__name__)
 
@@ -204,14 +205,18 @@ class SignalPerformanceService:
 
         now = datetime.now()
 
-        # 5. Compute performance for clusters NOT already represented by a matured node
+        # 5. Compute performance for clusters NOT already represented by a matured node.
+        # Per-CIK XBRL cache: one HTTP fetch per unique CIK inside this run.
+        xbrl_cache: dict[str, list[SharesOutstandingEntry]] = {}
+
         performances = []
         all_clusters = [(c, "buy") for c in buy_clusters]
 
         for cluster, direction in all_clusters:
-            perf = SignalPerformanceService._compute_one(
+            perf = await SignalPerformanceService._compute_one(
                 cluster, direction, company_data, spy_series, industry_map, filing_date_map, now,
                 mature_ids=mature_ids,
+                xbrl_cache=xbrl_cache,
             )
             if perf:
                 performances.append(perf)
@@ -238,7 +243,7 @@ class SignalPerformanceService:
         return summary
 
     @staticmethod
-    def _compute_one(
+    async def _compute_one(
         cluster,
         direction: str,
         company_data: dict,
@@ -247,6 +252,7 @@ class SignalPerformanceService:
         filing_date_map: dict,
         now: datetime,
         mature_ids: Optional[set] = None,
+        xbrl_cache: Optional[dict] = None,
     ) -> Optional[dict]:
         """Compute performance for a single cluster using stored data.
 
@@ -257,6 +263,10 @@ class SignalPerformanceService:
         If the cluster's prospective signal_id is in `mature_ids`, returns None
         so the caller skips it — the existing matured SignalPerformance node
         stays untouched (immutability invariant).
+
+        If `xbrl_cache` is provided, also populates `mcap_at_signal_true_*`
+        provenance fields via SEC EDGAR XBRL (inline — v1.6). One fetch per
+        unique CIK per compute_all run; 1s pacing between distinct CIK fetches.
         """
         # Short-circuit: matured SignalPerformance is immutable. Don't recompute.
         if mature_ids is not None and cluster.accession_number in mature_ids:
@@ -334,6 +344,34 @@ class SignalPerformanceService:
         if conviction_tier != "strong_buy":
             return None
 
+        # v1.6: ground-truth mcap via SEC XBRL (inline). Cache per CIK in xbrl_cache.
+        mcap_at_signal_true = None
+        mcap_at_signal_true_source = None
+        mcap_at_signal_true_shares = None
+        mcap_at_signal_true_shares_end_date = None
+        if xbrl_cache is not None:
+            cik = cluster.cik
+            if cik not in xbrl_cache:
+                try:
+                    xbrl_cache[cik] = await XBRLClient.get_shares_outstanding(cik)
+                except Exception as e:
+                    logger.warning(f"XBRL fetch failed for cik={cik}: {e}")
+                    xbrl_cache[cik] = []
+                # Rate limit: 1s pacing between DISTINCT CIK fetches
+                await asyncio.sleep(1.0)
+            entries = xbrl_cache[cik]
+            picked = XBRLClient.pick_shares_at_or_before(entries, signal_date) if entries else None
+            if picked:
+                mcap_at_signal_true_source = "xbrl"
+            elif entries:
+                picked = XBRLClient.pick_nearest_post_signal(entries, signal_date, max_days=90)
+                if picked:
+                    mcap_at_signal_true_source = "xbrl_post_signal_approx"
+            if picked and hist_price:
+                mcap_at_signal_true = float(round(hist_price * picked.shares))
+                mcap_at_signal_true_shares = picked.shares
+                mcap_at_signal_true_shares_end_date = picked.end_date
+
         # SPY return + alpha FROM ACTIONABLE DATE
         spy_at_actionable = find_price(spy_series, actionable_date)
         spy_at_exit = find_price(spy_series, exit_date) if is_mature else None
@@ -369,6 +407,13 @@ class SignalPerformanceService:
             "is_mature": is_mature,
             "computed_at": now.isoformat(),
             "methodology_version": "v1.1",
+            # v1.6: inline ground-truth mcap provenance (may be None if XBRL unresolvable)
+            "mcap_at_signal_true": mcap_at_signal_true,
+            "mcap_at_signal_true_source": mcap_at_signal_true_source,
+            "mcap_at_signal_true_shares": mcap_at_signal_true_shares,
+            "mcap_at_signal_true_shares_end_date": mcap_at_signal_true_shares_end_date,
+            "mcap_at_signal_true_avg_raw_px": hist_price,
+            "mcap_at_signal_true_computed_at": now.isoformat() if mcap_at_signal_true is not None else None,
         }
 
         for d in DELAY_DAYS:
@@ -506,7 +551,13 @@ class SignalPerformanceService:
                         spy_return_90d: row.spy_return_90d,
                         is_mature: row.is_mature,
                         computed_at: row.computed_at,
-                        methodology_version: COALESCE(row.methodology_version, 'v1.1')
+                        methodology_version: COALESCE(row.methodology_version, 'v1.1'),
+                        mcap_at_signal_true: row.mcap_at_signal_true,
+                        mcap_at_signal_true_source: row.mcap_at_signal_true_source,
+                        mcap_at_signal_true_shares: row.mcap_at_signal_true_shares,
+                        mcap_at_signal_true_shares_end_date: row.mcap_at_signal_true_shares_end_date,
+                        mcap_at_signal_true_avg_raw_px: row.mcap_at_signal_true_avg_raw_px,
+                        mcap_at_signal_true_computed_at: row.mcap_at_signal_true_computed_at
                     })
                     WITH sp, row
                     MATCH (c:Company {cik: row.cik})

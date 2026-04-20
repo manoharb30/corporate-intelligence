@@ -10,8 +10,22 @@
 | v1.3 | Pipeline Simplification — strong_buy only | ✅ Complete | 2026-04-20 |
 | v1.4 | Signal Quality Audit — ground-truth mcap + per-signal post-mortem | ✅ Complete | 2026-04-20 |
 | v1.5 | Signal Tier Extension — small_cap + large_cap (investigated, REJECTED) | ✅ Complete | 2026-04-20 |
+| v1.6 | Forward-going mcap capture at signal creation | ✅ Complete | 2026-04-20 |
 
 ## Current Milestone
+
+**v1.6 Forward-going mcap capture** (1.6.0)
+Status: ✅ Complete
+Completed: 2026-04-20
+Phases: 1 of 1 complete
+
+**Outcome:** `_compute_one` now fetches SEC XBRL shares outstanding inline at signal creation; new SignalPerformance nodes carry `mcap_at_signal_true` + 5 provenance sidecars. 55/56 immature rows populated on first recompute (1 unresolvable XBRL). Matured rows unchanged. All mcap gaps from v1.4 are now closed.
+
+### Phase
+
+| Phase | Name | Plans | Status | Completed |
+|-------|------|-------|--------|-----------|
+| 16 | Inline XBRL mcap at compute_all time | 1/1 | ✅ Complete | 2026-04-20 |
 
 **v1.5 Signal Tier Extension — small_cap + large_cap** (1.5.0)
 Status: ✅ Complete (tier adoption REJECTED; midcap remains sole strong_buy tier)
@@ -174,4 +188,4 @@ Milestone log: `.paul/MILESTONES.md`
 
 ---
 *ROADMAP.md — Updated when phases complete or scope changes*
-*Last updated: 2026-04-20 — v1.5 complete (tier extension REJECTED)*
+*Last updated: 2026-04-20 — v1.6 complete (forward-going mcap inline)*

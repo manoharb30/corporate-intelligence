@@ -322,7 +322,16 @@ Computed nodes produced by `SignalPerformanceService.compute_all()` (delete-then
   - `mcap_at_signal_true_avg_raw_px` — value-weighted avg Form 4 `price_per_share` for the cluster's buys
   - `mcap_at_signal_true_computed_at` — ISO timestamp of the backfill run
 
-**Don't replace `market_cap` with this field yet.** Phase 12 decides whether to use it for classification. Forward-going ingest-time capture (populating this field for new signals at creation time) is explicitly scoped OUT of v1.4 — will be its own phase/milestone.
+**Don't replace `market_cap` with this field yet.** Phase 12 of v1.4 added the `methodology_version` column but kept `compute_conviction_tier` reading the ratio-estimate `market_cap` — the classification logic has not been switched over.
+
+### How mcap_at_signal_true is populated
+
+| Path | Since | When |
+|---|---|---|
+| One-time backfill via `backend/backfill_mcap_true.py` | v1.4 Phase 9 | 2026-04-20 on the 142 existing mature strong_buy rows |
+| Inline at signal creation via `_compute_one` | v1.6 Phase 16 | Every compute_all run from now on; populates new/immature SignalPerformance rows at creation |
+
+Matured nodes are never overwritten (v1.2 invariant). The field is populated once per node (either by the one-time backfill or by the first compute_all that creates the node) and is thereafter immutable.
 
 ### Methodology version (v1.4 Phase 12)
 

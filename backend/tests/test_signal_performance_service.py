@@ -4,6 +4,7 @@ Tests written FIRST. Service doesn't exist yet.
 All tests should FAIL until Task 3 implements the service.
 """
 
+import asyncio
 import pytest
 from unittest.mock import patch, AsyncMock
 
@@ -332,7 +333,7 @@ class TestComputeAllPreservesMatured:
         cluster = self._make_cluster(accession_number="CLUSTER-MATURE-X")
         mature_ids = {"CLUSTER-MATURE-X"}
 
-        result = SignalPerformanceService._compute_one(
+        result = asyncio.run(SignalPerformanceService._compute_one(
             cluster,
             direction="buy",
             company_data=self._make_company_data(cluster.cik),
@@ -341,7 +342,7 @@ class TestComputeAllPreservesMatured:
             filing_date_map={},
             now=datetime(2024, 10, 1),
             mature_ids=mature_ids,
-        )
+        ))
 
         assert result is None, "Matured signal_id must be short-circuited, not recomputed"
 
@@ -353,7 +354,7 @@ class TestComputeAllPreservesMatured:
         cluster = self._make_cluster(accession_number="CLUSTER-NEW-Y")
         mature_ids = {"CLUSTER-MATURE-X"}  # Y not in set
 
-        result = SignalPerformanceService._compute_one(
+        result = asyncio.run(SignalPerformanceService._compute_one(
             cluster,
             direction="buy",
             company_data=self._make_company_data(cluster.cik),
@@ -362,7 +363,7 @@ class TestComputeAllPreservesMatured:
             filing_date_map={},
             now=datetime(2024, 10, 1),
             mature_ids=mature_ids,
-        )
+        ))
 
         assert result is not None, "New cluster must be computed"
         assert result["signal_id"] == "CLUSTER-NEW-Y"
@@ -374,7 +375,7 @@ class TestComputeAllPreservesMatured:
 
         cluster = self._make_cluster(accession_number="CLUSTER-Z")
 
-        result = SignalPerformanceService._compute_one(
+        result = asyncio.run(SignalPerformanceService._compute_one(
             cluster,
             direction="buy",
             company_data=self._make_company_data(cluster.cik),
@@ -383,7 +384,7 @@ class TestComputeAllPreservesMatured:
             filing_date_map={},
             now=datetime(2024, 10, 1),
             mature_ids=None,
-        )
+        ))
 
         assert result is not None, "With mature_ids=None, every cluster is computed"
 
@@ -412,7 +413,7 @@ class TestComputeAllPreservesMatured:
                 series.append({"d": d.strftime("%Y-%m-%d"), "c": 40.0 + i * 0.1})
         company_data = {cluster.cik: {"market_cap": 1_000_000_000, "series": series}}
 
-        result = SignalPerformanceService._compute_one(
+        result = asyncio.run(SignalPerformanceService._compute_one(
             cluster,
             direction="buy",
             company_data=company_data,
@@ -421,7 +422,7 @@ class TestComputeAllPreservesMatured:
             filing_date_map={},
             now=now,
             mature_ids=mature_ids,
-        )
+        ))
 
         assert result is not None, "Immature signal (not in mature_ids) must be computed"
         assert result["signal_id"] == "CLUSTER-IMMATURE-W"
@@ -480,7 +481,7 @@ class TestComputeAllStrongBuyOnly:
         # num_buyers=1 forces compute_conviction_tier to return 'watch'
         cluster = self._make_cluster(num_buyers=1, total_buy_value=50_000)
 
-        result = SignalPerformanceService._compute_one(
+        result = asyncio.run(SignalPerformanceService._compute_one(
             cluster,
             direction="buy",
             company_data=self._make_company_data(cluster.cik, market_cap=1_000_000_000),
@@ -488,7 +489,7 @@ class TestComputeAllStrongBuyOnly:
             industry_map={},
             filing_date_map={},
             now=datetime(2024, 10, 1),
-        )
+        ))
 
         assert result is None, "watch-tier cluster must not enter SignalPerformance"
 
@@ -501,7 +502,7 @@ class TestComputeAllStrongBuyOnly:
         # compute_conviction_tier: is_midcap=True, has_value=False → 'buy' tier
         cluster = self._make_cluster(num_buyers=2, total_buy_value=50_000)
 
-        result = SignalPerformanceService._compute_one(
+        result = asyncio.run(SignalPerformanceService._compute_one(
             cluster,
             direction="buy",
             company_data=self._make_company_data(cluster.cik, market_cap=1_000_000_000),
@@ -509,7 +510,7 @@ class TestComputeAllStrongBuyOnly:
             industry_map={},
             filing_date_map={},
             now=datetime(2024, 10, 1),
-        )
+        ))
 
         assert result is None, "buy-tier cluster must not enter SignalPerformance"
 
@@ -521,7 +522,7 @@ class TestComputeAllStrongBuyOnly:
         # Midcap ($1B), 3 buyers, $500K → strong_buy
         cluster = self._make_cluster(num_buyers=3, total_buy_value=500_000)
 
-        result = SignalPerformanceService._compute_one(
+        result = asyncio.run(SignalPerformanceService._compute_one(
             cluster,
             direction="buy",
             company_data=self._make_company_data(cluster.cik, market_cap=1_000_000_000),
@@ -529,8 +530,118 @@ class TestComputeAllStrongBuyOnly:
             industry_map={},
             filing_date_map={},
             now=datetime(2024, 10, 1),
-        )
+        ))
 
         assert result is not None, "strong_buy cluster must be stored"
         assert result["conviction_tier"] == "strong_buy"
         assert result["direction"] == "buy"
+
+
+# === compute_one inline XBRL mcap capture (v1.6 Phase 16) ===
+
+class TestComputeOneInlineXBRL:
+    """_compute_one populates mcap_at_signal_true_* from xbrl_cache when provided."""
+
+    def _make_cluster(self, accession_number: str = "CLUSTER-V16-TEST"):
+        from types import SimpleNamespace
+        return SimpleNamespace(
+            accession_number=accession_number,
+            ticker="TEST",
+            cik="0009999999",
+            window_end="2024-06-01",
+            total_buy_value=500_000,
+            num_buyers=3,
+            signal_level="high",
+            company_name="Test Co",
+        )
+
+    def _make_company_data(self, cik: str):
+        from datetime import datetime, timedelta
+        series = []
+        start = datetime(2024, 5, 15)
+        for i in range(150):
+            d = start + timedelta(days=i)
+            if d.weekday() < 5:
+                series.append({"d": d.strftime("%Y-%m-%d"), "c": 40.0 + i * 0.1})
+        return {cik: {"market_cap": 1_000_000_000, "series": series}}
+
+    def test_populates_mcap_when_cache_has_entry(self):
+        from datetime import datetime
+        from app.services.signal_performance_service import SignalPerformanceService
+        from ingestion.sec_edgar.xbrl_client import SharesOutstandingEntry
+
+        cluster = self._make_cluster()
+        xbrl_cache = {
+            cluster.cik: [
+                SharesOutstandingEntry(
+                    end_date="2024-03-31",
+                    shares=50_000_000,
+                    form="10-Q",
+                    fiscal_year=2024,
+                    fiscal_period="Q1",
+                    accession="0000000000-00-000000",
+                )
+            ]
+        }
+
+        result = asyncio.run(SignalPerformanceService._compute_one(
+            cluster,
+            direction="buy",
+            company_data=self._make_company_data(cluster.cik),
+            spy_series=[],
+            industry_map={},
+            filing_date_map={},
+            now=datetime(2024, 10, 1),
+            mature_ids=None,
+            xbrl_cache=xbrl_cache,
+        ))
+
+        assert result is not None
+        assert result["mcap_at_signal_true"] is not None
+        assert result["mcap_at_signal_true_source"] == "xbrl"
+        assert result["mcap_at_signal_true_shares"] == 50_000_000
+        assert result["mcap_at_signal_true_shares_end_date"] == "2024-03-31"
+
+    def test_handles_empty_xbrl_entries(self):
+        from datetime import datetime
+        from app.services.signal_performance_service import SignalPerformanceService
+
+        cluster = self._make_cluster()
+        xbrl_cache = {cluster.cik: []}
+
+        result = asyncio.run(SignalPerformanceService._compute_one(
+            cluster,
+            direction="buy",
+            company_data=self._make_company_data(cluster.cik),
+            spy_series=[],
+            industry_map={},
+            filing_date_map={},
+            now=datetime(2024, 10, 1),
+            mature_ids=None,
+            xbrl_cache=xbrl_cache,
+        ))
+
+        assert result is not None
+        assert result["mcap_at_signal_true"] is None
+        assert result["mcap_at_signal_true_source"] is None
+
+    def test_skips_xbrl_when_cache_none(self):
+        from datetime import datetime
+        from app.services.signal_performance_service import SignalPerformanceService
+
+        cluster = self._make_cluster()
+
+        result = asyncio.run(SignalPerformanceService._compute_one(
+            cluster,
+            direction="buy",
+            company_data=self._make_company_data(cluster.cik),
+            spy_series=[],
+            industry_map={},
+            filing_date_map={},
+            now=datetime(2024, 10, 1),
+            mature_ids=None,
+            xbrl_cache=None,
+        ))
+
+        assert result is not None
+        assert result["mcap_at_signal_true"] is None

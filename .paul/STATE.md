@@ -2,12 +2,12 @@
 
 ## Current Position
 
-Version: 1.5.0
-Milestone: v1.5 Signal Tier Extension — ✅ Complete (tier adoption REJECTED)
-Phase: 15 of 15 — ✅ Complete
-Plan: 15-01 UNIFIED
-Status: v1.5 done. Midcap remains sole strong_buy tier per Bonferroni discipline.
-Last activity: 2026-04-20 — All 3 v1.5 phases complete. small (p_bonf=0.53), large (p_bonf=0.34), combined (p_bonf=0.16) — all REJECTED.
+Version: 1.6.0
+Milestone: v1.6 Forward-going mcap capture — ✅ Complete
+Phase: 16 of 16 — ✅ Complete
+Plan: 16-01 UNIFIED
+Status: v1.6 done. All mcap gaps closed: historic backfilled (v1.4) + inline-on-create (v1.6).
+Last activity: 2026-04-20 — Phase 16 complete. Mature rows untouched, 55/56 immature got inline XBRL mcap.
 
 Progress:
 - v1.4 Signal Quality Audit: [██░░░░░░░░] 16% (phase 9 apply done, 3 phases pending)

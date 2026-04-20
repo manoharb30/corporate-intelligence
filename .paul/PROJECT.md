@@ -13,8 +13,8 @@ Hedge funds get pre-filtered insider conviction signals with 67.4% hit rate and 
 | Attribute | Value |
 |-----------|-------|
 | Type | Application (Data Product) |
-| Version | 1.5.0 |
-| Status | Production (ci.lookinsight.ai) — v1.5 complete (tier extension investigated, REJECTED); midcap remains sole tier |
+| Version | 1.6.0 |
+| Status | Production (ci.lookinsight.ai) — v1.6 complete (forward-going mcap capture); all mcap gaps closed |
 | Last Updated | 2026-04-20 |
 
 **Production URLs:**
@@ -85,6 +85,10 @@ Hedge funds get pre-filtered insider conviction signals with 67.4% hit rate and 
 - [x] Tier extension candidates backfilled — `tier_candidates_v1_5.csv` with 441 qualifying clusters, 431 with ground-truth XBRL mcap. 198 linked to existing SignalPerformance. (Phase 13)
 - [x] Per-tier significance analysis — small-cap (n=51), large-cap (n=61), and combined (n=112) sub-pools each have hit rate ~53% vs midcap baseline 65%. None clears p<0.05 Bonferroni (small p=0.53, large p=0.34, combined p=0.16). (Phase 14)
 - [x] Tier adoption decision: **NO ADOPTION.** Midcap remains the sole strong_buy tier. Dataset growth is the precondition for any future tier adoption. (Phase 15)
+
+### Validated (v1.6, shipped 2026-04-20)
+
+- [x] Forward-going mcap capture — `_compute_one` now fetches SEC XBRL shares outstanding inline at signal creation. New SignalPerformance nodes carry `mcap_at_signal_true` + 5 provenance sidecars populated. Matured rows untouched (v1.2 invariant). Cache per-CIK inside each compute_all run; 1s pacing. (Phase 16)
 
 ### Active (In Progress)
 
@@ -229,4 +233,4 @@ _No milestone currently defined. Run `/paul:discuss-milestone` to scope next._
 
 ---
 *PROJECT.md — Updated when requirements or context change*
-*Last updated: 2026-04-20 after v1.5 Phase 15 (tier adoption REJECTED) — v1.5 complete*
+*Last updated: 2026-04-20 after v1.6 Phase 16 (forward-going mcap inline) — v1.6 complete*
