@@ -8,6 +8,71 @@ Completed milestone log for this project.
 | v1.1 Hedge Fund Research Delivery | 2026-04-20 | 2 days | 2 phases shipped, 1 dropped; brief + data appendix |
 | v1.2 Signal Integrity — matured immutability | 2026-04-20 | same-day | 1 phase, 1 plan; +4 regression tests |
 | v1.3 Pipeline Simplification — strong_buy only | 2026-04-20 | same-day | 1 phase, 1 plan; +3 regression tests; 372 legacy rows deleted |
+| v1.4 Signal Quality Audit — ground-truth mcap + per-signal post-mortem | 2026-04-20 | same-day | 4 phases, 4 plans; +11 tests; 141/142 mcap corrected; zero new filters (Bonferroni) |
+
+---
+
+## ✅ v1.4 Signal Quality Audit — ground-truth mcap + per-signal post-mortem
+
+**Version:** 1.4.0
+**Completed:** 2026-04-20
+**Duration:** Same-day (single session, 4 phases)
+
+### Stats
+
+| Metric | Value |
+|--------|-------|
+| Phases | 4 (9, 10, 11, 12) |
+| Plans | 4 (one per phase) |
+| New tests | 11 XBRL client tests; total suite now 71 |
+| Files created | 9 (XBRL client, backfill script, 3 audit scripts, 4 markdown docs) |
+| XBRL API calls | 142 company-facts fetches (~1 per CIK, cached per run) |
+| Signals with ground-truth mcap | 141 / 142 (99.3%) |
+| Filter candidates tested | 22 |
+| Filters adopted | 0 (none passed Bonferroni p<0.05) |
+
+### Key Accomplishments
+
+**Phase 9: Ground-truth market cap via SEC XBRL**
+- `XBRLClient` with 5-concept fallback chain + sanity filter + post-signal fallback for late-XBRL issuers.
+- `backfill_mcap_true.py` (checkpoint-resumable operational script).
+- Top ratio-estimate errors revealed: ANDG −93%, RPAY −92%, ONDS −88%, SEI −86%, MRVI −60%, DNA −19%.
+
+**Phase 10: Per-signal audit template**
+- Deterministic 142 × 34 CSV + Parquet + comprehensive data dictionary.
+- Surprising finding: naive midcap filter on true mcap drops 10 signals with 80% HR / +33% return.
+
+**Phase 11: Classification + significance testing**
+- 22 filter candidates × Fisher's exact + Mann-Whitney U + Bonferroni (n=22).
+- Zero candidates pass. Honest scientific conclusion: 142 signals too small for multiple-testing filter discovery.
+- Formally rejected: naive true-mcap midcap filter. Confirmed operational: v1.0 earnings rule.
+- 47 per-loser detail blocks (root_cause_tag placeholders for manual review).
+
+**Phase 12: Methodology versioning**
+- `methodology_version` property added on SignalPerformance. All 142 tagged `'v1.1'`.
+- No filter changes (per Phase 11). No display changes. Minimal mechanism for v1.5 tier extensions.
+
+### Key Decisions
+
+See `.paul/milestones/v1.4.0-ROADMAP.md` for the full table (7 decisions).
+
+Top three:
+1. Ground-truth mcap from SEC XBRL primary data, not ratio estimate.
+2. No new filters adopted — Bonferroni discipline on 22 candidates.
+3. "Leaked winners" are mislabeled midcaps, not feature of the filter. Tier extension (small_cap, large_cap) is the principled fix — deferred to v1.5.
+
+### Headline numbers (unchanged)
+
+**142 mature strong_buy · 66.9% hit rate · +14.04% avg return · +8.72% avg alpha.**
+
+By design — v1.4 audited the methodology without altering classification.
+
+### Commits
+
+- `8fb4853` Phase 9
+- `7743111` Phase 10
+- `5d263eb` Phase 11
+- `4dc1c22` Phase 12 / v1.4 complete
 
 ---
 
