@@ -10,6 +10,38 @@ Completed milestone log for this project.
 | v1.3 Pipeline Simplification — strong_buy only | 2026-04-20 | same-day | 1 phase, 1 plan; +3 regression tests; 372 legacy rows deleted |
 | v1.4 Signal Quality Audit — ground-truth mcap + per-signal post-mortem | 2026-04-20 | same-day | 4 phases, 4 plans; +11 tests; 141/142 mcap corrected; zero new filters (Bonferroni) |
 | v1.5 Signal Tier Extension — REJECTED | 2026-04-20 | same-day | 3 phases, 3 plans; 441 clusters analyzed; no tier adopted per Bonferroni |
+| v1.6 Forward-going mcap capture | 2026-04-20 | same-day | 1 phase, 1 plan; inline XBRL on new signals; 74 tests |
+
+---
+
+## ✅ v1.6 Forward-going mcap capture
+
+**Version:** 1.6.0
+**Completed:** 2026-04-20
+**Duration:** Same-day
+
+### Stats
+
+| Metric | Value |
+|---|---|
+| Phases | 1 (16) |
+| Plans | 1 |
+| New tests | 3 (TestComputeOneInlineXBRL) — total 74 |
+| Inline coverage (immature rows) | 55 / 56 (98.2%) |
+| Matured rows unchanged | ✅ 142 / 142 (v1.2 invariant upheld) |
+| compute_all runtime impact | +~60s (XBRL pacing on ~50 new CIKs) |
+
+### What shipped
+
+`_compute_one` is now async and calls `XBRLClient.get_shares_outstanding` inline, caches per-CIK within each compute_all run, writes `mcap_at_signal_true` + 5 provenance sidecars on new nodes at creation time. Closes the last data-layer gap from v1.4.
+
+### Commit
+
+`5bb36b0`
+
+### Headline numbers (unchanged)
+
+**142 · 66.9% · +14.04% · +8.72%.**
 
 ---
 
