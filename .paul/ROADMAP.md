@@ -8,14 +8,14 @@
 | v1.1 | Hedge Fund Research Delivery | ✅ Complete | 2026-04-20 |
 | v1.2 | Signal Integrity — matured immutability | ✅ Complete | 2026-04-20 |
 | v1.3 | Pipeline Simplification — strong_buy only | ✅ Complete | 2026-04-20 |
-| v1.4 | Signal Quality Audit — ground-truth mcap + per-signal post-mortem | 🚧 In Progress | Started 2026-04-20 |
+| v1.4 | Signal Quality Audit — ground-truth mcap + per-signal post-mortem | ✅ Complete | 2026-04-20 |
 
 ## Current Milestone
 
-**v1.4 Signal Quality Audit — ground-truth mcap + per-signal post-mortem** (1.4.0-dev)
-Status: 🚧 In Progress
-Started: 2026-04-20
-Phases: 0 of 4 complete
+**v1.4 Signal Quality Audit — ground-truth mcap + per-signal post-mortem** (1.4.0)
+Status: ✅ Complete
+Completed: 2026-04-20
+Phases: 4 of 4 complete
 
 **Theme:** Stop relying on price-ratio estimates for historical market cap; ground-truth every signal against primary-source SEC data, then analyze each signal individually and redesign filters only where the data supports it (p<0.05 vs baseline). Trigger: reviewing DNA (Ginkgo Bioworks 2024-05-15) exposed that a distressed post-reverse-split penny stock had been mis-labeled `$1B–$3B midcap` — the ratio estimate folded a 40-for-1 reverse split and dilution into a single wrong number.
 
@@ -33,7 +33,7 @@ Phases: 0 of 4 complete
 | 9 | Ground-truth market cap (SEC XBRL) | 1/1 | ✅ Complete | 2026-04-20 |
 | 10 | Per-signal audit template | 1/1 | ✅ Complete | 2026-04-20 |
 | 11 | Classification + significance testing | 1/1 | ✅ Complete | 2026-04-20 |
-| 12 | Filter redesign + re-export | TBD | Not started | — |
+| 12 | Filter redesign + re-export (methodology_version) | 1/1 | ✅ Complete | 2026-04-20 |
 
 ### Phase 9: Ground-truth market cap (SEC XBRL)
 

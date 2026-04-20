@@ -2,12 +2,12 @@
 
 ## Current Position
 
-Version: 1.4.0-dev
-Milestone: v1.4 Signal Quality Audit — ground-truth mcap + per-signal post-mortem
-Phase: 11 of 12 (Classification + significance testing) — ✅ Complete
-Plan: 11-01 UNIFIED
-Status: Ready to plan Phase 12 (Filter redesign + re-export) — narrow scope
-Last activity: 2026-04-20 — Phase 11 complete; 22 candidates tested, zero pass Bonferroni; Phase 12 guidance: don't add filters, just add methodology_version column
+Version: 1.4.0
+Milestone: v1.4 Signal Quality Audit — ✅ Complete (all 4 phases)
+Phase: 12 of 12 — ✅ Complete
+Plan: 12-01 UNIFIED
+Status: v1.4 milestone complete. Ready for milestone close + v1.5 planning.
+Last activity: 2026-04-20 — Phase 12 complete; methodology_version tagged on all 142 mature strong_buy
 
 Progress:
 - v1.4 Signal Quality Audit: [██░░░░░░░░] 16% (phase 9 apply done, 3 phases pending)

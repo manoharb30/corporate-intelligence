@@ -368,6 +368,7 @@ class SignalPerformanceService:
             "spy_return_90d": spy_return_90d,
             "is_mature": is_mature,
             "computed_at": now.isoformat(),
+            "methodology_version": "v1.1",
         }
 
         for d in DELAY_DAYS:
@@ -504,7 +505,8 @@ class SignalPerformanceService:
                         return_day7: row.return_day7,
                         spy_return_90d: row.spy_return_90d,
                         is_mature: row.is_mature,
-                        computed_at: row.computed_at
+                        computed_at: row.computed_at,
+                        methodology_version: COALESCE(row.methodology_version, 'v1.1')
                     })
                     WITH sp, row
                     MATCH (c:Company {cik: row.cik})

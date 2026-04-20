@@ -79,6 +79,8 @@ COLUMNS: list[tuple[str, Any]] = [
     ("post_signal_sells_value_usd_90d", pa.float64()),
     # Volatility (1)
     ("stock_volatility_30d_pct", pa.float64()),
+    # Methodology version (1) — v1.4 Phase 12
+    ("methodology_version", pa.string()),
 ]
 
 EARNINGS_CACHE_PATH = "/tmp/lookinsight_earnings_cache.json"
@@ -108,7 +110,8 @@ async def fetch_signals() -> list[dict]:
                sp.mcap_at_signal_true_avg_raw_px AS avg_raw_px,
                sp.price_day0 AS price_day0,
                sp.price_day90 AS price_day90,
-               sp.spy_return_90d AS spy_return_90d
+               sp.spy_return_90d AS spy_return_90d,
+               sp.methodology_version AS methodology_version
         ORDER BY sp.signal_date
         """
     )
@@ -397,6 +400,7 @@ def build_row(
         "post_signal_sells_count_90d": post["count"],
         "post_signal_sells_value_usd_90d": post["value"],
         "stock_volatility_30d_pct": vol,
+        "methodology_version": sp.get("methodology_version") or "v1.1",
     }
 
 

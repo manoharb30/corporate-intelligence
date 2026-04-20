@@ -13,8 +13,8 @@ Hedge funds get pre-filtered insider conviction signals with 67.4% hit rate and 
 | Attribute | Value |
 |-----------|-------|
 | Type | Application (Data Product) |
-| Version | 1.3.0 |
-| Status | Production (ci.lookinsight.ai) — v1.3 complete; awaiting v1.4 definition |
+| Version | 1.4.0 |
+| Status | Production (ci.lookinsight.ai) — v1.4 complete; v1.5 scoped (tier extension) |
 | Last Updated | 2026-04-20 |
 
 **Production URLs:**
@@ -78,6 +78,7 @@ Hedge funds get pre-filtered insider conviction signals with 67.4% hit rate and 
 - [x] Ground-truth market cap via SEC EDGAR XBRL — `mcap_at_signal_true` backfilled on 141/142 mature strong_buy signals (99.3%). XBRL client + backfill script + 11 unit tests. Top ratio-estimate errors revealed: ANDG/RPAY/ONDS/SEI each off by 60–93%. (Phase 9)
 - [x] Per-signal audit template — `signal_audit_v1_4.csv` (142 rows × 33 cols) produced deterministically from stored data only. Used as input for Phase 11 classification. Key finding: naive midcap filter on TRUE mcap would drop 10 signals with 80% hit rate / +33% return — the old ratio-estimate was effectively a different filter, not a worse one. Phase 11 to investigate with p-values. (Phase 10)
 - [x] Classification + significance testing — 22 filter candidates tested with Fisher's exact + Mann-Whitney U + Bonferroni correction. **Zero pass p<0.05 Bonferroni bar**. Per-loser detail emitted (47 blocks, unclassified placeholders). Naive true-mcap midcap filter formally rejected. Product implication: 142 signals too small to support filter discovery under multiple-testing discipline; growing the dataset is the highest-leverage next move. (Phase 11)
+- [x] Methodology versioning — `methodology_version` property on SignalPerformance; all 142 mature strong_buy tagged `'v1.1'`. Additive mechanism for future tier extensions. No new filters added (per Phase 11). (Phase 12)
 
 ### Active (In Progress)
 
@@ -221,4 +222,4 @@ _No milestone currently defined. Run `/paul:discuss-milestone` to scope next._
 
 ---
 *PROJECT.md — Updated when requirements or context change*
-*Last updated: 2026-04-20 after v1.4 Phase 11 (classification + significance)*
+*Last updated: 2026-04-20 after v1.4 Phase 12 (methodology versioning) — v1.4 complete*

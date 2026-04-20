@@ -324,6 +324,16 @@ Computed nodes produced by `SignalPerformanceService.compute_all()` (delete-then
 
 **Don't replace `market_cap` with this field yet.** Phase 12 decides whether to use it for classification. Forward-going ingest-time capture (populating this field for new signals at creation time) is explicitly scoped OUT of v1.4 — will be its own phase/milestone.
 
+### Methodology version (v1.4 Phase 12)
+
+`methodology_version` — string. Records the methodology under which a SignalPerformance node was classified.
+
+Values:
+- `'v1.1'` — midcap ($300M–$5B, ratio-estimate mcap) + 2+ buyers + $100K+ + earnings ≤60d. All 142 mature strong_buy nodes (as of 2026-04-20) are tagged this.
+- Future values will be introduced when tier definitions extend (e.g., `'v1.5'` for small-cap + large-cap tier additions).
+
+Purpose: allow consumers to filter signals by methodology generation and let us report headline numbers broken down by methodology when tier extensions land. Additive field; never replaces existing classification.
+
 ### Scope invariant (enforced 2026-04-20, v1.3)
 
 `SignalPerformance` only stores rows where `direction = 'buy' AND conviction_tier = 'strong_buy'`.
