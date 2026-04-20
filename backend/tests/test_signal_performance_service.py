@@ -426,3 +426,111 @@ class TestComputeAllPreservesMatured:
         assert result is not None, "Immature signal (not in mature_ids) must be computed"
         assert result["signal_id"] == "CLUSTER-IMMATURE-W"
         assert result["is_mature"] is False, "Should be flagged immature given no day-90 price"
+
+
+# === compute_all strong_buy-only scope invariant (v1.3 Phase 8) ===
+
+class TestComputeAllStrongBuyOnly:
+    """compute_all MUST only store SignalPerformance rows where conviction_tier='strong_buy'.
+
+    Invariant introduced in v1.3 Phase 8: legacy tiers ('buy', 'watch') and the
+    sell direction were removed — they were never surfaced by the product.
+    `_compute_one` short-circuits (returns None) for any conviction_tier other
+    than 'strong_buy'.
+    """
+
+    def _make_cluster(
+        self,
+        accession_number: str = "CLUSTER-V13-TEST",
+        ticker: str = "TEST",
+        cik: str = "0002345678",
+        window_end: str = "2024-06-01",
+        total_buy_value: float = 500_000,
+        num_buyers: int = 3,
+        signal_level: str = "high",
+        company_name: str = "Test Co",
+    ):
+        from types import SimpleNamespace
+        return SimpleNamespace(
+            accession_number=accession_number,
+            ticker=ticker,
+            cik=cik,
+            window_end=window_end,
+            total_buy_value=total_buy_value,
+            num_buyers=num_buyers,
+            signal_level=signal_level,
+            company_name=company_name,
+        )
+
+    def _make_company_data(self, cik: str, market_cap: float):
+        from datetime import datetime, timedelta
+        series = []
+        start = datetime(2024, 5, 15)
+        for i in range(150):
+            d = start + timedelta(days=i)
+            if d.weekday() < 5:
+                series.append({"d": d.strftime("%Y-%m-%d"), "c": 40.0 + i * 0.1})
+        return {cik: {"market_cap": market_cap, "series": series}}
+
+    def test_compute_one_returns_none_for_watch_tier(self):
+        """Single-buyer cluster → conviction_tier='watch' → must be skipped."""
+        from datetime import datetime
+        from app.services.signal_performance_service import SignalPerformanceService
+
+        # num_buyers=1 forces compute_conviction_tier to return 'watch'
+        cluster = self._make_cluster(num_buyers=1, total_buy_value=50_000)
+
+        result = SignalPerformanceService._compute_one(
+            cluster,
+            direction="buy",
+            company_data=self._make_company_data(cluster.cik, market_cap=1_000_000_000),
+            spy_series=[],
+            industry_map={},
+            filing_date_map={},
+            now=datetime(2024, 10, 1),
+        )
+
+        assert result is None, "watch-tier cluster must not enter SignalPerformance"
+
+    def test_compute_one_returns_none_for_buy_tier(self):
+        """Midcap + 2+ buyers but low value → conviction_tier='buy' → must be skipped."""
+        from datetime import datetime
+        from app.services.signal_performance_service import SignalPerformanceService
+
+        # 2 buyers, midcap ($1B), but total_value only $50K → fails $100K threshold
+        # compute_conviction_tier: is_midcap=True, has_value=False → 'buy' tier
+        cluster = self._make_cluster(num_buyers=2, total_buy_value=50_000)
+
+        result = SignalPerformanceService._compute_one(
+            cluster,
+            direction="buy",
+            company_data=self._make_company_data(cluster.cik, market_cap=1_000_000_000),
+            spy_series=[],
+            industry_map={},
+            filing_date_map={},
+            now=datetime(2024, 10, 1),
+        )
+
+        assert result is None, "buy-tier cluster must not enter SignalPerformance"
+
+    def test_compute_one_returns_dict_for_strong_buy_tier(self):
+        """Midcap + 2+ buyers + $100K+ value → conviction_tier='strong_buy' → stored."""
+        from datetime import datetime
+        from app.services.signal_performance_service import SignalPerformanceService
+
+        # Midcap ($1B), 3 buyers, $500K → strong_buy
+        cluster = self._make_cluster(num_buyers=3, total_buy_value=500_000)
+
+        result = SignalPerformanceService._compute_one(
+            cluster,
+            direction="buy",
+            company_data=self._make_company_data(cluster.cik, market_cap=1_000_000_000),
+            spy_series=[],
+            industry_map={},
+            filing_date_map={},
+            now=datetime(2024, 10, 1),
+        )
+
+        assert result is not None, "strong_buy cluster must be stored"
+        assert result["conviction_tier"] == "strong_buy"
+        assert result["direction"] == "buy"

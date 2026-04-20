@@ -2,37 +2,48 @@
 
 ## Current Position
 
-Version: 1.2.0
-Milestone: v1.2 Signal Integrity — matured immutability ✅ Complete
-Phase: 7 of 7 (mcap snapshot) — ✅ Complete
-Plan: 07-01 UNIFIED
+Version: 1.3.0
+Milestone: v1.3 Pipeline Simplification — strong_buy only ✅ Complete
+Phase: 8 of 8 (Strong_buy-only pipeline) — ✅ Complete
+Plan: 08-01 UNIFIED
 Status: Loop closed; milestone complete — ready for next milestone
-Last activity: 2026-04-20 — Phase 7 and v1.2 milestone complete
+Last activity: 2026-04-20 — Phase 8 and v1.3 milestone complete
 
 Progress:
-- v1.2 Signal Integrity: [██████████] 100% ✅
-- Phase 7 (mcap snapshot): [██████████] 100% ✅
+- v1.3 Pipeline Simplification: [██████████] 100% ✅
+- Phase 8 (Strong_buy-only): [██████████] 100% ✅
 
 ## Loop Position
 
 ```
 PLAN ──▶ APPLY ──▶ UNIFY
-  ✓        ✓        ✓     [Loop complete — milestone v1.2 closed]
+  ✓        ✓        ✓     [Loop complete — milestone v1.3 closed]
 ```
 
-### Phase 7 UNIFY result
-- 1 of 1 plans complete (07-01)
+### Phase 8 UNIFY result
+- 1 of 1 plans complete (08-01)
 - Tasks: 3 of 3 DONE (all PASS)
-- Unit tests: 38 pass (34 existing + 4 new TestComputeAllPreservesMatured)
-- Live DB verification: preserved_mature=408, computed=162, diffs=0, missing=0
-- Deviations: none (approach consolidated during planning — dropped `market_cap_at_signal` field, replaced with "don't touch matured rows" approach)
+- Unit tests: 41 pass (38 prior + 3 new TestComputeAllStrongBuyOnly)
+- Live DB: 372 legacy rows deleted; 142 mature strong_buy preserved byte-identically.
+- Post-code compute_all: all 198 rows are (buy, strong_buy); preserved_mature=142.
+- Deviations (both benign): (1) deleted 372 not 266 — plan counted mature-only; WHERE swept immature too; (2) frontend/src/services/api.ts added (one-line type narrowing).
+
+### Git State
+Last commit: df2bb8f — feat(07-mcap-snapshot): matured-signal immutability invariant (v1.2 complete)
+Branch: main
+Feature branches merged: none
 
 ## Session Continuity
 
 Last session: 2026-04-20
-Stopped at: v1.2 milestone complete; ready for next milestone or pause
-Next action: /paul:complete-milestone (formalize v1.2 close) OR /paul:discuss-milestone (scope v1.3) OR pause
-Resume file: .paul/phases/07-mcap-snapshot/07-01-SUMMARY.md
+Stopped at: v1.3 milestone created, Phase 8 awaiting plan
+Next action: /paul:plan  (plan Phase 8: Strong_buy-only pipeline)
+Resume file: .paul/ROADMAP.md
+Resume context:
+- Single-concern milestone: remove legacy signal tiers + sell direction.
+- Today 408 mature rows → 142 strong_buy (surfaced) + 266 legacy (never shown).
+- Scope: compute_all stops sell detection; _compute_one gates on strong_buy; delete 266 legacy rows; audit dead code in frontend/API/exports/feed.
+- Constraint: v1.2 matured-immutability invariant holds — the 142 matured strong_buy rows must remain byte-identical.
 
 ## Accumulated Decisions
 

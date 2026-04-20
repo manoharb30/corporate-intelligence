@@ -7,23 +7,22 @@
 | v1.0 | Signal Quality | ✅ Complete | 2026-04-18 |
 | v1.1 | Hedge Fund Research Delivery | ✅ Complete | 2026-04-20 |
 | v1.2 | Signal Integrity — matured immutability | ✅ Complete | 2026-04-20 |
+| v1.3 | Pipeline Simplification — strong_buy only | ✅ Complete | 2026-04-20 |
 
 ## Current Milestone
 
-**v1.2 Signal Integrity — matured immutability** (1.2.0)
+**v1.3 Pipeline Simplification — strong_buy only** (1.3.0)
 Status: ✅ Complete
 Completed: 2026-04-20
 Phases: 1 of 1 complete
 
-**Outcome:** Matured `SignalPerformance` nodes are now byte-immutable across recompute. `compute_all` reads the set of matured signal_ids before any DELETE and skips them entirely. Implementation shifted from the originally-planned "snapshot column" to the simpler "don't touch matured rows" approach — same invariant, less code.
-
-Verification: 408 matured rows preserved byte-identically across a live `compute_all(days=760)` run. 38 unit tests pass (34 existing + 4 new).
+**Outcome:** `SignalPerformance` now holds only `direction='buy' AND conviction_tier='strong_buy'` rows. Sell-side detection and non-strong_buy tiers (`buy`, `watch`) were removed from `compute_all`, `snapshot_service`, and the signal_performance API route. 372 legacy rows (266 mature + 106 immature) deleted in a one-time migration. 142 mature strong_buy rows preserved byte-identically (v1.2 invariant upheld). 41 tests pass (3 new).
 
 ### Phases
 
 | Phase | Name | Plans | Status | Completed |
 |-------|------|-------|--------|-----------|
-| 7 | mcap snapshot (matured immutability) | 1/1 | ✅ Complete | 2026-04-20 |
+| 8 | Strong_buy-only pipeline | 1/1 | ✅ Complete | 2026-04-20 |
 
 ## Backlog (not scheduled)
 
@@ -42,11 +41,37 @@ Verification: 408 matured rows preserved byte-identically across a live `compute
 - [ ] Per-fund delivery / outreach (was v1.1 Phase 6, dropped; revisit when cadence is defined)
 
 ### Correctness / Research
-- [ ] **mcap snapshot at signal creation** — matured signals should be immutable on recompute (`compute_all` currently re-derives historical mcap from current state each run)
 - [ ] Window size experiment (30d vs 40d) — needs non-destructive analysis approach
 - [ ] Industry enrichment beyond SEC SIC (24% SIC-null rate in Phase 4 export)
 
 ## Completed Milestones
+
+<details>
+<summary>v1.3 Pipeline Simplification — strong_buy only — 2026-04-20 (1 phase, 1 plan)</summary>
+
+| Phase | Name | Plans | Status |
+|-------|------|-------|--------|
+| 8 | Strong_buy-only pipeline | 1/1 | ✅ Complete |
+
+**Outcome:** SignalPerformance now only holds strong_buy buy rows. 372 legacy rows deleted. 142 mature strong_buy preserved byte-identically. `compute_all`, `snapshot_service`, and signal_performance API route all cleaned. 3 new regression tests.
+
+Milestone log: `.paul/MILESTONES.md`
+
+</details>
+
+<details>
+<summary>v1.2 Signal Integrity — matured immutability — 2026-04-20 (1 phase, 1 plan)</summary>
+
+| Phase | Name | Plans | Status |
+|-------|------|-------|--------|
+| 7 | mcap snapshot (matured immutability) | 1/1 | ✅ Complete |
+
+**Outcome:** `compute_all` now preserves matured `SignalPerformance` nodes byte-identically. 408 matured rows verified unchanged across a live recompute. 4 new regression tests.
+
+Commit: `df2bb8f`
+Milestone log: `.paul/MILESTONES.md`
+
+</details>
 
 <details>
 <summary>v1.1 Hedge Fund Research Delivery — 2026-04-20 (2 phases shipped, 1 dropped)</summary>
@@ -83,4 +108,4 @@ Milestone log: `.paul/MILESTONES.md`
 
 ---
 *ROADMAP.md — Updated when phases complete or scope changes*
-*Last updated: 2026-04-20 — v1.2 complete*
+*Last updated: 2026-04-20 — v1.3 complete*

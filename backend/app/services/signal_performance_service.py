@@ -189,21 +189,14 @@ class SignalPerformanceService:
         deleted = del_result[0]["deleted"] if del_result else 0
         logger.info(f"Deleted {deleted} immature SignalPerformance nodes")
 
-        # 3. Detect clusters
+        # 3. Detect buy clusters (sell-side direction removed in v1.3 — product is strong_buy only)
         buy_clusters = await InsiderClusterService.detect_clusters(
             days=days, min_level="medium", direction="buy"
         )
-        sell_clusters = await InsiderClusterService.detect_clusters(
-            days=days, min_level="medium", direction="sell"
-        )
-        logger.info(
-            f"Detected {len(buy_clusters)} buy + {len(sell_clusters)} sell clusters"
-        )
+        logger.info(f"Detected {len(buy_clusters)} buy clusters")
 
         # 4. Batch-fetch company data + SPY + filing dates
-        all_ciks = list(
-            set(c.cik for c in buy_clusters + sell_clusters if c.cik)
-        )
+        all_ciks = list(set(c.cik for c in buy_clusters if c.cik))
         company_data = await SignalPerformanceService._fetch_company_data(all_ciks)
         spy_series = await SignalPerformanceService._fetch_spy_series()
         industry_map = await SignalPerformanceService._fetch_industries(all_ciks)
@@ -213,9 +206,7 @@ class SignalPerformanceService:
 
         # 5. Compute performance for clusters NOT already represented by a matured node
         performances = []
-        all_clusters = [(c, "buy") for c in buy_clusters] + [
-            (c, "sell") for c in sell_clusters
-        ]
+        all_clusters = [(c, "buy") for c in buy_clusters]
 
         for cluster, direction in all_clusters:
             perf = SignalPerformanceService._compute_one(
@@ -337,6 +328,11 @@ class SignalPerformanceService:
         conviction_tier = compute_conviction_tier(
             historical_mcap, cluster.total_buy_value, cluster.num_buyers
         )
+
+        # v1.3: only strong_buy clusters enter SignalPerformance.
+        # Legacy 'buy' and 'watch' tiers were never surfaced by the product.
+        if conviction_tier != "strong_buy":
+            return None
 
         # SPY return + alpha FROM ACTIONABLE DATE
         spy_at_actionable = find_price(spy_series, actionable_date)
@@ -563,20 +559,17 @@ class SignalPerformanceService:
             if meaningful_only
             else ""
         )
+        # v1.3: SignalPerformance only holds direction='buy' strong_buy rows.
+        # sell_count / sell aggregates removed — they'd always be zero.
         query = f"""
             MATCH (sp:SignalPerformance)
             WHERE sp.is_mature = true {mcap_filter}
-            WITH sp,
-                 CASE WHEN sp.direction = 'buy' THEN 1 ELSE 0 END AS is_buy,
-                 CASE WHEN sp.direction = 'sell' THEN 1 ELSE 0 END AS is_sell
             RETURN count(sp) AS total,
-                   sum(is_buy) AS buy_count,
-                   sum(is_sell) AS sell_count,
-                   avg(CASE WHEN sp.direction = 'buy' AND sp.return_day0 IS NOT NULL
-                       THEN sp.return_day0 END) AS buy_avg_return,
+                   count(sp) AS buy_count,
+                   avg(CASE WHEN sp.return_day0 IS NOT NULL THEN sp.return_day0 END) AS buy_avg_return,
                    avg(sp.spy_return_90d) AS avg_spy_return,
-                   sum(CASE WHEN sp.direction = 'buy' AND sp.return_day0 IS NOT NULL
-                       AND sp.return_day0 > 0 THEN 1 ELSE 0 END) AS buy_wins
+                   sum(CASE WHEN sp.return_day0 IS NOT NULL AND sp.return_day0 > 0
+                       THEN 1 ELSE 0 END) AS buy_wins
         """
         results = await Neo4jClient.execute_query(query, {})
         if not results:
@@ -588,7 +581,6 @@ class SignalPerformanceService:
         return {
             "total_mature": r["total"],
             "buy_count": buy_count,
-            "sell_count": r["sell_count"] or 0,
             "buy_avg_return_90d": (
                 round(r["buy_avg_return"], 2) if r["buy_avg_return"] else None
             ),

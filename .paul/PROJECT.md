@@ -69,6 +69,10 @@ Hedge funds get pre-filtered insider conviction signals with 67.4% hit rate and 
 
 - [x] Matured-signal immutability invariant — `compute_all()` never touches SignalPerformance nodes where `is_mature = true` (Phase 7)
 
+### Validated (v1.3, shipped 2026-04-20)
+
+- [x] Pipeline scope narrowed to strong_buy buy only — legacy sell direction + non-strong_buy tiers (buy, watch) removed from compute_all, snapshot_service, and API route. 372 legacy rows deleted; 142 mature strong_buy preserved byte-identically (Phase 8)
+
 ### Active (In Progress)
 
 _No milestone currently defined. Run `/paul:discuss-milestone` to scope next._
@@ -165,6 +169,9 @@ _No milestone currently defined. Run `/paul:discuss-milestone` to scope next._
 | Reuse InsiderClusterService.get_cluster_detail for buyer provenance | Avoids reimplementing cluster-window logic; 100% semantically aligned with v1.0 cluster definition | 2026-04-19 | Active |
 | Matured SignalPerformance nodes are immutable | A matured signal is a frozen historical record; recompute should never drift classifications. `compute_all` now preserves `is_mature=true` nodes byte-identically — only immature/new signals are refreshed. | 2026-04-20 | Active |
 | Drop `market_cap_at_signal` field in favor of matured-preservation | A snapshot field was planned but made redundant once we stopped touching matured rows entirely. Simpler and respects the same invariant. | 2026-04-20 | Active |
+| Pipeline scope narrowed to strong_buy buy only | Sell direction and non-strong_buy tiers (buy, watch) were legacy from pre-v1.0 architecture; never surfaced by product. Removing them cuts compute cycles, storage, and confusion (e.g., 408 vs 142 mismatch that caused user friction). | 2026-04-20 | Active |
+| Keep `direction` + `conviction_tier` columns on SignalPerformance | Even though both fields will always be `'buy'` / `'strong_buy'` now, keeping them future-proofs the schema if tiers/directions are reintroduced later. | 2026-04-20 | Active |
+| Keep InsiderClusterService parameterized for sell | Utility stays flexible (unit tests exercise it); only live callers changed. Lower blast radius than ripping out the lower layer. | 2026-04-20 | Active |
 
 ## Success Metrics
 
@@ -201,4 +208,4 @@ _No milestone currently defined. Run `/paul:discuss-milestone` to scope next._
 
 ---
 *PROJECT.md — Updated when requirements or context change*
-*Last updated: 2026-04-20 after v1.2 Phase 7 (mcap snapshot / matured immutability)*
+*Last updated: 2026-04-20 after v1.3 Phase 8 (strong_buy-only pipeline)*

@@ -80,7 +80,7 @@ export interface EventDetailResponse {
     name: string
     ticker: string | null
   }
-  signal_type?: 'insider_cluster' | 'insider_sell_cluster'
+  signal_type?: 'insider_cluster'  // v1.3: insider_sell_cluster removed
   cluster_detail?: ClusterDetail
   has_hostile_activist?: boolean
   hostile_keywords?: string[]

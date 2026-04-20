@@ -308,6 +308,18 @@ Computed nodes produced by `SignalPerformanceService.compute_all()` (delete-then
 | `is_mature`           | bool    | True when `price_day90` is available                    |
 | `computed_at`         | string  | ISO timestamp                                           |
 
+### Scope invariant (enforced 2026-04-20, v1.3)
+
+`SignalPerformance` only stores rows where `direction = 'buy' AND conviction_tier = 'strong_buy'`.
+Sell-side direction and non-strong_buy tiers (`buy`, `watch`) were removed in v1.3 as legacy-architecture remnants never surfaced by the product.
+- `compute_all` short-circuits any cluster that would not classify as `strong_buy` — non-strong_buy clusters are never stored.
+- `snapshot_service` no longer detects sell clusters; `insider_sell_cluster` signals are no longer emitted.
+- The `signal_performance` API route's `direction` regex is tightened to `^(buy)$`.
+- One-time delete migration on 2026-04-20 removed **372 legacy rows** (266 mature + 106 immature). The 142 mature strong_buy rows were preserved byte-identically.
+- `InsiderClusterService` remains parameterized for sell (unit tests still exercise it) — the utility is unchanged, only its live callers changed.
+
+Enforced by tests in `backend/tests/test_signal_performance_service.py::TestComputeAllStrongBuyOnly`.
+
 ### Immutability invariant (enforced 2026-04-20, v1.2)
 
 A `SignalPerformance` node with `is_mature = true` is a frozen historical record.

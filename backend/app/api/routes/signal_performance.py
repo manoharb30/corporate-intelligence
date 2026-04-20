@@ -26,7 +26,7 @@ async def compute_signal_performance(
 
 @router.get("")
 async def get_signal_performances(
-    direction: str = Query(default=None, regex="^(buy|sell)$"),
+    direction: str = Query(default=None, regex="^(buy)$"),  # v1.3: sell removed; all signals are buy
     mature_only: bool = Query(default=False),
     meaningful_only: bool = Query(default=True),
     limit: int = Query(default=500, ge=1, le=1000),
@@ -55,7 +55,7 @@ async def get_dashboard_stats():
 
 @router.get("/download")
 async def download_csv(
-    direction: str = Query(default=None, regex="^(buy|sell)$"),
+    direction: str = Query(default=None, regex="^(buy)$"),  # v1.3: sell removed; all signals are buy
     mature_only: bool = Query(default=True),
     meaningful_only: bool = Query(default=True),
 ):

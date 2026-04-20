@@ -69,17 +69,12 @@ class SnapshotService:
 
         now = datetime.now()
 
-        # 1. Get recent buy clusters, sell clusters, and compound signals
+        # 1. Get recent buy clusters (v1.3: sell direction removed — product is strong_buy only)
         buy_clusters = await InsiderClusterService.detect_clusters(
             days=days, min_level="high", direction="buy"
         )
         buy_clusters = InsiderClusterService.apply_market_cap_filter(buy_clusters)
         buy_clusters = [c for c in buy_clusters if c.conviction_tier == "strong_buy"]
-
-        sell_clusters = await InsiderClusterService.detect_clusters(
-            days=days, min_level="high", direction="sell"
-        )
-        sell_clusters = InsiderClusterService.apply_market_cap_filter(sell_clusters)
 
         # 2. Build unified signal list (insider clusters only — compound signals excluded per research)
         raw_signals = []
@@ -97,21 +92,6 @@ class SnapshotService:
                 "accession_number": c.accession_number,
                 "signal_action": "BUY",
                 "conviction_tier": c.conviction_tier,
-            })
-
-        for c in sell_clusters:
-            raw_signals.append({
-                "ticker": c.ticker,
-                "company_name": c.company_name,
-                "cik": c.cik,
-                "signal_type": "insider_sell_cluster",
-                "signal_date": c.window_end,
-                "signal_level": c.signal_level,
-                "num_insiders": c.num_buyers,
-                "total_value": c.total_buy_value,
-                "accession_number": c.accession_number,
-                "signal_action": "PASS",
-                "conviction_tier": "watch",
             })
 
         # 3. Deduplicate by ticker+action
@@ -234,9 +214,8 @@ class SnapshotService:
         if date:
             scored_signals = [s for s in scored_signals if s["signal_date"][:10] == date[:10]]
 
-        # Split into buy and sell
-        buy_signals = [s for s in scored_signals if s["signal_action"] != "PASS"]
-        sell_signals = [s for s in scored_signals if s["signal_action"] == "PASS"]
+        # v1.3: only buy signals exist — sell clusters dropped from snapshot
+        buy_signals = scored_signals
 
         # === BUY STATS ===
         def _compute_buy_stats(signals: list[dict]) -> dict:
@@ -277,48 +256,7 @@ class SnapshotService:
                 "worst": worst,
             }
 
-        # === SELL STATS ===
-        def _compute_sell_stats(signals: list[dict]) -> dict:
-            total = len(signals)
-            if total == 0:
-                return {"total": 0, "correct": 0, "correct_rate": None,
-                        "avg_price_change": 0, "avg_avoided_loss": None,
-                        "mature_total": 0, "mature_correct": 0, "mature_correct_rate": None,
-                        "mature_avg_drop": None, "biggest_avoided": []}
-            correct = [s for s in signals if s["return_pct"] < 0]
-            correct_rate = round(len(correct) / total * 100, 1)
-            avg_change = round(sum(s["return_pct"] for s in signals) / total, 2)
-            avg_avoided = round(
-                sum(abs(s["return_pct"]) for s in correct) / len(correct), 2
-            ) if correct else None
-
-            mature = [s for s in signals if s["days_held"] >= MATURE_DAYS]
-            m_correct = [s for s in mature if s["return_pct"] < 0]
-            m_rate = round(len(m_correct) / len(mature) * 100, 1) if mature else None
-            m_avg_drop = round(
-                sum(s["return_pct"] for s in m_correct) / len(m_correct), 2
-            ) if m_correct else None
-
-            biggest = sorted(correct, key=lambda s: s["return_pct"])[:5]
-            biggest_avoided = [
-                {"ticker": s["ticker"], "drop_pct": s["return_pct"]} for s in biggest
-            ]
-
-            return {
-                "total": total,
-                "correct": len(correct),
-                "correct_rate": correct_rate,
-                "avg_price_change": avg_change,
-                "avg_avoided_loss": avg_avoided,
-                "mature_total": len(mature),
-                "mature_correct": len(m_correct),
-                "mature_correct_rate": m_rate,
-                "mature_avg_drop": m_avg_drop,
-                "biggest_avoided": biggest_avoided,
-            }
-
         buy_stats = _compute_buy_stats(buy_signals)
-        sell_stats = _compute_sell_stats(sell_signals)
 
         # SPY benchmark return over the full period
         spy_return = None
@@ -346,14 +284,6 @@ class SnapshotService:
             "best_performer": buy_stats["best"],
             "worst_performer": buy_stats["worst"],
             "buy_stats": buy_stats,
-            "sell_stats": sell_stats,
-            "pass_stats": {
-                "total": sell_stats["total"],
-                "mature": sell_stats["mature_total"],
-                "correct": sell_stats["mature_correct"],
-                "correct_rate": sell_stats["mature_correct_rate"],
-                "avg_avoided_loss": sell_stats["avg_avoided_loss"],
-            },
             "signals": scored_signals,
         }
 
