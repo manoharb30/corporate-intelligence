@@ -13,8 +13,8 @@ Hedge funds get pre-filtered insider conviction signals with 67.4% hit rate and 
 | Attribute | Value |
 |-----------|-------|
 | Type | Application (Data Product) |
-| Version | 1.4.0 |
-| Status | Production (ci.lookinsight.ai) — v1.4 complete; v1.5 scoped (tier extension) |
+| Version | 1.5.0 |
+| Status | Production (ci.lookinsight.ai) — v1.5 complete (tier extension investigated, REJECTED); midcap remains sole tier |
 | Last Updated | 2026-04-20 |
 
 **Production URLs:**
@@ -79,6 +79,12 @@ Hedge funds get pre-filtered insider conviction signals with 67.4% hit rate and 
 - [x] Per-signal audit template — `signal_audit_v1_4.csv` (142 rows × 33 cols) produced deterministically from stored data only. Used as input for Phase 11 classification. Key finding: naive midcap filter on TRUE mcap would drop 10 signals with 80% hit rate / +33% return — the old ratio-estimate was effectively a different filter, not a worse one. Phase 11 to investigate with p-values. (Phase 10)
 - [x] Classification + significance testing — 22 filter candidates tested with Fisher's exact + Mann-Whitney U + Bonferroni correction. **Zero pass p<0.05 Bonferroni bar**. Per-loser detail emitted (47 blocks, unclassified placeholders). Naive true-mcap midcap filter formally rejected. Product implication: 142 signals too small to support filter discovery under multiple-testing discipline; growing the dataset is the highest-leverage next move. (Phase 11)
 - [x] Methodology versioning — `methodology_version` property on SignalPerformance; all 142 mature strong_buy tagged `'v1.1'`. Additive mechanism for future tier extensions. No new filters added (per Phase 11). (Phase 12)
+
+### Validated (v1.5, shipped 2026-04-20)
+
+- [x] Tier extension candidates backfilled — `tier_candidates_v1_5.csv` with 441 qualifying clusters, 431 with ground-truth XBRL mcap. 198 linked to existing SignalPerformance. (Phase 13)
+- [x] Per-tier significance analysis — small-cap (n=51), large-cap (n=61), and combined (n=112) sub-pools each have hit rate ~53% vs midcap baseline 65%. None clears p<0.05 Bonferroni (small p=0.53, large p=0.34, combined p=0.16). (Phase 14)
+- [x] Tier adoption decision: **NO ADOPTION.** Midcap remains the sole strong_buy tier. Dataset growth is the precondition for any future tier adoption. (Phase 15)
 
 ### Active (In Progress)
 
@@ -186,6 +192,7 @@ _No milestone currently defined. Run `/paul:discuss-milestone` to scope next._
 | Midcap band on true mcap NOT obviously correct (Phase 10 finding) | Tightening the filter using ground-truth mcap drops 10 winners with 80% hit rate. The old noisy ratio-estimate was effectively a different filter, not a worse one. Phase 11 must test with p-values before committing to any new band. | 2026-04-20 | Active |
 | No new filters adopted in v1.4 (Phase 11 finding) | 22 candidates tested. Zero cleared Bonferroni p<0.05. 142-signal pool too small for filter discovery under strict multiple-testing discipline. Dataset growth is a statistical precondition for future filter refinement. | 2026-04-20 | Active |
 | "Leaked winners" are mislabeled, not useful as midcap strong_buys | 10 signals in the 142 pool have true mcap outside the $300M–$5B band (8 small-cap + 2 large-cap). They are real winners, but they are not midcap signals. They leaked in due to the ratio-estimate error. Treating them as midcap is incorrect; extending tier definitions (small_cap_strong_buy, large_cap_strong_buy) is the principled fix. Deferred to v1.5. | 2026-04-20 | Active |
+| Tier extension REJECTED — midcap is load-bearing, not arbitrary | v1.5 investigated 300+ small/large cluster candidates. Small tier: 53% HR (vs 65% midcap). Large tier: 52% HR. Neither crosses p<0.05 Bonferroni. Midcap remains the sole strong_buy tier. Extended coverage backfill (more months) is the critical path for any future tier adoption. | 2026-04-20 | Active |
 
 ## Success Metrics
 
@@ -222,4 +229,4 @@ _No milestone currently defined. Run `/paul:discuss-milestone` to scope next._
 
 ---
 *PROJECT.md — Updated when requirements or context change*
-*Last updated: 2026-04-20 after v1.4 Phase 12 (methodology versioning) — v1.4 complete*
+*Last updated: 2026-04-20 after v1.5 Phase 15 (tier adoption REJECTED) — v1.5 complete*

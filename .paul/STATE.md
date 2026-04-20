@@ -2,12 +2,12 @@
 
 ## Current Position
 
-Version: 1.4.0
-Milestone: v1.4 Signal Quality Audit — ✅ Complete (all 4 phases)
-Phase: 12 of 12 — ✅ Complete
-Plan: 12-01 UNIFIED
-Status: v1.4 milestone complete. Ready for milestone close + v1.5 planning.
-Last activity: 2026-04-20 — Phase 12 complete; methodology_version tagged on all 142 mature strong_buy
+Version: 1.5.0
+Milestone: v1.5 Signal Tier Extension — ✅ Complete (tier adoption REJECTED)
+Phase: 15 of 15 — ✅ Complete
+Plan: 15-01 UNIFIED
+Status: v1.5 done. Midcap remains sole strong_buy tier per Bonferroni discipline.
+Last activity: 2026-04-20 — All 3 v1.5 phases complete. small (p_bonf=0.53), large (p_bonf=0.34), combined (p_bonf=0.16) — all REJECTED.
 
 Progress:
 - v1.4 Signal Quality Audit: [██░░░░░░░░] 16% (phase 9 apply done, 3 phases pending)
@@ -17,19 +17,14 @@ Progress:
 
 ```
 PLAN ──▶ APPLY ──▶ UNIFY
-  ✓        ✓        ✓     [Phase 11 complete — ready to plan Phase 12]
+  ✓        ✓        ✓     [v1.5 complete — midcap remains sole tier]
 ```
 
-### Phase 11 UNIFY result
-- 1 of 1 plans complete (11-01)
-- Tasks: 3 of 3 DONE, all 4 ACs satisfied
-- Zero filter candidates pass Bonferroni p<0.05.
-- Naive true-mcap midcap filter formally REJECTED with evidence.
-- v1.0 earnings rule confirmed operational (0 mature rows violate it).
-- 47 loser blocks emitted with `root_cause_tag: unclassified` placeholders.
-- Phase 12 guidance: NO new filters. Just methodology_version column + display decision.
-- Product implication: dataset growth is the next highest-leverage move.
-- Scope carved out for v1.5: tier extension (small_cap + large_cap) — 299 clusters out of pool; user granted autonomous-mode execution.
+### v1.5 outcome (Phases 13-15)
+- Phase 13: 441 candidate clusters, 431 with ground-truth XBRL mcap. 78 small + 87 large new candidates.
+- Phase 14: small 52.94% HR (p_bonf=0.53), large 52.46% HR (p_bonf=0.34), combined 52.68% HR (p_bonf=0.16) — none pass p<0.05 Bonferroni vs midcap 64.96% HR.
+- Phase 15: NO ADOPTION. conviction_tier remains `{'strong_buy'}` only.
+- Autonomous execution confirmed: data work done without user prompts; Phase 15's "decision gate" resolved to no-op per Phase 14 evidence.
 
 ### Phase 10 UNIFY result
 - 1 of 1 plans complete (10-01)

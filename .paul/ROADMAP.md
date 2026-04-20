@@ -9,8 +9,42 @@
 | v1.2 | Signal Integrity — matured immutability | ✅ Complete | 2026-04-20 |
 | v1.3 | Pipeline Simplification — strong_buy only | ✅ Complete | 2026-04-20 |
 | v1.4 | Signal Quality Audit — ground-truth mcap + per-signal post-mortem | ✅ Complete | 2026-04-20 |
+| v1.5 | Signal Tier Extension — small_cap + large_cap (investigated, REJECTED) | ✅ Complete | 2026-04-20 |
 
 ## Current Milestone
+
+**v1.5 Signal Tier Extension — small_cap + large_cap** (1.5.0)
+Status: ✅ Complete (tier adoption REJECTED; midcap remains sole strong_buy tier)
+Completed: 2026-04-20
+Phases: 3 of 3 complete
+
+**Theme:** Extend strong_buy classification to recognize small-cap and large-cap insider clusters as distinct tiers, IF the data supports it under p<0.05 Bonferroni. Reuses v1.4's XBRL mcap + audit infrastructure.
+
+**Scope anchors:**
+- 299 qualifying clusters exist in raw pool beyond the 142 current strong_buys (2+ buyers, ≥$100K, GENUINE P).
+- Rough breakdown by ratio-estimate mcap: 44 micro (skip), 60 small, 50 immature midcap (auto-mature over time), 92 large, 53 null.
+- Adoption gate: p<0.05 Bonferroni, same discipline as v1.4 Phase 11.
+- v1.2 matured-immutability preserved throughout; new tiers are additive via `methodology_version='v1.5'`.
+
+### Phases
+
+| Phase | Name | Plans | Status | Completed |
+|-------|------|-------|--------|-----------|
+| 13 | XBRL mcap backfill for tier candidates | 1/1 | ✅ Complete | 2026-04-20 |
+| 14 | Per-tier hit-rate + alpha analysis | 1/1 | ✅ Complete | 2026-04-20 |
+| 15 | Tier adoption + methodology tag (decision gate) | 1/1 | ✅ Complete (no adoption) | 2026-04-20 |
+
+### Phase 13: XBRL mcap backfill for tier candidates
+
+**Focus:** Reuse Phase 9's `XBRLClient` and `backfill_mcap_true.py` pattern to fetch ground-truth shares-outstanding × raw Form 4 avg price for the ~299 additional clusters. Output: a staging table / CSV (not SignalPerformance nodes yet — those would imply classification).
+
+### Phase 14: Per-tier hit-rate + alpha analysis
+
+**Focus:** Extended audit CSV over all 441 qualifying clusters (142 existing + 299 candidates). Per-tier (small-cap $100M-$300M, large-cap >$5B, null-mcap) statistical analysis via Fisher's exact + Mann-Whitney U + Bonferroni. Concrete recommendation per tier: adopt or reject.
+
+### Phase 15: Tier adoption decision gate
+
+**Focus:** If Phase 14 shows a tier clears significance, extend `conviction_tier` enum and re-run compute_all to materialize new SignalPerformance nodes tagged `methodology_version='v1.5'`. If no tier clears, document and close v1.5 without new tiers. **Decision pause for user review** before any product-defining enum extension.
 
 **v1.4 Signal Quality Audit — ground-truth mcap + per-signal post-mortem** (1.4.0)
 Status: ✅ Complete
@@ -140,4 +174,4 @@ Milestone log: `.paul/MILESTONES.md`
 
 ---
 *ROADMAP.md — Updated when phases complete or scope changes*
-*Last updated: 2026-04-20 — v1.4 created (Signal Quality Audit)*
+*Last updated: 2026-04-20 — v1.5 complete (tier extension REJECTED)*
