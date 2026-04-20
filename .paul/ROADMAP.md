@@ -31,7 +31,7 @@ Phases: 0 of 4 complete
 | Phase | Name | Plans | Status | Completed |
 |-------|------|-------|--------|-----------|
 | 9 | Ground-truth market cap (SEC XBRL) | 1/1 | ✅ Complete | 2026-04-20 |
-| 10 | Per-signal audit template | TBD | Not started | — |
+| 10 | Per-signal audit template | 1/1 | ✅ Complete | 2026-04-20 |
 | 11 | Classification + significance testing | TBD | Not started | — |
 | 12 | Filter redesign + re-export | TBD | Not started | — |
 

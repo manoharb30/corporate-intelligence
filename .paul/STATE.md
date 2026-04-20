@@ -4,10 +4,10 @@
 
 Version: 1.4.0-dev
 Milestone: v1.4 Signal Quality Audit — ground-truth mcap + per-signal post-mortem
-Phase: 9 of 12 (Ground-truth market cap) — ✅ Complete
-Plan: 09-01 UNIFIED
-Status: Ready to plan Phase 10 (Per-signal audit template)
-Last activity: 2026-04-20 — Phase 9 complete; 141/142 mcap_at_signal_true resolved
+Phase: 10 of 12 (Per-signal audit template) — ✅ Complete
+Plan: 10-01 UNIFIED
+Status: Ready to plan Phase 11 (Classification + significance testing)
+Last activity: 2026-04-20 — Phase 10 complete; audit CSV at backend/exports/out/signal_audit_v1_4.csv
 
 Progress:
 - v1.4 Signal Quality Audit: [██░░░░░░░░] 16% (phase 9 apply done, 3 phases pending)
@@ -17,23 +17,32 @@ Progress:
 
 ```
 PLAN ──▶ APPLY ──▶ UNIFY
-  ✓        ✓        ✓     [Phase 9 complete — ready to plan Phase 10]
+  ✓        ✓        ✓     [Phase 10 complete — ready to plan Phase 11]
 ```
 
-APPLY notes for UNIFY (plan 09-01):
-- Tasks 1, 2, 3 all executed. Status DONE_WITH_CONCERNS due to AC-2 at 96.5% (137/142).
-- Unit tests: 70 relevant (10 new xbrl + 41 sp + 19 sf) all pass. 2 pre-existing collection errors in unrelated deprecated-service test files.
-- Code / data:
-  - NEW: `backend/ingestion/sec_edgar/xbrl_client.py` (XBRLClient async HTTP client, ~160 lines)
-  - NEW: `backend/backfill_mcap_true.py` (checkpoint-resumable operational script, ~290 lines)
-  - NEW: `backend/tests/test_xbrl_client.py` (10 tests)
-  - MOD: `neo4j/schema-report.md` — added "Ground-truth market cap (v1.4, Phase 9)" subsection
-  - DATA: 137 SignalPerformance nodes gained 6 additive properties each (`mcap_at_signal_true` + 5 provenance sidecars). NO existing property mutated.
-- Deviations:
-  1. Classification filter relaxed from `GENUINE` only to `GENUINE|FILTERED|NULL` — matured strong_buy signals often have underlying P txns that were later reclassified to FILTERED by the earnings filter. The real price the insiders paid is independent of classification.
-  2. AC-2 is 96.5% (137/142), not 100%. 5 signals have no retrievable XBRL shares-outstanding (closed-end fund, late-IPO'd issuers, missing XBRL).
-  3. FNKO shows mcap_new=$0M — likely a near-zero avg_px artifact. Logged as concern for Phase 10 pre-check.
-- Top ratio-estimate errors corrected: RPAY -92.5%, ONDS -88.1%, DNA -18.7%, ANNX -75.6%, XRN -50.0% (all old estimate → true primary-source).
+### Phase 10 UNIFY result
+- 1 of 1 plans complete (10-01)
+- Tasks: 3 of 3 DONE, all 4 ACs satisfied
+- 142-row × 33-col CSV + Parquet + data dictionary produced. Byte-deterministic across re-runs (MD5 stable: 35f57c2d...).
+- Key finding: midcap filter applied to TRUE mcap would drop 10 signals with 80% hit rate / +33% avg return — tightening the filter would HURT performance. Phase 11 to investigate why with p-values.
+- No deviations. No Neo4j mutations. Deterministic output (no `exported_at`).
+
+### Phase 9 UNIFY result
+- 1 of 1 plans complete (09-01)
+- Tasks: 3 of 3 DONE (all PASS)
+- Coverage: 141/142 (99.3%) mcap_at_signal_true populated — 139 exact + 2 post-signal approx. 1 unresolved (GAM, closed-end fund, accepted).
+- Unit tests: 71 (11 new xbrl + 41 sp + 19 sf) all pass. 2 pre-existing collection errors unrelated.
+- Deviations (all resolved during iteration):
+  1. Classification filter relaxed GENUINE → GENUINE|FILTERED|NULL.
+  2. Post-signal fallback (≤90d) added for late-XBRL issuers (ANDG, CRGY).
+  3. Fall-through on sanity filter (FNKO needed WeightedAvg fallback).
+  4. XBRL concept list extended 3 → 5.
+- Top ratio-estimate errors corrected: ANDG -93%, RPAY -92%, ONDS -88%, SEI -86%, MRVI -60%, DNA -19%.
+
+### Git State
+Last commit: 8fb4853 — feat(09-ground-truth-mcap): SEC XBRL shares-outstanding backfill (v1.4 Phase 9)
+Branch: main
+Feature branches merged: none
 
 ### Phase 8 UNIFY result
 - 1 of 1 plans complete (08-01)
@@ -57,15 +66,14 @@ Feature branches merged: none
 ## Session Continuity
 
 Last session: 2026-04-20
-Stopped at: v1.4 milestone created, Phase 9 awaiting plan
-Next action: /paul:plan (plan Phase 9: Ground-truth market cap)
-Resume file: .paul/ROADMAP.md
+Stopped at: Phase 9 complete (commit 8fb4853); ready to plan Phase 10
+Next action: /paul:plan (plan Phase 10: Per-signal audit template)
+Resume file: .paul/phases/09-ground-truth-mcap/09-01-SUMMARY.md
 Resume context:
-- Trigger: DNA (Ginkgo Bioworks 2024-05-15) exposed that our price-ratio mcap estimate folds reverse-splits + dilution into a single wrong number. Signal was mis-classified as $1B–$3B midcap.
-- Ad-hoc audit (same session) found my DNA-derived hypotheses (pre-cluster selling, low raw price) don't generalize across the 142 pool. Need systematic per-signal audit, not one-off tests.
-- Plan: 4 phases. Phase 9 = ground-truth mcap from SEC XBRL; Phase 10 = per-signal CSV; Phase 11 = classify + p-value filters; Phase 12 = implement + re-export.
-- Constraint: v1.2 immutability invariant holds; new fields are additive.
-- Deferred to v1.5: client-facing correction note.
+- Phase 9 shipped: 141/142 mature strong_buy have mcap_at_signal_true (139 exact + 2 approx; 1 unresolved GAM closed-end fund).
+- Big ratio-estimate corrections revealed (ANDG/RPAY/ONDS/SEI/MRVI all off 60-93%); these will be focus signals for Phase 11 classification testing.
+- Phase 10 goal: produce signal_audit_v1_4.csv (142 rows × 20+ deterministic columns) using the new mcap_at_signal_true + existing stored data.
+- Constraint: v1.2 immutability holds; additive properties only.
 
 ## Accumulated Decisions
 

@@ -73,9 +73,10 @@ Hedge funds get pre-filtered insider conviction signals with 67.4% hit rate and 
 
 - [x] Pipeline scope narrowed to strong_buy buy only — legacy sell direction + non-strong_buy tiers (buy, watch) removed from compute_all, snapshot_service, and API route. 372 legacy rows deleted; 142 mature strong_buy preserved byte-identically (Phase 8)
 
-### In progress (v1.4, Phase 9 shipped 2026-04-20)
+### In progress (v1.4, Phases 9-10 shipped 2026-04-20)
 
 - [x] Ground-truth market cap via SEC EDGAR XBRL — `mcap_at_signal_true` backfilled on 141/142 mature strong_buy signals (99.3%). XBRL client + backfill script + 11 unit tests. Top ratio-estimate errors revealed: ANDG/RPAY/ONDS/SEI each off by 60–93%. (Phase 9)
+- [x] Per-signal audit template — `signal_audit_v1_4.csv` (142 rows × 33 cols) produced deterministically from stored data only. Used as input for Phase 11 classification. Key finding: naive midcap filter on TRUE mcap would drop 10 signals with 80% hit rate / +33% return — the old ratio-estimate was effectively a different filter, not a worse one. Phase 11 to investigate with p-values. (Phase 10)
 
 ### Active (In Progress)
 
@@ -179,6 +180,8 @@ _No milestone currently defined. Run `/paul:discuss-milestone` to scope next._
 | Ground-truth mcap sourced from SEC XBRL primary data | Price-ratio estimate (`current_mcap × signal_price/current_price`) breaks on reverse splits, dilution, buybacks. SEC EDGAR XBRL company-facts is free, official, dated quarterly — the only trustworthy source. | 2026-04-20 | Active |
 | XBRL client tries 5 concepts as fallback chain | Different filers tag shares outstanding differently. Dual-class issuers (MRVI), post-IPO entities (FNKO), closed-end funds all need different concepts or fail. `WeightedAverageNumberOfSharesOutstandingBasic` is within <2% of point-in-time for stable issuers. | 2026-04-20 | Active |
 | Post-signal XBRL fallback (within 90d) for late-XBRL issuers | 2 signals (ANDG, CRGY) had no pre-signal XBRL because the first 10-Q/10-K XBRL filing postdates signal_date. Using nearest-quarter-after is <5% different for stable issuers and preferred over null. Labeled distinctly as `xbrl_post_signal_approx` in provenance. | 2026-04-20 | Active |
+| Audit CSV is deterministic (no exported_at column) | Byte-level reproducibility is an AC for the audit; any non-deterministic field (timestamps) excluded. Re-running the generator with unchanged inputs must produce an identical file. | 2026-04-20 | Active |
+| Midcap band on true mcap NOT obviously correct (Phase 10 finding) | Tightening the filter using ground-truth mcap drops 10 winners with 80% hit rate. The old noisy ratio-estimate was effectively a different filter, not a worse one. Phase 11 must test with p-values before committing to any new band. | 2026-04-20 | Active |
 
 ## Success Metrics
 
@@ -215,4 +218,4 @@ _No milestone currently defined. Run `/paul:discuss-milestone` to scope next._
 
 ---
 *PROJECT.md — Updated when requirements or context change*
-*Last updated: 2026-04-20 after v1.4 Phase 9 (ground-truth mcap)*
+*Last updated: 2026-04-20 after v1.4 Phase 10 (per-signal audit template)*
