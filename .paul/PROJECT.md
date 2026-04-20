@@ -13,9 +13,9 @@ Hedge funds get pre-filtered insider conviction signals with 67.4% hit rate and 
 | Attribute | Value |
 |-----------|-------|
 | Type | Application (Data Product) |
-| Version | 1.1.0-dev |
-| Status | Production (ci.lookinsight.ai) — v1.1 Phase 4 (Signal Data Export) shipped; Phase 5 (Research Brief) in progress |
-| Last Updated | 2026-04-19 |
+| Version | 1.1.0 |
+| Status | Production (ci.lookinsight.ai) — v1.1 complete; awaiting v1.2 definition |
+| Last Updated | 2026-04-20 |
 
 **Production URLs:**
 - https://ci.lookinsight.ai: Web dashboard (Vercel + Railway)
@@ -57,23 +57,35 @@ Hedge funds get pre-filtered insider conviction signals with 67.4% hit rate and 
 - [x] verify_export.py — Neo4j-live audit tool (row count + null audit + 5-signal spot-check) — v1.1 Phase 4
 - [x] backend/exports/ as layer-3 delivery module — v1.1 Phase 4
 
+### Validated (v1.1, shipped 2026-04-20)
+
+- [x] Methodology-first research brief (533 lines, 8 sections, academic foundation)
+- [x] Research brief charts (funnel, return distribution, alpha waterfall)
+- [x] May 2024 extended-coverage backfill (first of several planned extensions)
+- [x] TZ-suffix fix in signal_filter.py (May 2024 surfaced it)
+- [x] Schema discipline — CLAUDE.md rule + neo4j/schema-report.md SignalPerformance section
+
+### Validated (v1.2, shipped 2026-04-20)
+
+- [x] Matured-signal immutability invariant — `compute_all()` never touches SignalPerformance nodes where `is_mature = true` (Phase 7)
+
 ### Active (In Progress)
 
-- [ ] v1.1 Phase 5: Research Brief PDF — methodology-first write of the funnel story, built on the Phase 4 data appendix
-- [ ] v1.1 Phase 6: Per-Fund Delivery — email + attachments to Citadel, Squarepoint, Final with tracking
+_No milestone currently defined. Run `/paul:discuss-milestone` to scope next._
 
-### Deferred (Backlog, post-v1.1)
+### Deferred (Backlog)
 
 - [ ] Daily auto-ingest automation (cron/scheduler)
 - [ ] Signal alert system (new strong_buy → notify)
 - [ ] Price/market cap freshness automation
 - [ ] Monitoring/health checks
 - [ ] S3 bucket signal delivery (hedge-fund delivery channel)
-- [ ] First paid institutional client (v1.1 delivery may partially address this)
+- [ ] First paid institutional client
 - [ ] Neudata marketplace listing
-- [ ] Extended coverage backfill (2023–2024)
+- [ ] Extended coverage backfill (Jan–Apr 2024 next; 2023 after)
 - [ ] Industry enrichment beyond SEC SIC metadata (24% SIC-null rate observed in Phase 4)
 - [ ] Window size experiment (30d vs 40d) — non-destructive analysis
+- [ ] Per-fund delivery / outreach (was v1.1 Phase 6, dropped from scope; revisit when cadence defined)
 
 ### Out of Scope
 
@@ -151,6 +163,8 @@ Hedge funds get pre-filtered insider conviction signals with 67.4% hit rate and 
 | hostile_flag exported as informational column (3/141 true) | v1.0 classification preserved; data freely available; buyer can weight the flag independently | 2026-04-19 | Active |
 | backend/exports/ as layer-3 delivery module | Keeps export scripts out of backend/ root; imports only from domain+data, never api | 2026-04-19 | Active |
 | Reuse InsiderClusterService.get_cluster_detail for buyer provenance | Avoids reimplementing cluster-window logic; 100% semantically aligned with v1.0 cluster definition | 2026-04-19 | Active |
+| Matured SignalPerformance nodes are immutable | A matured signal is a frozen historical record; recompute should never drift classifications. `compute_all` now preserves `is_mature=true` nodes byte-identically — only immature/new signals are refreshed. | 2026-04-20 | Active |
+| Drop `market_cap_at_signal` field in favor of matured-preservation | A snapshot field was planned but made redundant once we stopped touching matured rows entirely. Simpler and respects the same invariant. | 2026-04-20 | Active |
 
 ## Success Metrics
 
@@ -187,4 +201,4 @@ Hedge funds get pre-filtered insider conviction signals with 67.4% hit rate and 
 
 ---
 *PROJECT.md — Updated when requirements or context change*
-*Last updated: 2026-04-19 after v1.1 Phase 4 (Signal Data Export)*
+*Last updated: 2026-04-20 after v1.2 Phase 7 (mcap snapshot / matured immutability)*

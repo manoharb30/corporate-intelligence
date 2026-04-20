@@ -78,6 +78,24 @@ Scanners must NOT depend on API layer. Ingestion must NOT depend on services or 
 - `frontend/src/pages/PerformanceTracker.tsx` — full signal P&L (winners + losers)
 - `frontend/src/services/api.ts` — typed API client (snapshotApi, eventDetailApi, signalPerfApi, healthApi)
 
+## Before writing database queries (HARD RULE)
+
+**Never guess Cypher property names.** Before writing any Cypher query that references specific properties, confirm the schema:
+
+1. **Always-current sources of truth (read these first):**
+   - `SignalPerformance` → `backend/app/services/signal_performance_service.py` — see `_store_batch()` for the exact CREATE clause listing every property.
+   - `InsiderTransaction` / `Company` / `Person` → `backend/ingest_genuine_p_to_neo4j.py` `ingest_transaction()` — authoritative MERGE/SET clauses.
+   - `ActivistFiling` → `backend/app/services/activist_filing_service.py`.
+   - `Event` → `backend/app/services/event_store_service.py`.
+2. **Cached reference:** `neo4j/schema-report.md` — generated snapshot, updated periodically. Use for quick lookup but validate against the write path if unsure.
+3. **If a query fails with "property does not exist":** STOP. Re-read the write path. Do not iterate by trial-and-error — one schema mismatch often hides others.
+
+**Common gotchas (record, don't rediscover):**
+- `SignalPerformance` has `price_day90` but **no** `return_day90` — compute from `(price_day90 - price_day0)/price_day0`, or use `return_current` for mature signals.
+- SPY alpha property is `spy_return_90d`, **not** `spy_return_day90`.
+- `signal_level` = `'high' | 'medium'`. The strong_buy distinction lives in `conviction_tier` = `'strong_buy' | ...`.
+- `transaction_date` may have a TZ suffix (`-05:00`). Truncate via `substring(dt, 0, 10)` in Cypher or `dt[:10]` in Python before parsing.
+
 ## PAUL Framework
 
 This project uses PAUL (Plan → Apply → Unify loop). See `.paul/`:

@@ -5,50 +5,27 @@
 | Version | Milestone | Status | Date |
 |---------|-----------|--------|------|
 | v1.0 | Signal Quality | ✅ Complete | 2026-04-18 |
-| v1.1 | Hedge Fund Research Delivery | 🚧 In Progress | Started 2026-04-19 |
+| v1.1 | Hedge Fund Research Delivery | ✅ Complete | 2026-04-20 |
+| v1.2 | Signal Integrity — matured immutability | ✅ Complete | 2026-04-20 |
 
 ## Current Milestone
 
-**v1.1 Hedge Fund Research Delivery** (1.1.0-dev)
-Status: 🚧 In Progress
-Started: 2026-04-19
-Phases: 1 of 3 complete (Phase 4 ✅)
+**v1.2 Signal Integrity — matured immutability** (1.2.0)
+Status: ✅ Complete
+Completed: 2026-04-20
+Phases: 1 of 1 complete
 
-**Theme:** Package v1.0's signal methodology and performance data as a defensible institutional research brief for Citadel, Squarepoint, and Final. The funnel *is* the product — 141 mature strong_buy signals is the destination; the methodology narrative is the moat.
+**Outcome:** Matured `SignalPerformance` nodes are now byte-immutable across recompute. `compute_all` reads the set of matured signal_ids before any DELETE and skips them entirely. Implementation shifted from the originally-planned "snapshot column" to the simpler "don't touch matured rows" approach — same invariant, less code.
 
-**Scope anchors:**
-- 141 mature strong_buy signals (Jun 2024 – Apr 2026, 22 months)
-- Methodology story: raw Form 4 → P classification → cluster detection → midcap → earnings proximity → hostile filter → maturity
-- Fresh write — no reference to 8-K M&A, congressional trades, or ownership-network hypotheses
-- One master PDF (not per-fund customized)
-- Targeted delivery to Citadel, Squarepoint, Final
+Verification: 408 matured rows preserved byte-identically across a live `compute_all(days=760)` run. 38 unit tests pass (34 existing + 4 new).
 
 ### Phases
 
 | Phase | Name | Plans | Status | Completed |
 |-------|------|-------|--------|-----------|
-| 4 | Signal Data Export | 1/1 | ✅ Complete | 2026-04-19 |
-| 5 | Research Brief PDF | TBD | Not started | — |
-| 6 | Per-Fund Delivery | TBD | Not started | — |
-
-### Phase 4: Signal Data Export
-
-**Focus:** Export all `SignalPerformance` data from Neo4j into CSV + Parquet with full provenance — filing URL, Form 4 URLs per cluster member, CIK, ticker, cluster members, filing date, signal date, returns at 30/60/90d, SPY alpha, maturity flag, hostile flag, market cap tier. This becomes the data appendix of the research brief and the artifact attached to delivery emails.
-Plans: TBD (defined during /paul:plan)
-
-### Phase 5: Research Brief PDF
-
-**Focus:** Methodology-first research brief. Funnel diagram with drop-off counts at each filter stage, headline performance table across all 141 signals, statistical significance (hit rate, alpha, p-values), caveats (sample size, survivorship, market regime). Clean narrative — no deprecated-framework references. Output: one master PDF, polished for institutional readers.
-Plans: TBD (defined during /paul:plan)
-
-### Phase 6: Per-Fund Delivery
-
-**Focus:** Distribute master PDF + data appendix to Citadel, Squarepoint, Final with short personalized cover notes. Set up tracking (opens, replies) and follow-up cadence. Capture feedback into a structured log for future milestone input.
-Plans: TBD (defined during /paul:plan)
+| 7 | mcap snapshot (matured immutability) | 1/1 | ✅ Complete | 2026-04-20 |
 
 ## Backlog (not scheduled)
-
-Carried forward from v1.0 but not part of v1.1 scope:
 
 ### Operations
 - [ ] Daily auto-ingest (cron/scheduler)
@@ -57,16 +34,35 @@ Carried forward from v1.0 but not part of v1.1 scope:
 - [ ] Monitoring/health checks
 
 ### Scale
-- [ ] First paid institutional client (may be partially addressed by v1.1 delivery outcomes)
+- [ ] First paid institutional client
 - [ ] Neudata marketplace listing
 - [ ] Historical data licensing
-- [ ] Extended coverage (2023-2024 backfill)
+- [ ] Extended coverage (Jan–Apr 2024 next; 2023 after)
 - [ ] S3 bucket signal delivery
+- [ ] Per-fund delivery / outreach (was v1.1 Phase 6, dropped; revisit when cadence is defined)
 
-### Research
+### Correctness / Research
+- [ ] **mcap snapshot at signal creation** — matured signals should be immutable on recompute (`compute_all` currently re-derives historical mcap from current state each run)
 - [ ] Window size experiment (30d vs 40d) — needs non-destructive analysis approach
+- [ ] Industry enrichment beyond SEC SIC (24% SIC-null rate in Phase 4 export)
 
 ## Completed Milestones
+
+<details>
+<summary>v1.1 Hedge Fund Research Delivery — 2026-04-20 (2 phases shipped, 1 dropped)</summary>
+
+| Phase | Name | Plans | Status |
+|-------|------|-------|--------|
+| 4 | Signal Data Export | 1/1 | ✅ Complete |
+| 5 | Research Brief (Content) | 1/1 (05-02 PDF closed) | ✅ Complete |
+| 6 | Per-Fund Delivery | — | Dropped from scope |
+
+**Artifacts:** 141-signal CSV + Parquet + data dictionary; 533-line methodology brief with academic foundation; 3 charts + stats.json.
+
+Full archive: `.paul/milestones/v1.1.0-ROADMAP.md`
+Milestone log: `.paul/MILESTONES.md`
+
+</details>
 
 <details>
 <summary>v1.0 Signal Quality — 2026-04-18 (3 phases, 14 plans)</summary>
@@ -87,4 +83,4 @@ Milestone log: `.paul/MILESTONES.md`
 
 ---
 *ROADMAP.md — Updated when phases complete or scope changes*
-*Last updated: 2026-04-19 — Phase 4 (Signal Data Export) complete*
+*Last updated: 2026-04-20 — v1.2 complete*

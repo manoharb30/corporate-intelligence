@@ -5,6 +5,89 @@ Completed milestone log for this project.
 | Milestone | Completed | Duration | Stats |
 |-----------|-----------|----------|-------|
 | v1.0 Signal Quality | 2026-04-18 | 3 phases | 3 phases, 14 plans, production deployment |
+| v1.1 Hedge Fund Research Delivery | 2026-04-20 | 2 days | 2 phases shipped, 1 dropped; brief + data appendix |
+
+---
+
+## ✅ v1.1 Hedge Fund Research Delivery
+
+**Version:** 1.1.0
+**Completed:** 2026-04-20
+**Duration:** 2 days (2026-04-19 → 2026-04-20)
+
+### Stats
+
+| Metric | Value |
+|--------|-------|
+| Phases | 2 shipped (4, 5), 1 dropped (6 — Per-Fund Delivery, out of scope) |
+| Plans | 3 (04-01 export ✓, 05-01 content ✓, 05-02 PDF closed by user) |
+| New modules | `backend/exports/` (layer-3 delivery) |
+| Artifacts shipped | 141-signal CSV + Parquet (33 cols), DATA_DICTIONARY.md, verify_export.py, 533-line research brief (8 sections, 6477 words), 3 PNG charts, stats.json |
+
+### Key Accomplishments
+
+**Phase 4: Signal Data Export**
+- 32-column schema locked for reproducible delivery (later expanded to 33 with signal_level)
+- CSV + Parquet outputs with pyarrow type enforcement
+- DATA_DICTIONARY.md covering cohort, derived formulas, caveats, reproducibility
+- verify_export.py Neo4j-live audit (row count + null audit + 5-signal spot-check, 0 mismatches)
+- `backend/exports/` module respecting layer-3 boundary (imports domain+data only, never api)
+- Reused `InsiderClusterService.get_cluster_detail` for buyer provenance — avoided re-implementing cluster-window logic
+
+**Phase 5: Research Brief (Content)**
+- 533-line methodology-first brief with 8 sections (Thesis, Methodology, Funnel, Performance, Signal-level log, Academic Foundation, Caveats, Appendix)
+- Funnel-as-product framing validated
+- Academic citations added (Jeng/Metrick/Zeckhauser 2003, Cohen/Malloy/Pomorski 2012, Lakonishok & Lee 2001, Seyhun 1986, Ke/Huddart/Petroni 2003)
+- 17-month per-signal performance log (month-grouped)
+- Statistical reality check: alpha p-value computed at 0.0022 (two-sided t-test), not <0.001 as previously asserted — brief honors the computed value
+- Phase 5 Plan 02 (PDF rendering) created but closed by user — markdown output deemed sufficient
+
+**Phase 6: Per-Fund Delivery** — dropped from v1.1 scope by user decision. Hedge fund outreach is not a code-milestone activity.
+
+### Key Decisions
+
+| Decision | Rationale | Date |
+|----------|-----------|------|
+| Story-first framing for research brief | Methodology funnel emphasized over the 141 headline number | 2026-04-19 |
+| One master PDF, not per-fund | Simpler delivery, consistent narrative across recipients | 2026-04-19 |
+| Fresh write, no deprecated-framework references | Clean signal thesis for institutional readers | 2026-04-19 |
+| v1.1 phases = 4/5/6 globally (continuing sequence) | Preserves phase-directory convention from v1.0 | 2026-04-19 |
+| 32-column signal schema locked | Reproducible delivery format with type-enforced Parquet + self-referencing CSV | 2026-04-19 |
+| hostile_flag exported as informational column (3/141 true) | v1.0 classification preserved; buyer can weight independently | 2026-04-19 |
+| Numbers are "as of [publication date]", not frozen | Institutional alt-data norm; updates strengthen the product | 2026-04-20 |
+| Phase 6 (Per-Fund Delivery) dropped from scope | Email outreach is an ops activity, not a code milestone | 2026-04-20 |
+
+### Work Also Completed
+
+- **May 2024 backfill** — first month of extended coverage (Jun 2024 baseline extended backward). Found a TZ-suffix bug in `signal_filter.py` (missing `[:10]` slice on `signal_date`); fixed in-session.
+- **Hardened schema discipline** — added `Before writing database queries` rule to `CLAUDE.md` + expanded `SignalPerformance` section in `neo4j/schema-report.md` after property-name guessing caused repeated query failures.
+- **Identified mcap snapshot design gap** — `compute_all` re-derives historical market_cap from current state each run; should snapshot at signal creation. Carried forward as first phase of v1.2.
+
+### Headline Numbers (as of 2026-04-20, post-May 2024 backfill)
+
+| Metric | Value |
+|--------|-------|
+| Mature strong_buy signals | 142 (Apr 2024 – Apr 2026) |
+| Hit rate (90d > 0) | 66.9% |
+| Avg 90d return | +14.04% |
+| Alpha vs SPY (90d) | +8.72% |
+
+(v1.1 brief was written against the frozen 2026-04-19 snapshot: 141 / 67.4% / +9.0% / p=0.0022.)
+
+### Delivery Artifacts
+
+- `.paul/phases/05-research-brief-pdf/brief_v1_1.md` (533 lines, 6477 words, 8 sections)
+- `backend/exports/out/signals_v1_1_2026-04-19.csv` (141 rows × 33 cols)
+- `backend/exports/out/signals_v1_1_2026-04-19.parquet` (same)
+- `backend/exports/DATA_DICTIONARY.md`
+- `.paul/phases/05-research-brief-pdf/charts/` (funnel.png, return_distribution.png, alpha_waterfall.png)
+- `.paul/phases/05-research-brief-pdf/stats.json`
+
+### Next Milestone Input
+
+- mcap snapshot fix (matured signals should be immutable on recompute)
+- Extended coverage backfill (Jan–Apr 2024 next, optionally 2023)
+- Revisit Phase 6 if/when outreach cadence is defined
 
 ---
 

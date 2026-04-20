@@ -154,24 +154,42 @@ class SignalPerformanceService:
 
     @staticmethod
     async def compute_all(days: int = 730) -> dict:
-        """Detect all clusters, compute performance from stored data, store in Neo4j.
+        """Detect clusters and refresh performance data, preserving matured signals.
 
-        1. DELETE all existing SignalPerformance nodes
-        2. Detect clusters
-        3. Batch-fetch price_series + market_cap for all companies + SPY
-        4. Compute performance for each cluster
-        5. Batch-store via UNWIND
+        Matured SignalPerformance nodes (is_mature = true) are IMMUTABLE and
+        never touched by this function. Only immature nodes and newly-detected
+        clusters are (re)computed.
+
+        1. Collect signal_ids of existing matured nodes (preserved set)
+        2. DELETE only immature / unknown-maturity nodes
+        3. Detect clusters
+        4. Skip clusters whose signal_id is in the preserved set
+        5. Compute performance for the remaining clusters
+        6. Batch-store the new/immature results
+        7. Recompute dashboard stats from the FULL set (preserved + new)
         """
         start_time = time.time()
 
-        # 1. Clean slate
+        # 1. Collect matured signal_ids — these must not be touched
+        mature_rows = await Neo4jClient.execute_query(
+            "MATCH (sp:SignalPerformance) "
+            "WHERE sp.is_mature = true AND sp.signal_id IS NOT NULL "
+            "RETURN sp.signal_id AS id"
+        )
+        mature_ids = {r["id"] for r in mature_rows}
+        logger.info(f"Preserving {len(mature_ids)} matured SignalPerformance nodes")
+
+        # 2. Delete only immature / unknown-maturity nodes
         del_result = await Neo4jClient.execute_query(
-            "MATCH (sp:SignalPerformance) DETACH DELETE sp RETURN count(sp) as deleted"
+            "MATCH (sp:SignalPerformance) "
+            "WHERE sp.is_mature = false OR sp.is_mature IS NULL "
+            "DETACH DELETE sp "
+            "RETURN count(sp) AS deleted"
         )
         deleted = del_result[0]["deleted"] if del_result else 0
-        logger.info(f"Deleted {deleted} existing SignalPerformance nodes")
+        logger.info(f"Deleted {deleted} immature SignalPerformance nodes")
 
-        # 2. Detect clusters
+        # 3. Detect clusters
         buy_clusters = await InsiderClusterService.detect_clusters(
             days=days, min_level="medium", direction="buy"
         )
@@ -182,7 +200,7 @@ class SignalPerformanceService:
             f"Detected {len(buy_clusters)} buy + {len(sell_clusters)} sell clusters"
         )
 
-        # 3. Batch-fetch company data + SPY + filing dates
+        # 4. Batch-fetch company data + SPY + filing dates
         all_ciks = list(
             set(c.cik for c in buy_clusters + sell_clusters if c.cik)
         )
@@ -193,7 +211,7 @@ class SignalPerformanceService:
 
         now = datetime.now()
 
-        # 4. Compute performance for each cluster
+        # 5. Compute performance for clusters NOT already represented by a matured node
         performances = []
         all_clusters = [(c, "buy") for c in buy_clusters] + [
             (c, "sell") for c in sell_clusters
@@ -201,19 +219,22 @@ class SignalPerformanceService:
 
         for cluster, direction in all_clusters:
             perf = SignalPerformanceService._compute_one(
-                cluster, direction, company_data, spy_series, industry_map, filing_date_map, now
+                cluster, direction, company_data, spy_series, industry_map, filing_date_map, now,
+                mature_ids=mature_ids,
             )
             if perf:
                 performances.append(perf)
 
-        # 5. Batch-store
+        # 6. Batch-store only the fresh results (matured rows were preserved above)
         stored = await SignalPerformanceService._store_batch(performances)
 
-        # 6. Precompute dashboard hero stats and save as blob
-        await SignalPerformanceService._save_dashboard_stats(performances)
+        # 7. Dashboard stats must reflect the full set: preserved + freshly stored
+        full_set = await SignalPerformanceService._fetch_all_for_dashboard()
+        await SignalPerformanceService._save_dashboard_stats(full_set)
 
         elapsed = round(time.time() - start_time, 1)
         summary = {
+            "preserved_mature": len(mature_ids),
             "total_clusters": len(all_clusters),
             "computed": len(performances),
             "stored": stored,
@@ -234,13 +255,22 @@ class SignalPerformanceService:
         industry_map: dict,
         filing_date_map: dict,
         now: datetime,
+        mature_ids: Optional[set] = None,
     ) -> Optional[dict]:
         """Compute performance for a single cluster using stored data.
 
         Returns are calculated from the FILING DATE (when public knows),
         not the transaction date (when insider traded). This avoids look-ahead bias.
         signal_date (transaction date) is kept for display purposes.
+
+        If the cluster's prospective signal_id is in `mature_ids`, returns None
+        so the caller skips it — the existing matured SignalPerformance node
+        stays untouched (immutability invariant).
         """
+        # Short-circuit: matured SignalPerformance is immutable. Don't recompute.
+        if mature_ids is not None and cluster.accession_number in mature_ids:
+            return None
+
         if not cluster.ticker or not cluster.cik:
             return None
 
@@ -571,6 +601,24 @@ class SignalPerformanceService:
                 round(r["avg_spy_return"], 2) if r["avg_spy_return"] else None
             ),
         }
+
+    @staticmethod
+    async def _fetch_all_for_dashboard() -> list[dict]:
+        """Fetch every SignalPerformance node reshaped for `_save_dashboard_stats`.
+
+        Used after `compute_all` so dashboard numbers reflect the full set
+        (preserved matured rows + freshly computed rows), not just the subset
+        processed this run.
+        """
+        rows = await Neo4jClient.execute_query(
+            "MATCH (sp:SignalPerformance) "
+            "RETURN sp.direction AS direction, "
+            "       sp.conviction_tier AS conviction_tier, "
+            "       sp.is_mature AS is_mature, "
+            "       sp.return_day0 AS return_day0, "
+            "       sp.spy_return_90d AS spy_return_90d"
+        )
+        return [dict(r) for r in rows]
 
     @staticmethod
     async def _save_dashboard_stats(performances: list[dict]) -> None:

@@ -276,3 +276,153 @@ class TestMaturity:
         from app.services.signal_performance_service import check_maturity
         assert check_maturity(age_days=97, price_day90=55.0) is True
         assert check_maturity(age_days=96, price_day90=55.0) is False
+
+
+# === compute_all matured-preservation invariant (v1.2 Phase 7) ===
+
+class TestComputeAllPreservesMatured:
+    """compute_all MUST NOT touch SignalPerformance nodes where is_mature = true.
+
+    Invariant introduced in v1.2 Phase 7: a matured signal is a frozen historical
+    record. Only immature signals and newly-detected clusters are (re)computed.
+    """
+
+    def _make_cluster(
+        self,
+        accession_number: str = "CLUSTER-TEST-2024-06-01",
+        ticker: str = "TEST",
+        cik: str = "0001234567",
+        window_end: str = "2024-06-01",
+        total_buy_value: float = 500_000,
+        num_buyers: int = 3,
+        signal_level: str = "high",
+        company_name: str = "Test Co",
+    ):
+        """Build a minimal cluster object for _compute_one inputs."""
+        from types import SimpleNamespace
+        return SimpleNamespace(
+            accession_number=accession_number,
+            ticker=ticker,
+            cik=cik,
+            window_end=window_end,
+            total_buy_value=total_buy_value,
+            num_buyers=num_buyers,
+            signal_level=signal_level,
+            company_name=company_name,
+        )
+
+    def _make_company_data(self, cik: str = "0001234567"):
+        """Build company_data dict with enough price history for maturity."""
+        # ~1 year of daily prices covering 2024-05-15 → 2024-09-15 (mature window)
+        from datetime import datetime, timedelta
+        series = []
+        start = datetime(2024, 5, 15)
+        for i in range(150):
+            d = start + timedelta(days=i)
+            # Skip weekends to mimic real price_series
+            if d.weekday() < 5:
+                series.append({"d": d.strftime("%Y-%m-%d"), "c": 40.0 + i * 0.1})
+        return {cik: {"market_cap": 1_000_000_000, "series": series}}
+
+    def test_compute_one_short_circuits_when_signal_id_in_mature_ids(self):
+        """AC-1: matured signals are skipped — _compute_one returns None."""
+        from datetime import datetime
+        from app.services.signal_performance_service import SignalPerformanceService
+
+        cluster = self._make_cluster(accession_number="CLUSTER-MATURE-X")
+        mature_ids = {"CLUSTER-MATURE-X"}
+
+        result = SignalPerformanceService._compute_one(
+            cluster,
+            direction="buy",
+            company_data=self._make_company_data(cluster.cik),
+            spy_series=[],
+            industry_map={},
+            filing_date_map={},
+            now=datetime(2024, 10, 1),
+            mature_ids=mature_ids,
+        )
+
+        assert result is None, "Matured signal_id must be short-circuited, not recomputed"
+
+    def test_compute_one_proceeds_for_new_cluster_not_in_mature_ids(self):
+        """AC-2: new clusters ARE computed (not in mature_ids set)."""
+        from datetime import datetime
+        from app.services.signal_performance_service import SignalPerformanceService
+
+        cluster = self._make_cluster(accession_number="CLUSTER-NEW-Y")
+        mature_ids = {"CLUSTER-MATURE-X"}  # Y not in set
+
+        result = SignalPerformanceService._compute_one(
+            cluster,
+            direction="buy",
+            company_data=self._make_company_data(cluster.cik),
+            spy_series=[],
+            industry_map={},
+            filing_date_map={},
+            now=datetime(2024, 10, 1),
+            mature_ids=mature_ids,
+        )
+
+        assert result is not None, "New cluster must be computed"
+        assert result["signal_id"] == "CLUSTER-NEW-Y"
+
+    def test_compute_one_proceeds_when_mature_ids_is_none(self):
+        """Default/backward-compat: mature_ids=None means no short-circuit (pre-v1.2 behavior)."""
+        from datetime import datetime
+        from app.services.signal_performance_service import SignalPerformanceService
+
+        cluster = self._make_cluster(accession_number="CLUSTER-Z")
+
+        result = SignalPerformanceService._compute_one(
+            cluster,
+            direction="buy",
+            company_data=self._make_company_data(cluster.cik),
+            spy_series=[],
+            industry_map={},
+            filing_date_map={},
+            now=datetime(2024, 10, 1),
+            mature_ids=None,
+        )
+
+        assert result is not None, "With mature_ids=None, every cluster is computed"
+
+    def test_compute_one_proceeds_for_immature_signal_even_if_prior_immature_existed(self):
+        """AC-3: immature signals are not in mature_ids, so they get (re)computed.
+
+        Only matured rows are preserved. Immature rows are deleted and recomputed
+        each run — that's how late prices flow in. mature_ids only contains
+        is_mature=true signal_ids, so immature signals by definition pass through.
+        """
+        from datetime import datetime
+        from app.services.signal_performance_service import SignalPerformanceService
+
+        cluster = self._make_cluster(accession_number="CLUSTER-IMMATURE-W")
+        # Even if some OTHER signal is mature, this immature one must proceed
+        mature_ids = {"CLUSTER-MATURE-X", "CLUSTER-MATURE-Y"}
+
+        # Build company_data so this signal would be immature (age < 97 from now)
+        from datetime import datetime as dt, timedelta
+        now = dt(2024, 7, 1)  # signal_date 2024-06-01 → age ~30 days, immature
+        series = []
+        start = dt(2024, 5, 15)
+        for i in range(60):  # ~60 days of prices, no day-90 price available yet
+            d = start + timedelta(days=i)
+            if d.weekday() < 5:
+                series.append({"d": d.strftime("%Y-%m-%d"), "c": 40.0 + i * 0.1})
+        company_data = {cluster.cik: {"market_cap": 1_000_000_000, "series": series}}
+
+        result = SignalPerformanceService._compute_one(
+            cluster,
+            direction="buy",
+            company_data=company_data,
+            spy_series=[],
+            industry_map={},
+            filing_date_map={},
+            now=now,
+            mature_ids=mature_ids,
+        )
+
+        assert result is not None, "Immature signal (not in mature_ids) must be computed"
+        assert result["signal_id"] == "CLUSTER-IMMATURE-W"
+        assert result["is_mature"] is False, "Should be flagged immature given no day-90 price"

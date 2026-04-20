@@ -127,7 +127,7 @@ class SignalFilter:
                 reason="Warning: no earnings data available — signal passed by default"
             )
 
-        sig_dt = datetime.strptime(signal_date, "%Y-%m-%d")
+        sig_dt = datetime.strptime(signal_date[:10], "%Y-%m-%d")
         next_earnings_dist = None
 
         for d in earnings_dates:
