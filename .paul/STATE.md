@@ -2,12 +2,12 @@
 
 ## Current Position
 
-Version: 1.6.0
-Milestone: v1.6 Forward-going mcap capture — ✅ Complete
-Phase: 16 of 16 — ✅ Complete
-Plan: 16-01 UNIFIED
-Status: v1.6 done. All mcap gaps closed: historic backfilled (v1.4) + inline-on-create (v1.6).
-Last activity: 2026-04-20 — Phase 16 complete. Mature rows untouched, 55/56 immature got inline XBRL mcap.
+Version: 1.6.0 (complete)
+Milestone: None active. Next candidate: v1.7 Neudata Research Presentation (not yet scoped).
+Phase: None active.
+Plan: None active.
+Status: Idle — user paused for machine shutdown 2026-04-21. Everything committed + pushed.
+Last activity: 2026-04-21 — Frontend conviction-label fix deployed; price refresh for 543 companies applied; compute_all ran, 57 immature SP rows now carry Apr 20 close prices. Matured 142 unchanged.
 
 Progress:
 - v1.4 Signal Quality Audit: [██░░░░░░░░] 16% (phase 9 apply done, 3 phases pending)
@@ -17,14 +17,18 @@ Progress:
 
 ```
 PLAN ──▶ APPLY ──▶ UNIFY
-  ✓        ✓        ✓     [v1.5 complete — midcap remains sole tier]
+  ○        ○        ○     [Idle — ready for v1.7 scoping]
 ```
 
-### v1.5 outcome (Phases 13-15)
-- Phase 13: 441 candidate clusters, 431 with ground-truth XBRL mcap. 78 small + 87 large new candidates.
-- Phase 14: small 52.94% HR (p_bonf=0.53), large 52.46% HR (p_bonf=0.34), combined 52.68% HR (p_bonf=0.16) — none pass p<0.05 Bonferroni vs midcap 64.96% HR.
-- Phase 15: NO ADOPTION. conviction_tier remains `{'strong_buy'}` only.
-- Autonomous execution confirmed: data work done without user prompts; Phase 15's "decision gate" resolved to no-op per Phase 14 evidence.
+### Post-v1.6 point fixes (not milestones, tracked by commit only)
+- `42bf05c` fix(frontend): conviction labels read backend signal_level (DNA no longer mislabeled "High Conviction"). Pushed.
+- `08588b7` feat(backfill_signal_coverage): `--refresh-older-than N` flag for stale-price refresh without touching matured SP rows. Pushed.
+- Ops run 2026-04-21: refreshed Company.price_series for 543 companies; compute_all re-derived 57 immature SP rows with Apr 20 prices. 142 matured untouched.
+
+### v1.6 outcome (last milestone closed)
+- `_compute_one` is async; fetches SEC XBRL inline; caches per-CIK per compute_all run.
+- 55/56 immature rows carry ground-truth mcap at creation.
+- Matured rows untouched throughout.
 
 ### Phase 10 UNIFY result
 - 1 of 1 plans complete (10-01)
@@ -46,8 +50,10 @@ PLAN ──▶ APPLY ──▶ UNIFY
 - Top ratio-estimate errors corrected: ANDG -93%, RPAY -92%, ONDS -88%, SEI -86%, MRVI -60%, DNA -19%.
 
 ### Git State
-Last commit: 7743111 — feat(10-signal-audit-template): per-signal audit CSV (v1.4 Phase 10)
-Branch: main
+Last commit: 08588b7 — feat(backfill_signal_coverage): add --refresh-older-than flag for freshness ops
+Branch: main (up to date with origin/main)
+Tags local: v1.0.0 through v1.6.0
+Tags pushed: v1.0.0, v1.1.0 only (v1.2–v1.6 are local-only; not blocking)
 Feature branches merged: none
 
 ### Phase 8 UNIFY result
@@ -71,15 +77,17 @@ Feature branches merged: none
 
 ## Session Continuity
 
-Last session: 2026-04-20
-Stopped at: Phase 10 complete (commit 7743111); ready to plan Phase 11
-Next action: /paul:plan (plan Phase 11: Classification + significance testing)
-Resume file: .paul/phases/10-signal-audit-template/10-01-SUMMARY.md
+Last session: 2026-04-21 (paused before machine shutdown)
+Stopped at: Post-v1.6 ops (frontend fix + price refresh) complete, idle
+Next action: User has Neudata call today. Likely start with /paul:discuss-milestone for v1.7 (Neudata presentation pack).
+Resume file: .paul/HANDOFF-2026-04-21.md
 Resume context:
-- Phases 9-10 shipped. Audit CSV at backend/exports/out/signal_audit_v1_4.csv (142 × 33).
-- Unexpected Phase 10 finding: naive midcap filter on TRUE mcap DROPS 10 signals with 80% HR / +33% return — making the filter worse, not better. Phase 11 must investigate with p-values, not intuition.
-- Phase 11 consumes the audit CSV. Its output: per-loser root-cause tagging + validated filter candidates (p<0.05).
-- Constraint: v1.2 immutability holds; audit CSV is the only input to Phase 11 (no re-queries during analysis).
+- 6 milestones complete (v1.0 through v1.6). All tagged locally. v1.2-v1.6 tags unpushed (not blocking).
+- Product state verified: 142 mature strong_buy + 57 immature = 199 total SP rows. Headline unchanged at 142/66.9%/+14.04%/+8.72% alpha.
+- Frontend conviction labels aligned with backend signal_level. Dashboard honest for Neudata review.
+- Prices refreshed as of Apr 20 close. BETR was showing stale $34.34 / +6.5%; now shows $46.33 / +43.7%.
+- v1.1 research brief PDF (ci.lookinsight.ai Citadel/Squarepoint/Final package) is frozen: 141 / 67.4% / +9.0% / p<0.001. Do not regenerate.
+- Open item for v1.7: Methodology Update PDF showing v1.4-v1.6 work (XBRL mcap, 22-filter Bonferroni audit, tier rejection).
 
 ## Accumulated Decisions
 
