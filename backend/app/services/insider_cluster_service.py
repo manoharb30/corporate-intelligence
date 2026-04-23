@@ -215,6 +215,7 @@ class InsiderClusterService:
             MATCH (c:Company)-[:INSIDER_TRADE_OF]->(t:InsiderTransaction)<-[:TRADED_BY]-(p:Person)
             WHERE t.transaction_date >= $since_date
               AND t.transaction_code = $tx_code
+              AND t.classification = 'GENUINE'
               AND (t.is_derivative IS NULL OR t.is_derivative = false)
               AND c.tickers IS NOT NULL AND size(c.tickers) > 0
             RETURN c.cik as cik,
@@ -275,7 +276,9 @@ class InsiderClusterService:
             else:
                 target_trades = [
                     (t, tt) for t, tt in zip(trades, trade_types)
-                    if t.get("transaction_code") == tx_code and (t.get("total_value") or 0) > 0
+                    if t.get("transaction_code") == tx_code
+                    and (t.get("total_value") or 0) > 0
+                    and not t.get("is_10b5_1", False)
                 ]
 
             if not target_trades:
@@ -405,7 +408,10 @@ class InsiderClusterService:
                     summary = f"Insider Purchase: {buyers[0].name}" if buyers else "Insider Purchase"
 
             # Evidence-based conviction tiers
-            # Based on tested findings: $300M-$10B mcap + $100K+ value = 75% hit rate
+            # Based on tested findings: $300M-$5B midcap + $100K+ value = 75% hit rate
+            # Upper cap aligned with signal_performance_service.compute_conviction_tier
+            # (tightened from $10B → $5B on 2026-04-17: $5B-$10B bucket had 38.1% HR
+            # vs 67.4% for <$5B, p=0.018, CIs don't overlap).
             info = company_info[cik]
             ticker = pick_ticker(info.get("tickers"))
             conviction_tier = "watch"  # default
@@ -414,7 +420,7 @@ class InsiderClusterService:
                 try:
                     mcap = StockPriceService.get_market_cap(ticker)
                     if mcap and mcap > 0:
-                        in_sweet_spot = 300_000_000 <= mcap <= 10_000_000_000
+                        in_sweet_spot = 300_000_000 <= mcap <= 5_000_000_000
                         high_value = total_buy_value >= 100_000
 
                         if in_sweet_spot and high_value:
@@ -429,8 +435,11 @@ class InsiderClusterService:
                             conviction_tier = "buy"
                         else:
                             conviction_tier = "watch"
-                except Exception:
-                    # yfinance failed — fall back to value only
+                except Exception as e:
+                    logger.warning(
+                        f"StockPriceService.get_market_cap failed for {ticker}: "
+                        f"{type(e).__name__}: {str(e)[:120]}"
+                    )
                     if total_buy_value >= 100_000:
                         conviction_tier = "buy"
                     else:

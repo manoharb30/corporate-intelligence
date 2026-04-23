@@ -1,0 +1,308 @@
+/* LookInsight v1.1 research brief — institutional CSS theme
+ * Consumed by weasyprint via brief_pdf.py.
+ * Design goals: research-note typography, no decorative color,
+ * readable at print size, clean page furniture.
+ */
+
+/* -------- Page geometry and running header/footer -------- */
+
+@page {
+  size: letter;
+  margin: 22mm 20mm 22mm 20mm;
+  @top-center {
+    content: "LookInsight — Insider Conviction Signals";
+    font-family: "Helvetica Neue", "Inter", sans-serif;
+    font-size: 8.5pt;
+    color: #888;
+    padding-bottom: 4mm;
+  }
+  @bottom-center {
+    content: "Page " counter(page) " of " counter(pages);
+    font-family: "Helvetica Neue", "Inter", sans-serif;
+    font-size: 8.5pt;
+    color: #666;
+    padding-top: 4mm;
+  }
+}
+
+/* Cover page and TOC page: suppress running header/footer */
+@page :first {
+  @top-center { content: normal; }
+  @bottom-center { content: normal; }
+}
+@page cover {
+  @top-center { content: normal; }
+  @bottom-center { content: normal; }
+}
+@page toc {
+  @top-center { content: normal; }
+  @bottom-center { content: "Table of Contents"; font-family: "Helvetica Neue", sans-serif; font-size: 8.5pt; color: #666; padding-top: 4mm; }
+}
+
+/* -------- Body typography -------- */
+
+html { font-size: 10.5pt; }
+
+body {
+  font-family: "Charter", "Source Serif Pro", "Georgia", "Cambria", serif;
+  font-size: 10.5pt;
+  line-height: 1.55;
+  color: #1f2328;
+  text-align: left;
+}
+
+p {
+  margin: 0 0 8pt 0;
+  orphans: 3;
+  widows: 3;
+}
+
+ol, ul {
+  margin: 6pt 0 8pt 0;
+  padding-left: 18pt;
+}
+li {
+  margin-bottom: 3pt;
+  orphans: 3;
+  widows: 3;
+}
+
+em { font-style: italic; color: #444; }
+strong { font-weight: 600; }
+
+code {
+  font-family: "SF Mono", "Menlo", "Consolas", monospace;
+  font-size: 9pt;
+  background: #f4f4f4;
+  padding: 1px 4px;
+  border-radius: 2px;
+}
+
+/* -------- Headings -------- */
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: "Helvetica Neue", "Inter", "Arial", sans-serif;
+  font-weight: 600;
+  color: #111;
+  page-break-after: avoid;
+}
+
+h1 {
+  font-size: 24pt;
+  line-height: 1.15;
+  font-weight: 700;
+  margin: 0 0 6pt 0;
+}
+
+h2 {
+  font-size: 16pt;
+  line-height: 1.2;
+  margin: 22pt 0 8pt 0;
+  padding-bottom: 4pt;
+  border-bottom: 1px solid #c4c9d0;
+  page-break-before: auto;
+}
+
+h3 {
+  font-size: 12pt;
+  line-height: 1.25;
+  margin: 14pt 0 5pt 0;
+  color: #222;
+}
+
+h4 {
+  font-size: 10.5pt;
+  line-height: 1.25;
+  margin: 12pt 0 4pt 0;
+  color: #333;
+  font-weight: 600;
+}
+
+/* -------- Cover page -------- */
+
+section.cover {
+  page: cover;
+  page-break-after: always;
+  padding-top: 55mm;
+  position: relative;
+  min-height: 220mm;
+}
+
+section.cover h1 {
+  font-size: 26pt;
+  font-weight: 700;
+  margin-bottom: 4pt;
+}
+
+section.cover h2 {
+  font-size: 14pt;
+  font-weight: 400;
+  color: #555;
+  border-bottom: none;
+  margin: 0 0 20pt 0;
+  padding: 0;
+}
+
+section.cover h2::after {
+  content: "";
+  display: block;
+  width: 80mm;
+  border-bottom: 1px solid #888;
+  margin-top: 12pt;
+}
+
+section.cover table {
+  width: 100%;
+  margin-top: 18pt;
+  border-collapse: collapse;
+  font-size: 10pt;
+}
+
+section.cover table tr td:first-child {
+  font-weight: 600;
+  width: 45%;
+  color: #333;
+}
+
+section.cover table td {
+  padding: 6px 10px 6px 0;
+  border-bottom: 1px solid #eee;
+  vertical-align: top;
+}
+
+section.cover > p:last-of-type {
+  margin-top: 24pt;
+  text-align: left;
+}
+section.cover > p:last-of-type em {
+  font-size: 10pt;
+  color: #555;
+  font-style: italic;
+}
+
+/* -------- Table of contents -------- */
+
+section.toc-page {
+  page: toc;
+  page-break-after: always;
+}
+
+section.toc-page h2 {
+  font-size: 18pt;
+  border-bottom: 2px solid #555;
+  padding-bottom: 6pt;
+  margin-top: 0;
+}
+
+nav.toc ol {
+  list-style: none;
+  padding-left: 0;
+  margin-top: 12pt;
+}
+
+nav.toc > ol > li {
+  font-size: 11pt;
+  font-family: "Helvetica Neue", sans-serif;
+  margin-bottom: 6pt;
+  font-weight: 600;
+}
+
+nav.toc > ol > li > a {
+  text-decoration: none;
+  color: #111;
+}
+
+nav.toc ol ol {
+  padding-left: 12pt;
+  margin: 2pt 0 4pt 0;
+}
+
+nav.toc ol ol li {
+  font-size: 9.5pt;
+  font-weight: 400;
+  color: #555;
+  margin-bottom: 2pt;
+}
+
+nav.toc a::after {
+  content: leader('. ') target-counter(attr(href url), page);
+  color: #888;
+  font-size: 9pt;
+  font-family: "Helvetica Neue", sans-serif;
+}
+
+/* -------- Tables -------- */
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 9pt;
+  margin: 6pt 0 10pt 0;
+  page-break-inside: auto;
+}
+
+thead {
+  display: table-header-group;
+}
+
+th {
+  background: #eceef1;
+  border-bottom: 1.5px solid #3c434d;
+  color: #111;
+  font-weight: 600;
+  text-align: left;
+  padding: 5px 7px;
+  font-family: "Helvetica Neue", sans-serif;
+  font-size: 8.5pt;
+  letter-spacing: 0.02em;
+}
+
+td {
+  border-bottom: 1px solid #e4e6ea;
+  padding: 3px 7px;
+  vertical-align: top;
+}
+
+tr:nth-child(even) td {
+  background: #f8f9fb;
+}
+
+tr {
+  page-break-inside: avoid;
+}
+
+/* -------- Images (charts) -------- */
+
+img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 10pt auto 8pt auto;
+  page-break-inside: avoid;
+}
+
+/* -------- Horizontal rule -------- */
+
+hr {
+  border: none;
+  border-top: 1px solid #c4c9d0;
+  margin: 16pt 0;
+}
+
+/* -------- Body section pacing -------- */
+
+section.body > h2 {
+  margin-top: 26pt;
+}
+
+/* First h2 after TOC page should start fresh */
+section.body > h2:first-of-type {
+  margin-top: 0;
+}
+
+/* -------- Footnote-style paragraphs (used for hostile footnote) -------- */
+
+section.body p em:only-child {
+  font-size: 9pt;
+  color: #555;
+}

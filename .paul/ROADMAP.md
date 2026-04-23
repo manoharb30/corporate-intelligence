@@ -11,8 +11,51 @@
 | v1.4 | Signal Quality Audit — ground-truth mcap + per-signal post-mortem | ✅ Complete | 2026-04-20 |
 | v1.5 | Signal Tier Extension — small_cap + large_cap (investigated, REJECTED) | ✅ Complete | 2026-04-20 |
 | v1.6 | Forward-going mcap capture at signal creation | ✅ Complete | 2026-04-20 |
+| v1.7 | Signal Pipeline Reconciliation | 🚧 In Progress | 2026-04-23 |
 
 ## Current Milestone
+
+**v1.7 Signal Pipeline Reconciliation** (1.7.0)
+Status: 🚧 In Progress
+Started: 2026-04-23
+Phases: 1 of 4 complete
+
+**Theme:** Reconcile the multiple "sources of truth" across the signal pipeline. `detect_clusters` currently ignores the `classification` tag (letting `FILTERED` and `NOT_GENUINE` transactions cluster), uses an outdated `$10B` midcap cap, and duplicates logic with `get_cluster_detail` which has a conflicting `strong_buy` definition. Close the multi-file drift that has silently produced contaminated cohorts since the earnings-proximity rule was introduced.
+
+**Scope anchors:**
+- 17 of 58 current immature SignalPerformance rows are backed by non-GENUINE underlying transactions (16 FILTERED-backed + 1 NOT_GENUINE-override-backed — AEVEX, surfaced 2026-04-22).
+- Phase 17 is a decision phase: option 1 / 2 / 3 on earnings-proximity must be chosen before implementation begins.
+- v1.2 matured-immutability preserved throughout. 142 mature rows untouched.
+- v1.4 `methodology_version` mechanism reused; new work tagged `'v1.7'`.
+
+### Phases
+
+| Phase | Name | Plans | Status | Completed |
+|-------|------|-------|--------|-----------|
+| 17 | Methodology decision + earnings-proximity implementation | 1/1 | ✅ Complete | 2026-04-23 |
+| 18 | Cluster-detection correctness | 1 (18-01) | Planning | - |
+| 19 | Conviction-tier unification | TBD | Not started | - |
+| 20 | Mcap source reconciliation | TBD | Not started | - |
+
+### Phase 17: Methodology decision + earnings-proximity implementation
+
+**Focus:** Decide between option 1 (tighten retroactively — keep earnings-proximity as hard filter), option 2 (reframe as informational — FILTERED becomes a tag, not a gate), or option 3 (drop the rule entirely). Implement the consequence in `merge_classifications.py` and downstream. Resolve `classification_override` role (active tag consumed by pipeline, or read-only audit). **Decision pause for user review before implementation.**
+Plans: TBD (defined during /paul:plan)
+
+### Phase 18: Cluster-detection correctness
+
+**Focus:** Bug-fix phase on `insider_cluster_service.py`. (a) Add `AND t.classification = 'GENUINE'` to `detect_clusters` Cypher query — the root defect from the 2026-04-22 session. (b) Change midcap upper cap `$10B → $5B` in `detect_clusters:417` to align with `signal_performance_service.compute_conviction_tier` and the v1.0 decision dated 2026-04-17 (p=0.018). (c) Exclude `is_10b5_1` from the buy branch (line 276-279) for symmetry with the sell branch (line 273). (d) Replace silent exception fallback (line 432-437) with `logger.warning(...)` on yfinance failures.
+Plans: TBD (defined during /paul:plan)
+
+### Phase 19: Conviction-tier unification
+
+**Focus:** Extract `_build_cluster_from_trades(trades, cik, window_start, window_end, direction) → ClusterResult` helper shared by `detect_clusters` and `get_cluster_detail` — collapses the duplication flagged in the 2026-04-22 architectural review. Align `get_cluster_detail`'s conviction-tier rule (currently `num_traders ≥ 3 AND officer_count ≥ 2`) with `detect_clusters`'s rule (mcap + value). Single rule everywhere. Optionally centralize thresholds into a `ClusterThresholds` dataclass.
+Plans: TBD (defined during /paul:plan)
+
+### Phase 20: Mcap source reconciliation
+
+**Focus:** `detect_clusters` currently calls `StockPriceService.get_market_cap(ticker)` for live yfinance mcap. v1.6's `mcap_at_signal_true` field already stores XBRL-truth mcap on immature SignalPerformance rows but `detect_clusters` doesn't read it. Decide: (a) prefer stored `mcap_at_signal_true` when available, fall back to ratio-estimate; or (b) accept the drift with documented rationale. Decide during plan phase.
+Plans: TBD (defined during /paul:plan)
 
 **v1.6 Forward-going mcap capture** (1.6.0)
 Status: ✅ Complete
@@ -21,7 +64,7 @@ Phases: 1 of 1 complete
 
 **Outcome:** `_compute_one` now fetches SEC XBRL shares outstanding inline at signal creation; new SignalPerformance nodes carry `mcap_at_signal_true` + 5 provenance sidecars. 55/56 immature rows populated on first recompute (1 unresolvable XBRL). Matured rows unchanged. All mcap gaps from v1.4 are now closed.
 
-### Phase
+### v1.6 Phase
 
 | Phase | Name | Plans | Status | Completed |
 |-------|------|-------|--------|-----------|
@@ -188,4 +231,4 @@ Milestone log: `.paul/MILESTONES.md`
 
 ---
 *ROADMAP.md — Updated when phases complete or scope changes*
-*Last updated: 2026-04-20 — v1.6 complete (forward-going mcap inline)*
+*Last updated: 2026-04-23 — v1.7 Signal Pipeline Reconciliation created (4 phases)*

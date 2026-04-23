@@ -46,8 +46,6 @@ async def run_form4_one_day(date_str: str) -> dict:
     from ingestion.sec_edgar.edgar_client import SECEdgarClient
     from app.services.insider_trading_service import InsiderTradingService
     from scanner.form4_scanner import (
-        filter_investment_vehicles,
-        filter_non_companies,
         filter_already_scanned,
         detect_and_alert,
         FORM4_LIMIT_PER_COMPANY,

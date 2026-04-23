@@ -2,22 +2,21 @@
 
 ## Current Position
 
-Version: 1.6.0 (complete)
-Milestone: None active. Next candidate: v1.7 Neudata Research Presentation (not yet scoped).
-Phase: None active.
-Plan: None active.
-Status: Idle — user paused for machine shutdown 2026-04-21. Everything committed + pushed.
-Last activity: 2026-04-21 — Frontend conviction-label fix deployed; price refresh for 543 companies applied; compute_all ran, 57 immature SP rows now carry Apr 20 close prices. Matured 142 unchanged.
+Version: 1.7.0 (in progress)
+Milestone: v1.7 Signal Pipeline Reconciliation (1 of 4 phases complete)
+Phase: 18 of 4 — Cluster-detection correctness
+Plan: 18-01 applied, awaiting UNIFY
+Status: APPLY complete — all 5 ACs satisfied, SUMMARY.md written, ready to reconcile
+Last activity: 2026-04-23 — Plan 18-01 APPLY complete. Four surgical edits to insider_cluster_service.py applied + verified via compile + test suite + compute_all rerun. Cohort now clean: 142 mature preserved, 32 immature (zero contaminated, down from 17 contaminated pre-fix). AVEX + BMI + 15 other FILTERED-backed rows absent from SignalPerformance.
 
 Progress:
-- v1.4 Signal Quality Audit: [██░░░░░░░░] 16% (phase 9 apply done, 3 phases pending)
-- Phase 9 (Ground-truth mcap): [███████░░░] 70%
+- v1.7 Signal Pipeline Reconciliation: [███░░░░░░] 35% (1 of 4 phases complete; Phase 18 applied, awaiting unify)
 
 ## Loop Position
 
 ```
 PLAN ──▶ APPLY ──▶ UNIFY
-  ○        ○        ○     [Idle — ready for v1.7 scoping]
+  ✓        ✓        ○     [Plan 18-01 applied, awaiting unify to close the loop]
 ```
 
 ### Post-v1.6 point fixes (not milestones, tracked by commit only)
@@ -77,17 +76,28 @@ Feature branches merged: none
 
 ## Session Continuity
 
-Last session: 2026-04-21 (paused before machine shutdown)
-Stopped at: Post-v1.6 ops (frontend fix + price refresh) complete, idle
-Next action: User has Neudata call today. Likely start with /paul:discuss-milestone for v1.7 (Neudata presentation pack).
-Resume file: .paul/HANDOFF-2026-04-21.md
+Last session: 2026-04-22 evening → 2026-04-23 early morning (v1.7 milestone + Phase 17 closed + Phase 18 plan created)
+Stopped at: Phase 18 APPLY complete but unresolved concerns. User paused to restart fresh because session accumulated confusion (Claude's 548-vs-14 framing + invented same-day-cluster methodology + inability to precisely explain why 23 old-dated signals surfaced). Phase 18 code changes are live; 23 newly-surfaced mature signals in DB; no git commits all session.
+Next action: **Read .paul/HANDOFF-2026-04-23.md first.** Then ask user what to tackle — do NOT presume. Likely options: commit today's work, per-signal audit of the 23 surfaced signals, close Phase 18 via UNIFY, or rescope.
+Resume file: .paul/HANDOFF-2026-04-23.md
+Git strategy: main (nothing committed in the 2026-04-22 session — many untracked .py files + modified backfill_daily.py; commit before Phase 17 plan begins)
 Resume context:
-- 6 milestones complete (v1.0 through v1.6). All tagged locally. v1.2-v1.6 tags unpushed (not blocking).
-- Product state verified: 142 mature strong_buy + 57 immature = 199 total SP rows. Headline unchanged at 142/66.9%/+14.04%/+8.72% alpha.
-- Frontend conviction labels aligned with backend signal_level. Dashboard honest for Neudata review.
-- Prices refreshed as of Apr 20 close. BETR was showing stale $34.34 / +6.5%; now shows $46.33 / +43.7%.
-- v1.1 research brief PDF (ci.lookinsight.ai Citadel/Squarepoint/Final package) is frozen: 141 / 67.4% / +9.0% / p<0.001. Do not regenerate.
-- Open item for v1.7: Methodology Update PDF showing v1.4-v1.6 work (XBRL mcap, 22-filter Bonferroni audit, tier rejection).
+- v1.7 created to close multi-file drift in the signal pipeline — surfaced during 2026-04-22 audit session.
+- ROOT BUG: `insider_cluster_service.detect_clusters` has no `classification` filter. Lets FILTERED + NOT_GENUINE transactions cluster. Explains why today's AEVEX override had to be paired with code change, and why 17/58 immature SP rows are contaminated.
+- Phase 17 is a DECISION PHASE: user must choose option 1 (tighten earnings-proximity retroactively), option 2 (reframe as informational), or option 3 (drop rule entirely). Decision determines Phase 18 implementation branch.
+- Untracked work from 2026-04-22 session:
+  - `backend/audit_142_mature_2026-04-22.py` + `.json` — 142-mature verification vs fresh yfinance + XBRL (SOLID, 140/142 match).
+  - `backend/override_aevex_booth_2026-04-22.py` — AEVEX Booth Todd flipped to NOT_GENUINE.
+  - `backend/enrich_crt_2026-04-22.py` — CRT Company node enriched (mcap $63.75M, 502 price points).
+  - `backend/run_compute_all_2026-04-22.py` — wrapper for SignalPerformanceService.compute_all.
+  - `backend/hypothesis_no_earnings_2026-04-22.py` — 142-cohort scenarios (ratio-mcap / TRUE-mcap × earnings-gate / no-gate). **Reliable.**
+  - `backend/hypothesis_full_cohort_2026-04-22.py` — **DISCARD OUTPUT**: used invented same-day clustering instead of 30-day sliding window. Numbers are not reliable.
+  - `backend/audit_overrides_2026-04-22.py` — survey of classification_override rows (4 total, all AEVEX).
+  - Edit in `backend/backfill_daily.py` — two dead imports removed (filter_investment_vehicles, filter_non_companies).
+  - DB mutations applied this session (not reverted): Apr 21 ingest wrote 7 GENUINE rows; AEVEX Booth flipped to NOT_GENUINE; 548 companies had prices refreshed; CRT Company enriched; SignalPerformance recomputed (142 mature preserved; 58 immature — 17 of which are contaminated pre-fix).
+- v1.1 brief shipped externally; 142 mature cohort contains ~58 FILTERED-backed signals + AEVEX; v1.2 invariant keeps them frozen. Future briefs (v1.2+) will use clean cohort.
+- User state at end-of-session: engaged, frustrated earlier by my method-invention error (hypothesis_full_cohort same-day clustering) — corrected. Methodology decision for Phase 17 still pending.
+- Neudata timing: open decision — pre-v1.7 with caveats, pre-v1.7 with tighter 80-signal GENUINE-only cohort (+11.35pp alpha), or delay until v1.7 ships.
 
 ## Accumulated Decisions
 
@@ -110,4 +120,4 @@ Unresolved items from session 2026-04-18 handoff:
 8. Helper scripts at root: `create_ppt.py`, `export_neudata_samples.py`, `generate_data_catalog.py` — keep or delete
 
 ---
-*Last updated: 2026-04-20 — v1.1 milestone complete*
+*Last updated: 2026-04-23 — v1.7 milestone created (Signal Pipeline Reconciliation)*

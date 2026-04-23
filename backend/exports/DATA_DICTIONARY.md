@@ -42,27 +42,28 @@ The hostile-activist overlap is captured as an informational flag (`hostile_flag
 | 9 | is_mature | bool | no | — | Always `true` in this cohort (filter condition) | Neo4j `SignalPerformance.is_mature` |
 | 10 | direction | string | no | — | Always `buy` in this cohort | Neo4j `SignalPerformance.direction` |
 | 11 | conviction_tier | string | no | — | Always `strong_buy` in this cohort | Neo4j `SignalPerformance.conviction_tier` |
-| 12 | num_insiders | int32 | no | count | Distinct insider names in the cluster window | Neo4j `SignalPerformance.num_insiders` |
-| 13 | total_value_usd | float64 | no | USD | Aggregate dollar value of all cluster buys | Neo4j `SignalPerformance.total_value` |
-| 14 | market_cap_usd | float64 | yes | USD | Estimated market cap at `signal_date` (price ratio × current_mcap) | Neo4j `SignalPerformance.market_cap` |
-| 15 | market_cap_tier | string | no | — | `microcap` <$50M, `smallcap` $50M–$300M, `midcap` $300M–$5B (inclusive), `midcap-large` $5B–$10B, `largecap` >$10B, `unknown` if mcap null | Derived from `market_cap_usd` |
-| 16 | pct_of_mcap | float64 | yes | % | `total_value_usd` as a percentage of `market_cap_usd` | Neo4j `SignalPerformance.pct_of_mcap` |
-| 17 | price_day0 | float64 | yes | USD | Closing price on `filing_date` (or first trading day ≤5 days after) | Neo4j `SignalPerformance.price_day0` |
-| 18 | price_day90 | float64 | yes | USD | Closing price 90 calendar days after `filing_date` | Neo4j `SignalPerformance.price_day90` |
-| 19 | price_current | float64 | yes | USD | Most recently stored closing price | Neo4j `SignalPerformance.price_current` |
-| 20 | return_day0 | float64 | no | % | 90-day return entering on `filing_date` close: `(price_day90 − price_day0) / price_day0 × 100` — this is the headline signal return | Neo4j `SignalPerformance.return_day0` |
-| 21 | return_day1 | float64 | yes | % | 90-day return entering 1 trading day after filing (for slippage sensitivity) | Neo4j `SignalPerformance.return_day1` |
-| 22 | return_day2 | float64 | yes | % | 90-day return entering 2 trading days after filing | Neo4j `SignalPerformance.return_day2` |
-| 23 | return_day3 | float64 | yes | % | 90-day return entering 3 trading days after filing | Neo4j `SignalPerformance.return_day3` |
-| 24 | return_day5 | float64 | yes | % | 90-day return entering 5 trading days after filing | Neo4j `SignalPerformance.return_day5` |
-| 25 | return_day7 | float64 | yes | % | 90-day return entering 7 trading days after filing | Neo4j `SignalPerformance.return_day7` |
-| 26 | return_current | float64 | yes | % | Return from `price_day0` to `price_current` (open-ended; useful for post-90d tracking) | Neo4j `SignalPerformance.return_current` |
-| 27 | spy_return_90d | float64 | no | % | SPY's 90-day return over the same window as the signal | Neo4j `SignalPerformance.spy_return_90d` |
-| 28 | alpha_90d | float64 | no | pp | `return_day0 − spy_return_90d`, in percentage points | Derived |
-| 29 | cluster_members | string | no | — | Pipe-delimited sorted list of distinct insider names in the cluster window | Derived via `InsiderClusterService.get_cluster_detail` |
-| 30 | primary_form4_url | string | yes | — | Direct link to the first Form 4 filing in the cluster (SEC EDGAR URL). Empty if the cluster has no accessible primary document | Derived: `https://www.sec.gov/Archives/edgar/data/{cik}/{accession_no_dashes}/{primary_document}` |
-| 31 | hostile_flag | bool | no | — | `true` if the issuer has any associated Schedule 13D filing with hostile-activist language; informational only, not a filter | Derived via `InsiderClusterService.get_cluster_detail.has_hostile_activist` |
-| 32 | computed_at | string (ISO datetime) | no | — | When the SignalPerformance node was computed in Neo4j | Neo4j `SignalPerformance.computed_at` |
+| 12 | signal_level | string | no | — | Within-cohort sub-classification. `high` = cluster has 3+ insiders OR 2+ officer-level insiders with ≥$200K; `medium` = all other strong_buy signals (2 insiders with no officer majority) | Neo4j `SignalPerformance.signal_level` |
+| 13 | num_insiders | int32 | no | count | Distinct insider names in the cluster window | Neo4j `SignalPerformance.num_insiders` |
+| 14 | total_value_usd | float64 | no | USD | Aggregate dollar value of all cluster buys | Neo4j `SignalPerformance.total_value` |
+| 15 | market_cap_usd | float64 | yes | USD | Estimated market cap at `signal_date` (price ratio × current_mcap) | Neo4j `SignalPerformance.market_cap` |
+| 16 | market_cap_tier | string | no | — | `microcap` <$50M, `smallcap` $50M–$300M, `midcap` $300M–$5B (inclusive), `midcap-large` $5B–$10B, `largecap` >$10B, `unknown` if mcap null | Derived from `market_cap_usd` |
+| 17 | pct_of_mcap | float64 | yes | % | `total_value_usd` as a percentage of `market_cap_usd` | Neo4j `SignalPerformance.pct_of_mcap` |
+| 18 | price_day0 | float64 | yes | USD | Closing price on `filing_date` (or first trading day ≤5 days after) | Neo4j `SignalPerformance.price_day0` |
+| 19 | price_day90 | float64 | yes | USD | Closing price 90 calendar days after `filing_date` | Neo4j `SignalPerformance.price_day90` |
+| 20 | price_current | float64 | yes | USD | Most recently stored closing price | Neo4j `SignalPerformance.price_current` |
+| 21 | return_day0 | float64 | no | % | 90-day return entering on `filing_date` close: `(price_day90 − price_day0) / price_day0 × 100` — this is the headline signal return | Neo4j `SignalPerformance.return_day0` |
+| 22 | return_day1 | float64 | yes | % | 90-day return entering 1 trading day after filing (for slippage sensitivity) | Neo4j `SignalPerformance.return_day1` |
+| 23 | return_day2 | float64 | yes | % | 90-day return entering 2 trading days after filing | Neo4j `SignalPerformance.return_day2` |
+| 24 | return_day3 | float64 | yes | % | 90-day return entering 3 trading days after filing | Neo4j `SignalPerformance.return_day3` |
+| 25 | return_day5 | float64 | yes | % | 90-day return entering 5 trading days after filing | Neo4j `SignalPerformance.return_day5` |
+| 26 | return_day7 | float64 | yes | % | 90-day return entering 7 trading days after filing | Neo4j `SignalPerformance.return_day7` |
+| 27 | return_current | float64 | yes | % | Return from `price_day0` to `price_current` (open-ended; useful for post-90d tracking) | Neo4j `SignalPerformance.return_current` |
+| 28 | spy_return_90d | float64 | no | % | SPY's 90-day return over the same window as the signal | Neo4j `SignalPerformance.spy_return_90d` |
+| 29 | alpha_90d | float64 | no | pp | `return_day0 − spy_return_90d`, in percentage points | Derived |
+| 30 | cluster_members | string | no | — | Pipe-delimited sorted list of distinct insider names in the cluster window | Derived via `InsiderClusterService.get_cluster_detail` |
+| 31 | primary_form4_url | string | yes | — | Direct link to the first Form 4 filing in the cluster (SEC EDGAR URL). Empty if the cluster has no accessible primary document | Derived: `https://www.sec.gov/Archives/edgar/data/{cik}/{accession_no_dashes}/{primary_document}` |
+| 32 | hostile_flag | bool | no | — | `true` if the issuer has any associated Schedule 13D filing with hostile-activist language; informational only, not a filter | Derived via `InsiderClusterService.get_cluster_detail.has_hostile_activist` |
+| 33 | computed_at | string (ISO datetime) | no | — | When the SignalPerformance node was computed in Neo4j | Neo4j `SignalPerformance.computed_at` |
 
 ## Derived Formulas
 
