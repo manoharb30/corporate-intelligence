@@ -140,8 +140,6 @@ export interface DashboardStats {
 }
 
 export const signalPerfApi = {
-  compute: (days = 365) =>
-    api.post('/signal-performance/compute', null, { params: { days } }),
   getAll: (direction?: string, matureOnly = false, meaningfulOnly = false, limit = 500) =>
     api.get<SignalPerf[]>('/signal-performance', {
       params: { direction, mature_only: matureOnly, meaningful_only: meaningfulOnly, limit },

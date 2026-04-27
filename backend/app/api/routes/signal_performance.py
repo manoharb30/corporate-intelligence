@@ -1,4 +1,10 @@
-"""Signal performance endpoints — track record / showcase page."""
+"""Signal performance endpoints — track record / showcase page.
+
+POST /compute endpoint was removed 2026-04-24 as part of retiring compute_all.
+Signal performance is now event-driven: new clusters stored at ingest time,
+maturity scored per-signal at 90d mark. Aggregate stats blend HistoricAnchor
++ RunningDelta.
+"""
 
 import csv
 import io
@@ -9,19 +15,6 @@ from fastapi.responses import StreamingResponse
 from app.services.signal_performance_service import SignalPerformanceService
 
 router = APIRouter()
-
-
-@router.post("/compute")
-async def compute_signal_performance(
-    days: int = Query(default=365, ge=30, le=730),
-):
-    """Compute signal performance for all clusters and store in Neo4j.
-
-    This is a heavy operation (fetches prices from yfinance).
-    Run daily after scanner or on-demand.
-    """
-    result = await SignalPerformanceService.compute_all(days=days)
-    return result
 
 
 @router.get("")
@@ -45,11 +38,12 @@ async def get_dashboard_stats():
     """Precomputed dashboard hero stats — instant, no computation.
 
     Returns: total_signals, hit_rate, avg_alpha, beat_spy_pct, computed_at
-    Updated only when /compute is called.
+    Updated when a signal matures (Phase D); HistoricAnchor + RunningDelta
+    blend replaces the previous compute_all-driven refresh.
     """
     stats = await SignalPerformanceService.get_dashboard_stats()
     if not stats:
-        return {"error": "No stats computed yet. Run POST /compute first."}
+        return {"error": "No dashboard stats available."}
     return stats
 
 

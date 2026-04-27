@@ -17,6 +17,8 @@ from datetime import datetime
 
 sys.path.insert(0, ".")
 from app.db.neo4j_client import Neo4jClient
+from app.services.stock_price_service import StockPriceService
+from app.services.insider_cluster_service import InsiderClusterService
 
 sys.stdout.reconfigure(line_buffering=True)
 
@@ -55,6 +57,8 @@ async def ingest_transaction(filing: dict, txn: dict, cls: dict, log) -> str:
     accession = filing["accession"]
     footnotes = filing.get("footnotes", "")
     primary_document = filing.get("primary_document", "")
+    issuer_trading_symbol = (filing.get("issuer_trading_symbol") or "").strip()
+    tickers = [issuer_trading_symbol] if issuer_trading_symbol else []
 
     shares = txn.get("shares", 0) or 0
     price = txn.get("price_per_share", 0) or 0
@@ -72,6 +76,7 @@ async def ingest_transaction(filing: dict, txn: dict, cls: dict, log) -> str:
     params = {
         "cik": issuer_cik,
         "company_name": issuer_name,
+        "tickers": tickers,
         "accession": accession,
         "filing_date": filing_date_iso,
         "txn_date": txn_date,
@@ -107,8 +112,14 @@ async def ingest_transaction(filing: dict, txn: dict, cls: dict, log) -> str:
 
         await Neo4jClient.execute_query("""
             MERGE (c:Company {cik: $cik})
-            ON CREATE SET c.name = $company_name
-            SET c.name = COALESCE(c.name, $company_name)
+            ON CREATE SET c.name = $company_name,
+                          c.tickers = $tickers
+            SET c.name = COALESCE(c.name, $company_name),
+                c.tickers = CASE
+                    WHEN c.tickers IS NULL OR size(c.tickers) = 0
+                    THEN $tickers
+                    ELSE c.tickers
+                END
 
             MERGE (t:InsiderTransaction {id: $txn_id})
             ON CREATE SET t.first_ingested_at = $now
@@ -207,6 +218,7 @@ async def main():
     counts = {"inserted": 0, "updated": 0, "error": 0,
               "genuine_written": 0, "ambiguous_written": 0,
               "skipped_not_genuine": 0, "skipped_no_match": 0}
+    touched_companies: dict[str, str] = {}  # cik -> ticker (for post-ingest mcap enrichment)
     # Classifications we write to Neo4j (skip NOT_GENUINE, PARSE_ERROR, API_ERROR)
     # AMBIGUOUS = LLM-uncertain or structured deals (rule_triggered distinguishes)
     # FILTERED = failed earnings proximity filter (pre-trade exclusion)
@@ -230,6 +242,11 @@ async def main():
 
             status = await ingest_transaction(filing, txn, cls, log)
             counts[status] = counts.get(status, 0) + 1
+            if status == "inserted":
+                cik_padded = (filing.get("issuer_cik") or "").zfill(10)
+                sym = (filing.get("issuer_trading_symbol") or "").strip()
+                if cik_padded and sym:
+                    touched_companies[cik_padded] = sym
             # Track how many of each classification we wrote
             if classification == "GENUINE":
                 counts["genuine_written"] += 1
@@ -242,6 +259,52 @@ async def main():
             else:
                 label = status
             log(f"  {label}: {filing.get('issuer_name','')[:30]:30} {insider_name[:25]:25} ${total_value:>10,.0f}")
+
+    # Enrich market_cap for any Company touched in this run that lacks one.
+    # StockPriceService.get_market_cap() swallows its own exceptions (returns None),
+    # so try/except only protects the Neo4j write path.
+    log(f"\nEnriching market_cap for {len(touched_companies)} unique companies...")
+    mcap_filled = 0
+    mcap_skipped = 0
+    mcap_errored = 0
+    for cik, ticker in touched_companies.items():
+        mcap = StockPriceService.get_market_cap(ticker)
+        if not mcap or mcap <= 0:
+            mcap_skipped += 1
+            continue
+        try:
+            await Neo4jClient.execute_query("""
+                MATCH (c:Company {cik: $cik})
+                WHERE c.market_cap IS NULL OR c.market_cap = 0
+                SET c.market_cap = $mcap,
+                    c.market_cap_updated_at = $now
+            """, {"cik": cik, "mcap": float(mcap), "now": datetime.utcnow().isoformat()})
+            mcap_filled += 1
+        except Exception as e:
+            mcap_errored += 1
+            log(f"  ERROR mcap write for {ticker} (cik={cik}): {type(e).__name__}: {str(e)[:100]}")
+    log(f"  mcap filled: {mcap_filled}, no-data: {mcap_skipped}, errors: {mcap_errored}")
+
+    # Incremental cluster detection for each touched CIK
+    log(f"\nIncremental cluster detection for {len(touched_companies)} CIKs...")
+    created = updated = noop = errored = 0
+    for cik in touched_companies.keys():
+        try:
+            result = await InsiderClusterService.process_incremental(cik, args.date)
+        except Exception as e:
+            errored += 1
+            log(f"  ERROR cluster process for cik={cik}: {type(e).__name__}: {str(e)[:100]}")
+            continue
+        action = result.get("action", "none")
+        if action == "created":
+            created += 1
+            log(f"  CREATED cluster: {result['signal_id']}")
+        elif action == "updated":
+            updated += 1
+            log(f"  UPDATED cluster: {result['signal_id']}")
+        else:
+            noop += 1
+    log(f"  clusters created: {created}, updated: {updated}, no-op: {noop}, errors: {errored}")
 
     # Clean up orphaned Person nodes
     orphan_result = await Neo4jClient.execute_query("""
@@ -264,6 +327,8 @@ async def main():
   Skipped (NOT_GENUINE/other): {counts['skipped_not_genuine']}
   Skipped (no match):         {counts['skipped_no_match']}
   Errors:                     {counts['error']}
+  Mcap filled / no-data / err: {mcap_filled} / {mcap_skipped} / {mcap_errored}
+  Clusters created/updated/none/err: {created} / {updated} / {noop} / {errored}
   Orphan Persons cleaned: {orphans_deleted}
   Time: {elapsed}s
 {'=' * 60}

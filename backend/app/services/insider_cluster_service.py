@@ -7,7 +7,7 @@ purely from Form 4 data — no 8-K required.
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from app.db.neo4j_client import Neo4jClient
@@ -579,6 +579,193 @@ class InsiderClusterService:
             except Exception:
                 filtered.append(c)  # Keep on error
         return filtered
+
+    @classmethod
+    async def process_incremental(cls, cik: str, today: str) -> dict:
+        """Incremental cluster detection for a single CIK touched in today's ingest.
+
+        Contract:
+          - Active cluster exists (is_mature=false, within 90d of signal_date):
+            recompute num_insiders/total_value from [signal_date-30, today],
+            update in place. signal_date never changes.
+          - No active cluster AND 30-day lookback yields >=2 distinct insiders:
+            create new immature SP row with signal_date=today.
+          - Otherwise: no-op.
+
+        Returns: {"action": "created"|"updated"|"none", "signal_id": str|None}
+        """
+        # 1. Active cluster?
+        active = await Neo4jClient.execute_query(
+            """
+            MATCH (sp:SignalPerformance)
+            WHERE sp.cik = $cik
+              AND sp.direction = 'buy'
+              AND sp.is_mature = false
+              AND date(sp.signal_date) + duration({days: 90}) >= date($today)
+            RETURN sp.signal_id AS sid, sp.signal_date AS sd,
+                   sp.num_insiders AS n, sp.total_value AS v
+            ORDER BY sp.signal_date DESC
+            LIMIT 1
+            """,
+            {"cik": cik, "today": today},
+        )
+
+        now_iso = datetime.now(timezone.utc).isoformat()
+
+        if active:
+            a = active[0]
+            # Recompute from [signal_date - 30d, today]
+            state = await cls._cluster_state_for_window(
+                cik, anchor_date=a["sd"], today=today, from_anchor=True
+            )
+            if state["n"] == a["n"] and float(state["v"] or 0) == float(a["v"] or 0):
+                return {"action": "none", "signal_id": a["sid"]}
+            await Neo4jClient.execute_query(
+                """
+                MATCH (sp:SignalPerformance {signal_id: $sid})
+                SET sp.num_insiders = $n,
+                    sp.total_value = $v,
+                    sp.signal_level = CASE WHEN $n >= 3 THEN 'high' ELSE sp.signal_level END,
+                    sp.computed_at = $now
+                """,
+                {"sid": a["sid"], "n": state["n"], "v": float(state["v"] or 0), "now": now_iso},
+            )
+            return {"action": "updated", "signal_id": a["sid"]}
+
+        # 2. No active cluster — check if one forms in 30-day lookback ending today
+        state = await cls._cluster_state_for_window(
+            cik, anchor_date=today, today=today, from_anchor=False
+        )
+        if state["n"] < 2:
+            return {"action": "none", "signal_id": None}
+
+        # 3. Form new cluster
+        company = await Neo4jClient.execute_query(
+            "MATCH (c:Company {cik: $cik}) "
+            "RETURN c.name AS name, c.tickers AS tickers, c.market_cap AS mcap",
+            {"cik": cik},
+        )
+        if not company:
+            return {"action": "none", "signal_id": None}
+
+        c = company[0]
+        ticker = (c.get("tickers") or [None])[0]
+        mcap = c.get("mcap")
+        name = c.get("name") or ""
+        total_value = float(state["v"] or 0)
+        n_ins = state["n"]
+
+        level = "high" if n_ins >= 3 else "medium"
+
+        if mcap and float(mcap) > 0:
+            mcap_f = float(mcap)
+            in_sweet_spot = 300_000_000 <= mcap_f <= 5_000_000_000
+            high_value = total_value >= 100_000
+            if in_sweet_spot and high_value:
+                conviction = "strong_buy"
+            elif in_sweet_spot or high_value:
+                conviction = "buy"
+            else:
+                conviction = "watch"
+        else:
+            conviction = "buy" if total_value >= 100_000 else "watch"
+
+        # Capture entry prices (target ticker + SPY) at formation.
+        # Only day0 — no day1-7, no day90, no current. Phase D fetches exit prices at maturity.
+        price_day0 = None
+        spy_price_day0 = None
+        if ticker:
+            try:
+                pd = StockPriceService.get_price_at_date(ticker, today)
+                if pd and pd.get("price_at_date"):
+                    price_day0 = float(pd["price_at_date"])
+            except Exception as e:
+                logger.warning(
+                    f"price_day0 fetch failed for {ticker} on {today}: "
+                    f"{type(e).__name__}: {str(e)[:100]}"
+                )
+        try:
+            spy_pd = StockPriceService.get_price_at_date("SPY", today)
+            if spy_pd and spy_pd.get("price_at_date"):
+                spy_price_day0 = float(spy_pd["price_at_date"])
+        except Exception as e:
+            logger.warning(
+                f"spy_price_day0 fetch failed on {today}: "
+                f"{type(e).__name__}: {str(e)[:100]}"
+            )
+
+        signal_id = f"CLUSTER-{cik}-{today}"
+
+        await Neo4jClient.execute_query(
+            """
+            MATCH (c:Company {cik: $cik})
+            MERGE (sp:SignalPerformance {signal_id: $sid})
+            ON CREATE SET
+                sp.ticker = $ticker,
+                sp.company_name = $name,
+                sp.cik = $cik,
+                sp.signal_date = $today,
+                sp.actionable_date = $today,
+                sp.direction = 'buy',
+                sp.signal_level = $level,
+                sp.num_insiders = $n,
+                sp.total_value = $v,
+                sp.conviction_tier = $conviction,
+                sp.market_cap = $mcap,
+                sp.price_day0 = $price_day0,
+                sp.spy_price_day0 = $spy_price_day0,
+                sp.is_mature = false,
+                sp.computed_at = $now,
+                sp.methodology_version = 'v1.7-incremental'
+            MERGE (c)-[:HAS_SIGNAL_PERF]->(sp)
+            """,
+            {
+                "cik": cik, "sid": signal_id, "ticker": ticker, "name": name,
+                "today": today, "level": level, "n": n_ins, "v": total_value,
+                "conviction": conviction,
+                "mcap": float(mcap) if mcap else None,
+                "price_day0": price_day0,
+                "spy_price_day0": spy_price_day0,
+                "now": now_iso,
+            },
+        )
+        return {"action": "created", "signal_id": signal_id}
+
+    @staticmethod
+    async def _cluster_state_for_window(
+        cik: str, anchor_date: str, today: str, from_anchor: bool
+    ) -> dict:
+        """Count distinct insiders and sum value for GENUINE buys in the window.
+
+        from_anchor=True: window is [anchor_date - 30d, today]  (update path)
+        from_anchor=False: window is [today - 30d, today]       (create path)
+        """
+        if from_anchor:
+            where_window = (
+                "date($anchor) - duration({days: 30}) <= date(t.transaction_date) "
+                "AND date(t.transaction_date) <= date($today)"
+            )
+        else:
+            where_window = (
+                "date($today) - duration({days: 30}) <= date(t.transaction_date) "
+                "AND date(t.transaction_date) <= date($today)"
+            )
+        r = await Neo4jClient.execute_query(
+            f"""
+            MATCH (c:Company {{cik: $cik}})-[:INSIDER_TRADE_OF]->(t:InsiderTransaction)
+            WHERE t.classification = 'GENUINE'
+              AND t.transaction_code = 'P'
+              AND (t.is_derivative IS NULL OR t.is_derivative = false)
+              AND (t.is_10b5_1 IS NULL OR t.is_10b5_1 = false)
+              AND {where_window}
+            RETURN count(DISTINCT t.insider_name) AS n,
+                   sum(t.total_value) AS v
+            """,
+            {"cik": cik, "anchor": anchor_date, "today": today},
+        )
+        if not r:
+            return {"n": 0, "v": 0.0}
+        return {"n": r[0]["n"] or 0, "v": r[0]["v"] or 0.0}
 
     @staticmethod
     async def get_cluster_detail(cluster_id: str, confidence_stats: Optional[dict] = None) -> Optional[dict]:

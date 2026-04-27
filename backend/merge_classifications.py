@@ -90,7 +90,7 @@ def detect_structured_clusters(merged_results: list) -> int:
     flagged = 0
     for key, group in groups.items():
         insiders = {r.get("insider", "") for r in group}
-        if len(insiders) >= 5:
+        if len(insiders) >= 3:
             issuer, txn_date, price = key
             reason = (
                 f"Suspected structured allocation: {len(insiders)} insiders "

@@ -1,9 +1,14 @@
-"""Scanner health and trigger API routes."""
+"""Scanner health API routes.
 
-import asyncio
+Trigger endpoints removed 2026-04-24 — the only supported ingest path is now
+the classified pipeline (run_week.py -> ingest_genuine_p_to_neo4j.py). Direct
+scanner triggers bypassed classification and polluted the DB with
+NULL-classification rows.
+"""
+
 import logging
 
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter
 
 from app.db.neo4j_client import Neo4jClient
 
@@ -71,52 +76,3 @@ async def scanner_health():
         "activist_scanner": activist,
         "8k_scanner": eightk,
     }
-
-
-async def _run_scanner():
-    """Run the Form 4 scanner in-process."""
-    try:
-        from scanner.form4_scanner import run_scanner
-        await run_scanner()
-    except Exception as e:
-        logger.error(f"Manual Form 4 scanner trigger failed: {e}")
-
-
-async def _run_activist_scanner():
-    """Run the activist scanner in-process."""
-    try:
-        from scanner.activist_scanner import run_scanner
-        await run_scanner()
-    except Exception as e:
-        logger.error(f"Manual activist scanner trigger failed: {e}")
-
-
-@router.post("/trigger")
-async def trigger_scanner(background_tasks: BackgroundTasks):
-    """Manually trigger the Form 4 scanner."""
-    background_tasks.add_task(_run_scanner)
-    return {"status": "triggered", "message": "Form 4 scanner started in background"}
-
-
-@router.post("/trigger/activist")
-async def trigger_activist_scanner(background_tasks: BackgroundTasks):
-    """Manually trigger the activist scanner."""
-    background_tasks.add_task(_run_activist_scanner)
-    return {"status": "triggered", "message": "Activist scanner started in background"}
-
-
-async def _run_8k_scanner():
-    """Run the 8-K scanner in-process."""
-    try:
-        import importlib
-        mod = importlib.import_module("scanner.8k_scanner")
-        await mod.run_scanner()
-    except Exception as e:
-        logger.error(f"Manual 8-K scanner trigger failed: {e}")
-
-
-@router.post("/trigger/8k")
-async def trigger_8k_scanner(background_tasks: BackgroundTasks):
-    """Manually trigger the 8-K scanner."""
-    background_tasks.add_task(_run_8k_scanner)
-    return {"status": "triggered", "message": "8-K scanner started in background"}
