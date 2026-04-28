@@ -1,5 +1,44 @@
 # LookInsight — Project Context
 
+## ⛔ HARD RULES — read before every tool call
+
+These rules override anything else in this file. Violating them wastes the user's time and money.
+
+### 1. Never run anything without explicit permission
+Before any `Bash` command that mutates state — `kill`, `pkill`, `rm`, `mv`, `git push`, `git commit`, run scripts, run backfills, db writes, etc. — STOP and explicitly check:
+
+- Did the user say *for this specific action* "yes / run it / do it / execute / kill it / commit it"?
+- If no → do NOT run. State what would be done; wait.
+- "Want me to X?" or "should we X?" from the user is a question, not permission.
+- Frustration / all-caps / sharp tone from the user means I already violated this. Stop and wait.
+
+Memory rule: `feedback_no_auto_actions.md`. Violated multiple times in 2026-04-27 / 2026-04-28 sessions.
+
+### 2. Precise answers only — no long stories
+- 1–3 sentences default. Tables/code blocks only when the data IS the answer.
+- "Yes" or "No" + one sentence of context is usually enough.
+- Don't enumerate options unless asked. Don't pre-write implementations unless asked.
+
+Memory rule: `feedback_precise_answers_only.md`.
+
+### 3. Apply domain rules before suggesting designs
+- **Cluster window = 30 days, FROZEN at formation.** 90d is for return calculation only — don't extend cluster membership to 90d. (Memory: `cluster_window_rule.md`.)
+- **142-row historic anchor is frozen.** Don't propose retroactive recompute, reclassification, or expansion of that cohort. (Memory: `feedback_matured_signals_frozen.md`.)
+- **Don't name buyside firms in external artifacts** without explicit written approval. (Memory: `feedback_no_naming_funds.md`.)
+- **Verify DB schema from write-path** before writing Cypher queries — never guess property names. (Memory: `feedback_verify_schema_first.md`.)
+
+### 4. Verify "fixes" before claiming them as verified
+- "Verified" / "all good" / "checked" must mean an actual test was run (read-only query, manual recompute, or sample inspection).
+- Don't say "this should work" and call it verified. If the verification was just reading code, say so.
+
+### Pre-tool-call checklist (run mentally before every Bash mutation, Edit, Write)
+1. Did the user say "yes/run/do" for THIS exact action?
+2. Which memory rule applies? (Cluster window, no-auto-actions, precise-answers, frozen-anchor)
+3. Is this read-only or mutating? Mutating = stricter check.
+4. If unsure → ask, don't act.
+
+---
+
 ## What This Is
 
 **LookInsight** is an alternative-data product that surfaces high-conviction insider buying signals from SEC Form 4 filings for institutional hedge fund clients. The platform classifies genuine open-market purchases (filtering out RSU vesting, DRIP, private placements, structured deals), detects multi-insider clusters, applies an earnings-proximity filter, and delivers pre-filtered signals with measured alpha vs SPY.

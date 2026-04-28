@@ -63,15 +63,15 @@ export default function SignalList() {
         <div className="grid grid-cols-2 gap-x-6 gap-y-5 md:flex md:gap-12 mb-6">
           <div>
             <div className="text-gray-600 text-xs font-semibold uppercase tracking-wider">Transactions Processed</div>
-            <div className="text-2xl sm:text-3xl font-extrabold tracking-tight">67,346</div>
+            <div className="text-2xl sm:text-3xl font-extrabold tracking-tight">51,054</div>
           </div>
           <div>
             <div className="text-gray-600 text-xs font-semibold uppercase tracking-wider">Genuine Purchases</div>
-            <div className="text-2xl sm:text-3xl font-extrabold tracking-tight">7,386</div>
+            <div className="text-2xl sm:text-3xl font-extrabold tracking-tight">8,357</div>
           </div>
           <div>
             <div className="text-gray-600 text-xs font-semibold uppercase tracking-wider">Companies Monitored</div>
-            <div className="text-2xl sm:text-3xl font-extrabold tracking-tight">5,437</div>
+            <div className="text-2xl sm:text-3xl font-extrabold tracking-tight">2,287</div>
           </div>
           <div>
             <div className="text-gray-600 text-xs font-semibold uppercase tracking-wider">Strong Buy Signals</div>

@@ -581,8 +581,14 @@ class InsiderClusterService:
         return filtered
 
     @classmethod
-    async def process_incremental(cls, cik: str, today: str) -> dict:
+    async def process_incremental(cls, cik: str, today: str, historical: bool = False) -> dict:
         """Incremental cluster detection for a single CIK touched in today's ingest.
+
+        Args:
+            cik: company CIK
+            today: ingest date (YYYY-MM-DD)
+            historical: if True, use date-range price/mcap APIs (works for any date).
+                        If False (default), uses live methods (current ingest path).
 
         Contract:
           - Active cluster exists (is_mature=false, within 90d of signal_date):
@@ -672,11 +678,13 @@ class InsiderClusterService:
 
         # Capture entry prices (target ticker + SPY) at formation.
         # Only day0 — no day1-7, no day90, no current. Phase D fetches exit prices at maturity.
+        price_fetch = (StockPriceService.get_price_at_date_historical
+                       if historical else StockPriceService.get_price_at_date)
         price_day0 = None
         spy_price_day0 = None
         if ticker:
             try:
-                pd = StockPriceService.get_price_at_date(ticker, today)
+                pd = price_fetch(ticker, today)
                 if pd and pd.get("price_at_date"):
                     price_day0 = float(pd["price_at_date"])
             except Exception as e:
@@ -685,7 +693,7 @@ class InsiderClusterService:
                     f"{type(e).__name__}: {str(e)[:100]}"
                 )
         try:
-            spy_pd = StockPriceService.get_price_at_date("SPY", today)
+            spy_pd = price_fetch("SPY", today)
             if spy_pd and spy_pd.get("price_at_date"):
                 spy_price_day0 = float(spy_pd["price_at_date"])
         except Exception as e:

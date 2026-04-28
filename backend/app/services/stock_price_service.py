@@ -131,3 +131,52 @@ class StockPriceService:
             logger.warning(f"Failed to fetch market cap for {ticker}: {e}")
             _market_cap_cache[key] = (time.time(), None)
             return None
+
+    @staticmethod
+    def get_price_at_date_historical(ticker: str, target_date: str) -> Optional[dict]:
+        """Fetch close price on a specific date using a tight date-range query.
+
+        Works for any date (current or historical) — no 1y window limit.
+        Returns dict with same shape as get_price_at_date, or None on failure.
+        """
+        try:
+            import pandas as pd
+            target = pd.Timestamp(target_date)
+            end = (target + pd.Timedelta(days=5)).strftime("%Y-%m-%d")
+            hist = yf.Ticker(ticker).history(start=target_date, end=end)
+            if hist.empty:
+                return None
+            row = hist.iloc[0]
+            date_used = hist.index[0].strftime("%Y-%m-%d")
+            return {
+                "price_at_date": float(row["Close"]),
+                "date_used": date_used,
+                "price_current": float(row["Close"]),
+                "current_date": date_used,
+            }
+        except Exception as e:
+            logger.warning(f"Failed historical price fetch for {ticker} on {target_date}: {e}")
+            return None
+
+    @staticmethod
+    def get_market_cap_at_date(ticker: str, target_date: str) -> Optional[float]:
+        """Historical market cap = shares_outstanding × close on target_date.
+
+        Uses yfinance get_shares_full + history with date-range. Returns dollars or None.
+        """
+        try:
+            import pandas as pd
+            target = pd.Timestamp(target_date)
+            shares_end = (target + pd.Timedelta(days=14)).strftime("%Y-%m-%d")
+            hist_end = (target + pd.Timedelta(days=5)).strftime("%Y-%m-%d")
+            t = yf.Ticker(ticker)
+            shares = t.get_shares_full(start=target_date, end=shares_end)
+            hist = t.history(start=target_date, end=hist_end)
+            if shares is None or len(shares) == 0 or hist.empty:
+                return None
+            close = float(hist.iloc[0]["Close"])
+            shares_at = float(shares.iloc[0])
+            return shares_at * close
+        except Exception as e:
+            logger.warning(f"Failed historical mcap for {ticker} on {target_date}: {e}")
+            return None

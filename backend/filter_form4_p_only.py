@@ -21,7 +21,7 @@ import requests
 sys.stdout.reconfigure(line_buffering=True)
 
 HEADERS = {"User-Agent": "LookInsight research@lookinsight.ai"}
-WORKERS = 8
+WORKERS = 9
 PACE_SEC = 1.0  # per-worker delay between requests
 
 # Per-worker last-request timestamp (threading)
