@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="LookInsight">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0B1220"/>
+      <stop offset="100%" stop-color="#1E293B"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="56" fill="url(#bg)"/>
+  <!-- Upward arrow + L mark, evoking "insight" and "buy signal" -->
+  <g stroke="#22D3EE" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <!-- Ascending line chart -->
+    <polyline points="56,180 96,150 132,162 172,108 200,76"/>
+    <!-- Arrowhead -->
+    <polyline points="178,76 200,76 200,98"/>
+  </g>
+  <!-- Anchor dot -->
+  <circle cx="56" cy="180" r="10" fill="#22D3EE"/>
+</svg>
