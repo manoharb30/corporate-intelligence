@@ -53,8 +53,9 @@ export default function McpDocs() {
             </span>
           </h3>
           <p className="text-slate-700 mt-1">
-            Returns the full evidence for one signal: buyer list, Form 4 filings, price action,
-            returns vs SPY, and the decision card (BUY / WATCH / PASS verdict).
+            Returns the full evidence for one signal: buyer list with titles, share counts and
+            prices; the underlying Form 4 filings; entry price; current return; and SPY-relative
+            performance.
           </p>
           <p className="text-sm text-slate-500 mt-1">
             Parameters: <code>accession_number</code> (from <code>get_recent_signals</code>).
