@@ -95,6 +95,57 @@ export default function McpDocs() {
         details.
       </p>
 
+      <h2 className="text-xl font-semibold mt-10 mb-3">Troubleshooting</h2>
+      <div className="space-y-4 mb-8 text-slate-700">
+        <div>
+          <p className="font-semibold text-slate-900">"Authorization with the MCP server failed" after approving</p>
+          <p>
+            Disconnect and re-add the connector in <strong>Settings → Connectors</strong>. If the
+            error repeats, sign out of GitHub in the same browser, then retry — stale cookies from
+            another GitHub account can mis-route the OAuth flow.
+          </p>
+        </div>
+        <div>
+          <p className="font-semibold text-slate-900">Tools don't appear after connecting</p>
+          <p>
+            Open a <em>new</em> chat in Claude — the connector tools are loaded at conversation
+            start. Existing chats opened before installation won't see the new tools.
+          </p>
+        </div>
+        <div>
+          <p className="font-semibold text-slate-900"><code>get_signal_detail</code> returns "not found"</p>
+          <p>
+            The <code>accession_number</code> argument must be the exact string returned by{' '}
+            <code>get_recent_signals</code> (e.g.{' '}
+            <code>CLUSTER-1234567-2026-04-15</code>) — not a ticker, not an SEC accession.
+          </p>
+        </div>
+        <div>
+          <p className="font-semibold text-slate-900">Numbers don't match the public dashboard</p>
+          <p>
+            The dashboard caches snapshots; the MCP tools call the live aggregate endpoint.
+            Differences of one or two signals on the same day are expected during the cache
+            window. If the gap persists for more than 24h, contact support.
+          </p>
+        </div>
+        <div>
+          <p className="font-semibold text-slate-900">Revoking access</p>
+          <p>
+            Disconnect from <strong>Settings → Connectors</strong> in Claude. To fully revoke at
+            the GitHub layer, visit{' '}
+            <a
+              href="https://github.com/settings/applications"
+              className="text-blue-600 underline"
+              target="_blank"
+              rel="noreferrer"
+            >
+              github.com/settings/applications
+            </a>
+            .
+          </p>
+        </div>
+      </div>
+
       <h2 className="text-xl font-semibold mt-10 mb-3">Support</h2>
       <p className="mb-6 text-slate-700">
         Questions, bug reports, or feature requests:{' '}
