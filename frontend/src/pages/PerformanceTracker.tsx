@@ -2,14 +2,14 @@ import { useEffect, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { signalPerfApi, SignalPerf } from '../services/api'
 
-type FilterMode = '30d' | '90d' | 'all' | 'custom'
+type FilterMode = '30d' | '60d' | '90d' | 'all' | 'custom'
 type SortKey = 'signal_date' | 'return_day0' | 'ticker' | 'total_value' | 'num_insiders'
 type SortDir = 'asc' | 'desc'
 
 export default function PerformanceTracker() {
   const [allSignals, setAllSignals] = useState<SignalPerf[]>([])
   const [loading, setLoading] = useState(true)
-  const [filterMode, setFilterMode] = useState<FilterMode>('30d')
+  const [filterMode, setFilterMode] = useState<FilterMode>('60d')
   const [selectedYear, setSelectedYear] = useState<string>('')
   const [selectedMonth, setSelectedMonth] = useState<string>('')
   const [sortKey, setSortKey] = useState<SortKey>('signal_date')
@@ -73,7 +73,7 @@ export default function PerformanceTracker() {
         return true
       }
       const signalDate = new Date(s.signal_date + 'T12:00:00')
-      const days = filterMode === '30d' ? 30 : 90
+      const days = filterMode === '30d' ? 30 : filterMode === '60d' ? 60 : 90
       const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000)
       return signalDate >= cutoff
     })
@@ -130,7 +130,7 @@ export default function PerformanceTracker() {
       {/* Filter bar */}
       <div className="flex flex-wrap items-center justify-between gap-y-3 gap-x-4 mb-6">
         <div className="flex flex-wrap items-center gap-2">
-          {(['30d', '90d', 'all'] as FilterMode[]).map((mode) => (
+          {(['30d', '60d', '90d', 'all'] as FilterMode[]).map((mode) => (
             <button
               key={mode}
               onClick={() => { setFilterMode(mode); setSelectedYear(''); setSelectedMonth('') }}
@@ -140,7 +140,7 @@ export default function PerformanceTracker() {
                   : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
               }`}
             >
-              {mode === '30d' ? 'Last 30d' : mode === '90d' ? 'Last 90d' : 'All Time'}
+              {mode === '30d' ? 'Last 30d' : mode === '60d' ? 'Last 60d' : mode === '90d' ? 'Last 90d' : 'All Time'}
             </button>
           ))}
           <span className="hidden sm:inline text-gray-300 px-1">|</span>
@@ -150,7 +150,7 @@ export default function PerformanceTracker() {
               setSelectedYear(e.target.value)
               setSelectedMonth('')  // clear month when year changes
               if (e.target.value) setFilterMode('custom')
-              else { setFilterMode('30d'); setSelectedMonth('') }
+              else { setFilterMode('60d'); setSelectedMonth('') }
             }}
             className="bg-gray-100 border-none rounded-md px-3 py-1.5 text-sm text-gray-500 font-medium"
           >
