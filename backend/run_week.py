@@ -122,7 +122,7 @@ def run_day(date: str, log, workers: int = 10) -> None:
     Steps: fetch → filter → parse → prefilter → batch_llm → merge → ingest
     """
     date_compact = date.replace("-", "")
-    py = "venv/bin/python"
+    py = sys.executable  # use the same interpreter running this script (works in venv + container)
     WORKERS = workers
 
     # File paths
