@@ -32,7 +32,7 @@ services:
   backend:
     build:
       context: ..
-      dockerfile: compose/Dockerfile.backend
+      dockerfile: deploy/Dockerfile.backend
     container_name: lookinsight-backend
     restart: unless-stopped
     env_file: .env

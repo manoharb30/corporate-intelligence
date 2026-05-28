@@ -1,0 +1,54 @@
+# .dockerignore — controls what `docker build` sees as its build context.
+# Build context is the repo root (`context: ..` from deploy/docker-compose.yml).
+# Excludes here apply to all COPY statements in deploy/Dockerfile.backend.
+
+# Secrets — MUST never leak into image layers (cannot be removed retroactively)
+**/.env
+**/.env.local
+**/.env.*.local
+
+# Python build artifacts and local venvs (darwin/arm64 venv is unusable in linux container)
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.pytest_cache/
+**/venv/
+**/.venv/
+**/*.egg-info/
+
+# Local runtime output (logs, error dumps, checkpoints, ad-hoc audit json)
+backend/logs/
+backend/backfill_errors/
+backend/backfill_checkpoints/
+backend/data/
+backend/archive/
+backend/audit_*.json
+backend/*.log
+
+# Frontend — not needed in the backend image, large
+frontend/node_modules/
+frontend/dist/
+frontend/.vercel/
+
+# Repo metadata / tooling that bloats context and busts cache on unrelated changes
+.git/
+.github/
+.paul/
+.design-review/
+.jez/
+.claude/
+.vscode/
+.idea/
+neo4j/
+
+# Top-level docs, decks, PDFs, scratch
+docs/
+*.md
+*.pdf
+*.pptx
+*.html
+
+# OS junk
+.DS_Store
+Thumbs.db

@@ -18,11 +18,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Install Python deps first (caches well)
-COPY requirements.txt /app/requirements.txt
+# Install Python deps first (caches well — requirements.txt invalidates less often than code)
+COPY backend/requirements.txt /app/requirements.txt
 RUN pip install --upgrade pip && pip install -r /app/requirements.txt
 
-# Copy backend source
+# Copy backend source. .dockerignore at repo root excludes venv, .env, logs, caches, frontend.
 COPY backend /app/backend
 
 WORKDIR /app/backend
