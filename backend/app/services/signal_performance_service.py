@@ -169,6 +169,14 @@ class SignalPerformanceService:
         6. Batch-store the new/immature results
         7. Recompute dashboard stats from the FULL set (preserved + new)
         """
+        raise RuntimeError(
+            "compute_all is RETIRED in v1.7. New clusters are created at ingest "
+            "via InsiderClusterService.process_incremental; per-signal maturity "
+            "flips will be handled by Phase D (not yet implemented). "
+            "If you triggered this, stop — recomputing in bulk overwrites rows "
+            "and silently leaves return_day0 NULL on flips that lack price_day0 "
+            "freshness (the TECX/BMI 2026-05-12 incident). Migrate the caller."
+        )
         start_time = time.time()
 
         # 1. Collect matured signal_ids — these must not be touched

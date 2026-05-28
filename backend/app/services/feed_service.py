@@ -739,10 +739,9 @@ class FeedService:
             for s in signals:
                 s.combined_signal_level = s.signal_level
 
-        # Merge standalone cluster + compound signals in parallel
+        # Merge standalone buy + sell cluster signals in parallel
         if not cik:
             from app.services.insider_cluster_service import InsiderClusterService
-            from app.services.compound_signal_service import CompoundSignalService
 
             async def _fetch_buy_clusters():
                 try:
@@ -762,15 +761,8 @@ class FeedService:
                     logger.warning(f"Failed to fetch sell clusters: {e}")
                     return []
 
-            async def _fetch_compounds():
-                try:
-                    return await CompoundSignalService.detect_compound_signals(days=days)
-                except Exception as e:
-                    logger.warning(f"Failed to fetch compound signals: {e}")
-                    return []
-
-            cluster_signals_raw, sell_cluster_signals_raw, compound_signals = await asyncio.gather(
-                _fetch_buy_clusters(), _fetch_sell_clusters(), _fetch_compounds()
+            cluster_signals_raw, sell_cluster_signals_raw = await asyncio.gather(
+                _fetch_buy_clusters(), _fetch_sell_clusters()
             )
 
             # Apply market cap filter to remove noise trades (< 0.01% of market cap)
@@ -830,27 +822,6 @@ class FeedService:
                     ),
                     signal_type="insider_sell_cluster",
                     cluster_detail=d.get("cluster_detail"),
-                ))
-
-            existing_ciks = {s.cik for s in signals}
-            for cs in compound_signals:
-                if cs.cik in existing_ciks:
-                    continue
-                signals.append(SignalItem(
-                    company_name=cs.company_name,
-                    cik=cs.cik,
-                    ticker=cs.ticker,
-                    filing_date=cs.signal_date,
-                    signal_level="high",
-                    signal_summary=cs.one_liner,
-                    items=[],
-                    item_names=[],
-                    persons_mentioned=[],
-                    accession_number=cs.accession_number,
-                    combined_signal_level="critical" if cs.score >= 80 else "high",
-                    insider_context=None,
-                    signal_type="compound",
-                    cluster_detail=None,
                 ))
 
         # Sort by combined level then by date

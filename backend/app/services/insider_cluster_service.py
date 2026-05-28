@@ -676,6 +676,12 @@ class InsiderClusterService:
         else:
             conviction = "buy" if total_value >= 100_000 else "watch"
 
+        # v1.3: SignalPerformance holds strong_buy only. Skip buy/watch tier clusters.
+        # Mirrors the guard in signal_performance_service._compute_one. Without this,
+        # process_incremental kept producing zombie SP rows after every ingest.
+        if conviction != "strong_buy":
+            return {"action": "none", "signal_id": None, "reason": f"tier={conviction}"}
+
         # Capture entry prices (target ticker + SPY) at formation.
         # Only day0 — no day1-7, no day90, no current. Phase D fetches exit prices at maturity.
         price_fetch = (StockPriceService.get_price_at_date_historical
@@ -966,17 +972,21 @@ class InsiderClusterService:
                 signal_level = "low"
                 signal_summary = f"Insider Purchase: {buyers[0].name}" if buyers else "Insider Purchase"
 
-        # Conviction tiers (buy direction only)
-        if direction == "buy" and signal_level in ("high", "medium"):
-            if num_traders >= 3 and officer_count >= 2:
-                conviction_tier = "strong_buy"
-            elif num_traders >= 3 or (num_traders >= 2 and officer_count >= 1):
-                conviction_tier = "buy"
-            else:
-                conviction_tier = "watch"
+        # Conviction tier: read from the persisted SignalPerformance node (single source
+        # of truth). Was previously re-derived inline with stale pre-v1.3 logic that
+        # ignored market cap and required 3+ buyers / 2+ officers — drifted from the
+        # signal_performance_service.compute_conviction_tier rules used at ingest.
+        sp_rows = await Neo4jClient.execute_query(
+            "MATCH (sp:SignalPerformance {signal_id: $signal_id}) "
+            "RETURN sp.conviction_tier AS conviction_tier",
+            {"signal_id": cluster_id},
+        )
+        if sp_rows and sp_rows[0].get("conviction_tier"):
+            conviction_tier = sp_rows[0]["conviction_tier"]
         else:
-            officer_count = 0
             conviction_tier = "watch"
+        if direction == "sell" or signal_level not in ("high", "medium"):
+            officer_count = 0
 
         # Build timeline entries — only open market buys (P) and sells (S)
         timeline = []
