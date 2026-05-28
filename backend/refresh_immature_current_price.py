@@ -33,6 +33,9 @@ def latest_close(ticker: str) -> tuple[float | None, str | None]:
         return None, None
 
 
+EXCLUDE_TICKERS: list[str] = []
+
+
 async def main():
     await Neo4jClient.connect()
     rows = await Neo4jClient.execute_query("""
@@ -43,10 +46,11 @@ async def main():
           AND sp.ticker IS NOT NULL
           AND sp.price_day0 IS NOT NULL
           AND sp.price_day0 > 0
+          AND NOT sp.ticker IN $exclude
         RETURN sp.signal_id AS sid, sp.ticker AS t, sp.signal_date AS sd,
                sp.price_day0 AS p0
         ORDER BY sp.signal_date DESC
-    """)
+    """, {"exclude": EXCLUDE_TICKERS})
     print(f"Immature strong_buy SP rows to refresh: {len(rows)}")
 
     updated = 0

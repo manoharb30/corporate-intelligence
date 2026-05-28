@@ -24,8 +24,20 @@ from datetime import datetime, timedelta
 sys.stdout.reconfigure(line_buffering=True)
 
 # SEC federal holidays (SEC closed, daily master.idx not published)
-# Covers 2024, 2025, 2026. Good Friday NOT included — SEC is open even though NYSE is closed.
+# Covers 2023, 2024, 2025, 2026. Good Friday NOT included — SEC is open even though NYSE is closed.
 SEC_HOLIDAYS = {
+    # 2023
+    "2023-01-02",  # New Year's Day (observed)
+    "2023-01-16",  # MLK Day
+    "2023-02-20",  # Presidents Day
+    "2023-05-29",  # Memorial Day
+    "2023-06-19",  # Juneteenth
+    "2023-07-04",  # Independence Day
+    "2023-09-04",  # Labor Day
+    "2023-10-09",  # Columbus Day
+    "2023-11-10",  # Veterans Day (observed)
+    "2023-11-23",  # Thanksgiving
+    "2023-12-25",  # Christmas
     # 2024
     "2024-01-01",  # New Year's Day
     "2024-01-15",  # MLK Day
