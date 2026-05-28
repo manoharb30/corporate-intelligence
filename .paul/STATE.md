@@ -7,7 +7,11 @@ Milestone: v1.7 Signal Pipeline Reconciliation (1 of 4 phases complete)
 Phase: 18 of 4 — Cluster-detection correctness
 Plan: 18-01 applied, awaiting UNIFY
 Status: APPLY complete — all 5 ACs satisfied, SUMMARY.md written, ready to reconcile
-Last activity: 2026-04-23 — Plan 18-01 APPLY complete. Four surgical edits to insider_cluster_service.py applied + verified via compile + test suite + compute_all rerun. Cohort now clean: 142 mature preserved, 32 immature (zero contaminated, down from 17 contaminated pre-fix). AVEX + BMI + 15 other FILTERED-backed rows absent from SignalPerformance.
+Last activity: 2026-05-13 (3rd pause, power shutdown) — Daily Form 4 ingest CAUGHT UP for May 11–12 via `run_week.py`. 17 GENUINE P-tx ingested (7 May 11, 10 May 12). **No new strong_buy signals.** Only midcap was LZ ($1.05B, 1 buyer); ACON (3 buyers, $7.6M) and AXIA3 (foreign, no mcap) returned as clusters but fail filters. Then started design discussion on pre-LLM mcap gate to skip junk filings (user decision: discard, don't ingest). PAUSED mid-discussion on how to handle unknown-CIK case (3 options: discard / enrich-inline / fail-open). **See `.paul/HANDOFF-2026-05-13-v2.md` for full context — supersedes original HANDOFF-2026-05-13.md as resume entry point.**
+
+Prior activity (same day): 2026-05-13 — Immature price refresh + dual architectural analysis + outreach drafts. See `.paul/HANDOFF-2026-05-13.md` (still load-bearing for Phase 19/20 direction notes).
+
+Prior activity: 2026-04-23 — Plan 18-01 APPLY complete. Four surgical edits to insider_cluster_service.py applied + verified via compile + test suite + compute_all rerun. Cohort now clean: 142 mature preserved, 32 immature (zero contaminated, down from 17 contaminated pre-fix). AVEX + BMI + 15 other FILTERED-backed rows absent from SignalPerformance.
 
 Progress:
 - v1.7 Signal Pipeline Reconciliation: [███░░░░░░] 35% (1 of 4 phases complete; Phase 18 applied, awaiting unify)
@@ -76,11 +80,12 @@ Feature branches merged: none
 
 ## Session Continuity
 
-Last session: 2026-04-22 evening → 2026-04-23 early morning (v1.7 milestone + Phase 17 closed + Phase 18 plan created)
-Stopped at: Phase 18 APPLY complete but unresolved concerns. User paused to restart fresh because session accumulated confusion (Claude's 548-vs-14 framing + invented same-day-cluster methodology + inability to precisely explain why 23 old-dated signals surfaced). Phase 18 code changes are live; 23 newly-surfaced mature signals in DB; no git commits all session.
-Next action: **Read .paul/HANDOFF-2026-04-23.md first.** Then ask user what to tackle — do NOT presume. Likely options: commit today's work, per-signal audit of the 23 surfaced signals, close Phase 18 via UNIFY, or rescope.
-Resume file: .paul/HANDOFF-2026-04-23.md
-Git strategy: main (nothing committed in the 2026-04-22 session — many untracked .py files + modified backfill_daily.py; commit before Phase 17 plan begins)
+Last session: 2026-05-13 v2 (daily ingest catchup + pre-LLM mcap-gate design; THIRD pause = power shutdown)
+Stopped at: Mid-design-discussion on pre-LLM mcap gate. User wants to discard microcap filings before LLM (don't ingest junk). Paused on sub-question: how to handle filings where CIK has no Company node (1=discard, 2=enrich-inline, 3=fail-open). Daily ingest now caught up through May 12; May 13 not yet ingestable (US nighttime at pause).
+Next action: **Read .paul/HANDOFF-2026-05-13-v2.md first, then HANDOFF-2026-05-13.md for Phase 19/20 background.** Ask user — do NOT presume. Top candidates: answer the mcap-gate unknown-CIK question, ingest May 13 (if SEC master.idx now published), commit accumulated work (12+ untracked files), or pivot to Phase 18 UNIFY / Phase 19/20 PLAN drafting.
+Resume file: .paul/HANDOFF-2026-05-13-v2.md
+Git strategy: main (uncommitted work accumulated across last 3 sessions — 10+ untracked .py + 5 modified files; commit before Phase 19 starts)
+Prior session: 2026-05-12 — data-correctness ops; TECX/BMI fix + compute_all hard-guard + DashboardStats + SnapshotBlob refresh. See .paul/HANDOFF-2026-05-12.md for full prior context.
 Resume context:
 - v1.7 created to close multi-file drift in the signal pipeline — surfaced during 2026-04-22 audit session.
 - ROOT BUG: `insider_cluster_service.detect_clusters` has no `classification` filter. Lets FILTERED + NOT_GENUINE transactions cluster. Explains why today's AEVEX override had to be paired with code change, and why 17/58 immature SP rows are contaminated.
@@ -120,4 +125,4 @@ Unresolved items from session 2026-04-18 handoff:
 8. Helper scripts at root: `create_ppt.py`, `export_neudata_samples.py`, `generate_data_catalog.py` — keep or delete
 
 ---
-*Last updated: 2026-04-23 — v1.7 milestone created (Signal Pipeline Reconciliation)*
+*Last updated: 2026-05-13 v2 — THIRD session pause (power shutdown). Daily ingest caught up May 11–12 (no new strong_buys). Pre-LLM mcap-gate design discussed, paused on unknown-CIK handling. HANDOFF-2026-05-13-v2.md is now the active resume entry point.*
