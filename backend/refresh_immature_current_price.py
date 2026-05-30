@@ -1,12 +1,15 @@
-"""Refresh price_current + return_current for immature SignalPerformance rows.
+"""Refresh price fields used by the live product.
 
-Scope (intentionally narrow):
-- Only rows where is_mature = false AND conviction_tier = 'strong_buy'
-- Updates: sp.price_current, sp.price_current_date, sp.return_current
-- Touches NOTHING else — no Company.price_series, no other SP fields,
-  no maturity flips, no num_insiders/total_value changes.
+Two refresh steps, in order:
+1. SignalPerformance.price_current / return_current — for immature strong_buy
+   rows. Source for Signal Detail decision cards.
+2. Company.price_series + SPY — for the live Signal List page (which computes
+   returns + alpha from price_series[-1] for clusters in the last 90 days).
+   Delegates to scanner.form4_scanner.update_signal_prices(days_lookback=90)
+   so the scope matches what users actually see; >20h staleness skip avoids
+   pointless re-fetches.
 
-Read-only on Company. Writes only to immature SP rows.
+No maturity flips, no signal recompute.
 """
 import asyncio
 import sys
@@ -18,6 +21,7 @@ import yfinance as yf
 
 sys.path.insert(0, str(Path(__file__).parent))
 from app.db.neo4j_client import Neo4jClient
+from scanner.form4_scanner import update_signal_prices
 
 
 def latest_close(ticker: str) -> tuple[float | None, str | None]:
@@ -72,7 +76,11 @@ async def main():
         print(f"  {r['t']:<8} {r['sd']}: p0=${r['p0']:.2f} → price_current=${close:.2f} "
               f"({used_date}) return_current={return_current:+.2f}%")
 
-    print(f"\nDone. updated={updated}, skipped={skipped}")
+    print(f"\nSignalPerformance refresh done. updated={updated}, skipped={skipped}")
+
+    print("\nRefreshing Company.price_series for last-90d signal tickers + SPY...")
+    n = await update_signal_prices(days_lookback=90)
+    print(f"Company.price_series refresh done. companies updated={n}")
 
 
 if __name__ == "__main__":

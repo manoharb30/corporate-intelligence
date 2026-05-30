@@ -1,8 +1,9 @@
 """Weekly snapshot service — live scorecard for recent signals.
 
-Shows how signals from the last 30 days are performing right now,
-using stored daily prices from Company.price_series (no yfinance calls).
-Buy side: strong_buy conviction only. Sell side: high clusters, separate stats.
+Reads clusters from SignalPerformance (the authoritative store written at
+ingest by InsiderClusterService.process_incremental) — same source as the
+Performance Tracker and /api/signal-performance. Applies live price/alpha
+lookups from Company.price_series for the display layer.
 """
 
 import json
@@ -12,7 +13,6 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from app.db.neo4j_client import Neo4jClient
-from app.services.insider_cluster_service import InsiderClusterService
 
 logger = logging.getLogger(__name__)
 
@@ -60,39 +60,46 @@ class SnapshotService:
             if time.time() - ts < _CACHE_TTL:
                 return data
 
-        # Try precomputed blob first (for default 30d/60d/90d without date filter)
-        if not date and days in (30, 60, 90):
-            blob = await SnapshotService._load_precomputed(days)
-            if blob:
-                _snapshot_cache[cache_key] = (time.time(), blob)
-                return blob
-
         now = datetime.now()
 
-        # 1. Get recent buy clusters (v1.3: sell direction removed — product is strong_buy only)
-        buy_clusters = await InsiderClusterService.detect_clusters(
-            days=days, min_level="high", direction="buy"
+        # 1. Read recent strong_buy clusters from SignalPerformance — the
+        #    authoritative store written at ingest. Filter by signal_date
+        #    within the requested window. No re-derivation from raw transactions.
+        cutoff = (now - timedelta(days=days)).strftime("%Y-%m-%d")
+        sp_rows = await Neo4jClient.execute_query(
+            "MATCH (sp:SignalPerformance) "
+            "WHERE sp.direction = 'buy' "
+            "  AND sp.conviction_tier = 'strong_buy' "
+            "  AND substring(sp.signal_date, 0, 10) >= $cutoff "
+            "  AND sp.ticker IS NOT NULL AND sp.ticker <> '' "
+            "RETURN sp.signal_id AS signal_id, sp.ticker AS ticker, "
+            "       sp.company_name AS company_name, sp.cik AS cik, "
+            "       substring(sp.signal_date, 0, 10) AS signal_date, "
+            "       sp.signal_level AS signal_level, "
+            "       sp.num_insiders AS num_insiders, "
+            "       sp.total_value AS total_value, "
+            "       sp.conviction_tier AS conviction_tier "
+            "ORDER BY sp.signal_date DESC",
+            {"cutoff": cutoff},
         )
-        buy_clusters = InsiderClusterService.apply_market_cap_filter(buy_clusters)
-        buy_clusters = [c for c in buy_clusters if c.conviction_tier == "strong_buy"]
 
         # 2. Build unified signal list (insider clusters only — compound signals excluded per research)
-        raw_signals = []
-
-        for c in buy_clusters:
-            raw_signals.append({
-                "ticker": c.ticker,
-                "company_name": c.company_name,
-                "cik": c.cik,
+        raw_signals = [
+            {
+                "ticker": r["ticker"],
+                "company_name": r["company_name"],
+                "cik": r["cik"],
                 "signal_type": "insider_cluster",
-                "signal_date": c.window_end,
-                "signal_level": c.signal_level,
-                "num_insiders": c.num_buyers,
-                "total_value": c.total_buy_value,
-                "accession_number": c.accession_number,
+                "signal_date": r["signal_date"],
+                "signal_level": r["signal_level"],
+                "num_insiders": r["num_insiders"],
+                "total_value": r["total_value"],
+                "accession_number": r["signal_id"],
                 "signal_action": "BUY",
-                "conviction_tier": c.conviction_tier,
-            })
+                "conviction_tier": r["conviction_tier"],
+            }
+            for r in sp_rows
+        ]
 
         # 3. Deduplicate by ticker+action
         level_rank = {"high": 0, "medium": 1, "low": 2}
@@ -289,48 +296,3 @@ class SnapshotService:
 
         _snapshot_cache[cache_key] = (time.time(), result)
         return result
-
-    @staticmethod
-    async def _load_precomputed(days: int) -> Optional[dict]:
-        """Load precomputed snapshot blob from Neo4j."""
-        result = await Neo4jClient.execute_query(
-            "MATCH (ss:SnapshotBlob {days: $days}) RETURN ss.data as data",
-            {"days": days},
-        )
-        if result and result[0].get("data"):
-            try:
-                return json.loads(result[0]["data"])
-            except (ValueError, TypeError):
-                pass
-        return None
-
-    @staticmethod
-    async def precompute_and_save(days_list: list[int] = None) -> dict:
-        """Precompute snapshots for common day ranges and save as blobs.
-
-        Called after signal performance compute. Saves 30d, 60d, 90d snapshots
-        so dashboard loads instantly without live cluster detection.
-        """
-        if days_list is None:
-            days_list = [30, 60, 90]
-
-        saved = 0
-        for days in days_list:
-            # Clear in-memory cache to force fresh computation
-            cache_key = f"weekly_{days}"
-            _snapshot_cache.pop(cache_key, None)
-
-            # Compute fresh
-            result = await SnapshotService.get_weekly_snapshot(days=days)
-
-            # Save as blob
-            data_json = json.dumps(result, default=str)
-            await Neo4jClient.execute_query(
-                "MERGE (ss:SnapshotBlob {days: $days}) "
-                "SET ss.data = $data, ss.computed_at = $computed_at",
-                {"days": days, "data": data_json, "computed_at": datetime.now().isoformat()},
-            )
-            saved += 1
-            logger.info(f"Snapshot blob saved for {days}d ({len(result.get('signals', []))} signals)")
-
-        return {"saved": saved, "days": days_list}

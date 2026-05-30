@@ -754,15 +754,18 @@ class InsiderClusterService:
         from_anchor=True: window is [anchor_date - 30d, today]  (update path)
         from_anchor=False: window is [today - 30d, today]       (create path)
         """
+        # NB: transaction_date may carry a TZ suffix (e.g. "2026-05-29-05:00"),
+        # which date() cannot parse — truncate to YYYY-MM-DD first.
+        # See CLAUDE.md "transaction_date may have a TZ suffix".
         if from_anchor:
             where_window = (
-                "date($anchor) - duration({days: 30}) <= date(t.transaction_date) "
-                "AND date(t.transaction_date) <= date($today)"
+                "date($anchor) - duration({days: 30}) <= date(substring(t.transaction_date, 0, 10)) "
+                "AND date(substring(t.transaction_date, 0, 10)) <= date($today)"
             )
         else:
             where_window = (
-                "date($today) - duration({days: 30}) <= date(t.transaction_date) "
-                "AND date(t.transaction_date) <= date($today)"
+                "date($today) - duration({days: 30}) <= date(substring(t.transaction_date, 0, 10)) "
+                "AND date(substring(t.transaction_date, 0, 10)) <= date($today)"
             )
         r = await Neo4jClient.execute_query(
             f"""

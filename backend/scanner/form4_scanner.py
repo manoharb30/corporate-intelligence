@@ -398,22 +398,38 @@ def _fetch_price_series(ticker: str) -> Optional[list[dict]]:
         return None
 
 
-async def update_signal_prices() -> int:
-    """Update Company.price_series for all companies with signals.
+async def update_signal_prices(days_lookback: Optional[int] = None) -> int:
+    """Update Company.price_series for companies with signals.
 
     Runs after cluster detection. Only updates companies whose prices
     are stale (updated >20 hours ago or never).
-    """
-    logger.info("Updating daily prices for signal companies...")
 
-    # Get all companies with signals that need price updates
-    result = await Neo4jClient.execute_query("""
+    days_lookback: if set, narrow scope to companies whose most recent
+    SignalPerformance.signal_date is within the last N days. Default None =
+    all signal-bearing companies (legacy form4_scanner behaviour).
+    The live Signal List page reads at most the last 90 days, so the
+    operator refresh command passes days_lookback=90.
+    """
+    logger.info(
+        f"Updating daily prices for signal companies "
+        f"(lookback={'all' if days_lookback is None else f'{days_lookback}d'})..."
+    )
+
+    # Get companies with signals that need price updates
+    lookback_filter = ""
+    if days_lookback is not None:
+        lookback_filter = (
+            f"AND sp.signal_date >= "
+            f"substring(toString(datetime() - duration({{days: {int(days_lookback)}}})), 0, 10) "
+        )
+    result = await Neo4jClient.execute_query(f"""
         MATCH (sp:SignalPerformance)
         WHERE sp.ticker IS NOT NULL AND sp.ticker <> ""
+          {lookback_filter}
         WITH DISTINCT sp.ticker AS ticker, sp.cik AS cik
-        OPTIONAL MATCH (c:Company {cik: cik})
+        OPTIONAL MATCH (c:Company {{cik: cik}})
         WHERE c.prices_updated_at IS NOT NULL
-          AND c.prices_updated_at > toString(datetime() - duration({hours: 20}))
+          AND c.prices_updated_at > toString(datetime() - duration({{hours: 20}}))
         WITH ticker, cik, c
         WHERE c IS NULL
         RETURN ticker, cik
