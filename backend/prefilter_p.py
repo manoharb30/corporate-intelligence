@@ -21,11 +21,55 @@ Usage:
 import argparse
 import json
 import sys
+from collections import defaultdict
 
 sys.stdout.reconfigure(line_buffering=True)
 sys.path.insert(0, ".")
 
 from classify_p_with_prefilter import prefilter
+
+
+def detect_dsp_allocations(parsed_filings: list[dict]) -> dict:
+    """Detect IPO Directed Share Program allocations across the daily batch.
+
+    DSP fingerprint (any non-IPO occurrence essentially impossible):
+    - 2+ distinct insiders
+    - Same issuer, same transaction date
+    - Same exact whole-dollar price per share (e.g., $20.00)
+
+    Returns: dict mapping (accession, insider_name, txn_index) -> reason string.
+    Caller uses this to mark matching transactions NOT_GENUINE before LLM.
+    """
+    groups = defaultdict(list)  # (issuer_cik, date, price_cents) -> list of (acc, insider, txn_idx)
+    for filing in parsed_filings:
+        acc = filing.get("accession", "")
+        insider_name = (filing.get("insider", {}) or {}).get("name", "")
+        issuer_cik = filing.get("issuer_cik") or filing.get("issuer_name", "")
+        for i, txn in enumerate(filing.get("p_transactions", [])):
+            price = txn.get("price_per_share", 0) or 0
+            # Whole-dollar check: within 1 cent of an integer, and positive
+            if price <= 0 or abs(price - round(price)) > 0.01:
+                continue
+            date = (txn.get("transaction_date") or "")[:10]
+            if not date:
+                continue
+            key = (issuer_cik, date, int(round(price * 100)))
+            groups[key].append((acc, insider_name, i))
+
+    flagged: dict = {}
+    for (issuer_cik, date, price_cents), members in groups.items():
+        unique_insiders = {m[1].upper() for m in members if m[1]}
+        if len(unique_insiders) < 2:
+            continue
+        price = price_cents / 100
+        reason = (
+            f"IPO DSP allocation: {len(unique_insiders)} distinct insiders bought at "
+            f"exactly ${price:.2f} on {date} (same issuer, same date, same whole-dollar price — "
+            f"non-conviction offering allocation)"
+        )
+        for acc, insider, idx in members:
+            flagged[(acc, insider, idx)] = reason
+    return flagged
 
 
 def build_payload_dict(filing: dict, txn: dict) -> dict:
@@ -63,8 +107,12 @@ def main():
     llm_queue_items = []
     rule_counts = {}
 
+    # Cross-filing DSP detection — looks across the whole batch for IPO
+    # directed-share-program patterns the per-transaction prefilter can't see.
+    dsp_flags = detect_dsp_allocations(parsed_filings)
+
     for filing in parsed_filings:
-        for txn in filing.get("p_transactions", []):
+        for i, txn in enumerate(filing.get("p_transactions", [])):
             base = {
                 "accession": filing["accession"],
                 "issuer": filing.get("issuer_name", ""),
@@ -74,6 +122,17 @@ def main():
                 "price_per_share": txn.get("price_per_share", 0),
                 "primary_document": filing.get("primary_document", ""),
             }
+            # Rule 22 — IPO DSP allocation (cross-filing detection)
+            dsp_key = (filing["accession"], (filing.get("insider", {}) or {}).get("name", ""), i)
+            if dsp_key in dsp_flags:
+                rule_counts["Rule 22"] = rule_counts.get("Rule 22", 0) + 1
+                prefilter_results.append({
+                    **base,
+                    "classification": "NOT_GENUINE",
+                    "reason": dsp_flags[dsp_key],
+                    "rule_triggered": "Rule 22",
+                })
+                continue
             pre = prefilter(filing, txn)
             if pre:
                 reason, rule = pre
