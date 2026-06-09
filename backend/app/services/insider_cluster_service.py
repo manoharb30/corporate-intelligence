@@ -21,6 +21,15 @@ from app.services.stock_price_service import StockPriceService
 
 logger = logging.getLogger(__name__)
 
+# Deterministic CIK blocklist — companies that must never form a strong_buy
+# cluster signal. Manually curated; one verified entry per documented rationale.
+# Not a heuristic: an exact CIK match, zero false-positive risk.
+#   0002064307 — ContextLogic Holdings (LOGC): Abrams-controlled permanent-capital
+#     vehicle (post-US-Salt reverse-merger holdco, ~40% fund-controlled). Genuine
+#     open-market buys, but a controlled-vehicle false positive, not an operating
+#     midcap insider cluster. Removed 2026-06-09. See .paul/phases/21-control-vehicle-exclusion.
+EXCLUDED_CIKS: set[str] = {"0002064307"}
+
 
 def classify_insider_role(title: str) -> str:
     """Classify insider title into role category for signal weighting.
@@ -218,6 +227,7 @@ class InsiderClusterService:
               AND t.classification = 'GENUINE'
               AND (t.is_derivative IS NULL OR t.is_derivative = false)
               AND c.tickers IS NOT NULL AND size(c.tickers) > 0
+              AND NOT c.cik IN $excluded_ciks
             RETURN c.cik as cik,
                    c.name as company_name,
                    c.tickers as tickers,
@@ -233,7 +243,10 @@ class InsiderClusterService:
                    t.primary_document as primary_document
             ORDER BY t.transaction_date DESC
         """
-        results = await Neo4jClient.execute_query(query, {"since_date": since_date, "tx_code": tx_code})
+        results = await Neo4jClient.execute_query(
+            query,
+            {"since_date": since_date, "tx_code": tx_code, "excluded_ciks": list(EXCLUDED_CIKS)},
+        )
 
         if not results:
             return []
@@ -600,6 +613,10 @@ class InsiderClusterService:
 
         Returns: {"action": "created"|"updated"|"none", "signal_id": str|None}
         """
+        # 0. Blocklisted company — never form or update a signal for it.
+        if cik in EXCLUDED_CIKS:
+            return {"action": "none", "signal_id": None, "reason": "excluded_cik"}
+
         # 1. Active cluster?
         active = await Neo4jClient.execute_query(
             """

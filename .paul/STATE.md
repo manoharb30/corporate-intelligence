@@ -3,11 +3,13 @@
 ## Current Position
 
 Version: 1.7.0 (in progress)
-Milestone: v1.7 Signal Pipeline Reconciliation (1 of 4 phases complete)
-Phase: 18 of 4 — Cluster-detection correctness
-Plan: 18-01 applied, awaiting UNIFY
-Status: APPLY complete — all 5 ACs satisfied, SUMMARY.md written, ready to reconcile
-Last activity: 2026-05-13 (3rd pause, power shutdown) — Daily Form 4 ingest CAUGHT UP for May 11–12 via `run_week.py`. 17 GENUINE P-tx ingested (7 May 11, 10 May 12). **No new strong_buy signals.** Only midcap was LZ ($1.05B, 1 buyer); ACON (3 buyers, $7.6M) and AXIA3 (foreign, no mcap) returned as clusters but fail filters. Then started design discussion on pre-LLM mcap gate to skip junk filings (user decision: discard, don't ingest). PAUSED mid-discussion on how to handle unknown-CIK case (3 options: discard / enrich-inline / fail-open). **See `.paul/HANDOFF-2026-05-13-v2.md` for full context — supersedes original HANDOFF-2026-05-13.md as resume entry point.**
+Milestone: v1.7 Signal Pipeline Reconciliation (2 of 5 phases complete)
+Phase: 21 of 5 — Control-Vehicle Exclusion (LOGC removal + CIK blocklist) — COMPLETE (reduced scope)
+Plan: n/a — shipped directly. Automated gate (B/C) descoped to backlog (n=1).
+Status: DONE. LOGC removed; CIK blocklisted in code. Phases 18/19/20 still pending. Deploy of the blocklist guard (backend image rebuild) still outstanding.
+Last activity: 2026-06-09 — Phase 21 shipped at reduced scope. LOGC (`CLUSTER-0002064307-2026-06-03`, immature) was a genuine 2-insider Abrams-controlled permanent-capital-vehicle cluster passing all mechanical filters (live Haiku classifier returns GENUINE even with fund-control footnote; SIC still 5961). DECISION: did NOT build the automated control-vehicle gate — buyer-attribute heuristic is fragile and we'd be generalizing from n=1; RLI + GSHD vetted as legitimate (no wave to gate). Shipped only: (1) deterministic `EXCLUDED_CIKS` blocklist + guards in `process_incremental`/`detect_clusters`; (2) removed the LOGC SP node (cohort 173 mature unchanged, immature 24->23, underlying tx left GENUINE). Auto-gate (13D + >=30% shares-outstanding) deferred to backlog until >=3-4 examples. Committed this session: blocklist + `MIN_AGE_DAYS` 97->90 fix. **Outstanding: backend image redeploy for the blocklist to go live.** Also earlier same session: matured XRAY/HOG/ABTC -> cohort 170->173 (HR 65.9%, alpha 7.6pp).
+
+Prior activity: 2026-05-13 (3rd pause, power shutdown) — Daily Form 4 ingest CAUGHT UP for May 11–12 via `run_week.py`. 17 GENUINE P-tx ingested (7 May 11, 10 May 12). **No new strong_buy signals.** Only midcap was LZ ($1.05B, 1 buyer); ACON (3 buyers, $7.6M) and AXIA3 (foreign, no mcap) returned as clusters but fail filters. Then started design discussion on pre-LLM mcap gate to skip junk filings (user decision: discard, don't ingest). PAUSED mid-discussion on how to handle unknown-CIK case (3 options: discard / enrich-inline / fail-open). **See `.paul/HANDOFF-2026-05-13-v2.md` for full context — supersedes original HANDOFF-2026-05-13.md as resume entry point.**
 
 Prior activity (same day): 2026-05-13 — Immature price refresh + dual architectural analysis + outreach drafts. See `.paul/HANDOFF-2026-05-13.md` (still load-bearing for Phase 19/20 direction notes).
 

@@ -18,7 +18,7 @@
 **v1.7 Signal Pipeline Reconciliation** (1.7.0)
 Status: 🚧 In Progress
 Started: 2026-04-23
-Phases: 1 of 4 complete
+Phases: 2 of 5 complete
 
 **Theme:** Reconcile the multiple "sources of truth" across the signal pipeline. `detect_clusters` currently ignores the `classification` tag (letting `FILTERED` and `NOT_GENUINE` transactions cluster), uses an outdated `$10B` midcap cap, and duplicates logic with `get_cluster_detail` which has a conflicting `strong_buy` definition. Close the multi-file drift that has silently produced contaminated cohorts since the earnings-proximity rule was introduced.
 
@@ -36,6 +36,7 @@ Phases: 1 of 4 complete
 | 18 | Cluster-detection correctness | 1 (18-01) | Planning | - |
 | 19 | Conviction-tier unification | TBD | Not started | - |
 | 20 | Mcap source reconciliation | TBD | Not started | - |
+| 21 | Control-Vehicle Exclusion (LOGC removal + CIK blocklist) | 1/1 | ✅ Complete (reduced scope; auto-gate deferred) | 2026-06-09 |
 
 ### Phase 17: Methodology decision + earnings-proximity implementation
 
@@ -55,6 +56,38 @@ Plans: TBD (defined during /paul:plan)
 ### Phase 20: Mcap source reconciliation
 
 **Focus:** `detect_clusters` currently calls `StockPriceService.get_market_cap(ticker)` for live yfinance mcap. v1.6's `mcap_at_signal_true` field already stores XBRL-truth mcap on immature SignalPerformance rows but `detect_clusters` doesn't read it. Decide: (a) prefer stored `mcap_at_signal_true` when available, fall back to ratio-estimate; or (b) accept the drift with documented rationale. Decide during plan phase.
+Plans: TBD (defined during /paul:plan)
+
+### Phase 21: Control-Vehicle Exclusion Gate
+
+**Trigger:** LOGC (ContextLogic Holdings, `CLUSTER-0002064307-2026-06-03`) entered the cohort as a strong_buy on 2026-06-08. Investigation showed it is a genuine 2-insider open-market cluster (Raja Bobbili / Abrams Capital $2.45M + Paul Levy $1.13M) at ~$400M midcap — passing every mechanical filter — but the company is an **Abrams-controlled permanent-capital vehicle** (post-US-Salt reverse-merger holdco, ~40% fund-controlled, concurrent $115M rights offering). The disqualifying facts are company-level, not transaction-level: the LIVE Haiku classifier returns GENUINE for Bobbili's buy even with the Abrams/Riva fund-control footnote in the payload, and SEC SIC is still `5961` (operating). So neither the LLM classifier nor a SIC gate catches it — a deterministic control-vehicle eligibility gate is required.
+
+**OUTCOME (2026-06-09): DESCOPED — auto-gate deliberately NOT built.** On expert/accounting re-review the buyer-attribute heuristic proved fragile (self-reported 10% checkbox; indirect ownership collides with legitimate family LPs/trusts; brittle fund regex; $-dominance is a weak control proxy), and we are generalizing from **n = 1** (LOGC is the only confirmed instance) — an automated rule from one example overfits, and a false positive prunes a good signal from the core cohort. RLI and GSHD (the other two recent clusters) were vetted and confirmed legitimate, so there is no wave to gate against. Shipped only the certain, deterministic part.
+
+**DELIVERED:**
+- **Deterministic CIK blocklist** in `insider_cluster_service.py`: `EXCLUDED_CIKS = {"0002064307"}` constant, guard in the live writer `process_incremental`, and filter in `detect_clusters` (feed/scanner). Exact CIK match, zero false-positive risk. Live after next backend redeploy.
+- **LOGC signal removed** via `remove_logc_2026-06-09.py` (deleted immature SP node `CLUSTER-0002064307-2026-06-03`). Cohort 173 mature unchanged, immature 24 -> 23. Underlying Form 4 transactions left GENUINE (company-eligibility exclusion, NOT a transaction relabel — deliberate divergence from `invalidate_codi`).
+
+**DEFERRED to Backlog -> Correctness/Research:**
+- **B/C — automated control-vehicle gate + backtest.** Revisit only when >= 3-4 control-vehicle examples accumulate. Economically sound form = 13D-control (`ActivistFiling`) + >= 30% of shares outstanding, fail-open when ownership can't be confirmed. Not n=1.
+- **A — primary-issuance prefilter Rule 23.** Hygiene only; would NOT have caught LOGC.
+
+**Deploy note:** the blocklist guard is committed but only live after image rebuild/redeploy; until then a re-ingest of CIK `0002064307` could recreate the signal (Bobbili/Levy buys stay inside a 30-day window into early July).
+
+---
+*Original design (B/C now deferred — kept for reference):*
+
+**Scope: Workstreams B + D (defer A).**
+
+- **B — Control-vehicle eligibility gate** in `insider_cluster_service.detect_clusters` (beside the $300M–$5B mcap gate, ~line 411; extend the cluster query ~line 221 to project `is_ten_percent_owner`, `ownership_type`, `footnotes`). A buyer is a "control-affiliated fund insider" if `is_ten_percent_owner=true` AND `ownership_type='I'` AND footnote/nature matches investment-fund language (`Capital Partners|Capital Management|L\.?P\.?|general partner|managing member|Partners [IVX]+|fund`). **Exclude the cluster** if such insiders are ≥50% of cluster $ value OR all distinct buyers are control-affiliated. **Confirmation layer:** affiliated funds ≥~30% of shares outstanding (prefer linked 13D/13G `ActivistFiling`, else footnote share-sum, else role-heuristic with log). **Guardrail:** direct (`ownership_type='D'`) 10% owners (founder/CEO conviction) are never flagged. **Backstop:** CIK exclusion-list constant, seeded with LOGC `0002064307`. Structured skip-reason logged for audit. Unit tests: LOGC-shaped cluster excluded; founder direct-10%-owner retained.
+- **C (mandatory gate before D commits)** — read-only backtest of gate B against all 197 existing `SignalPerformance` (173 mature + 24 immature). Review what it would exclude for false positives; tighten thresholds if anything good is threatened. Matured cohort frozen — gate is forward-only, no retroactive reclassification.
+- **D — Remove the live immature LOGC signal.** Add CIK to exclusion list, `DETACH DELETE` the `SignalPerformance` + `InsiderCluster` nodes, refresh snapshot/feed. **Do NOT** mark Bobbili/Levy transactions `NOT_GENUINE` — they are genuine open-market buys; this is a company-eligibility exclusion, not a transaction relabel (deliberate divergence from the `invalidate_codi` precedent). Immature → 173 mature dashboard stats unaffected. Dry-run → commit on approval.
+
+**Deferred — Workstream A** (primary-issuance prefilter Rule 23: footnote scan for rights offering / subscription / private placement / backstop → NOT_GENUINE). Hygiene only; does NOT catch LOGC (its footnotes are silent on the offering). Separate future phase.
+
+**Deployment note:** backend runs as a Docker image on the Hetzner box (`lookinsight-neo4j` + `lookinsight-backend` containers; Neo4j bolt is localhost-only). Gate B only takes effect after an image rebuild/redeploy, and the active incremental entry point that calls `detect_clusters` must be confirmed first (`compute_all` is deprecated; this signal was written by the `v1.7-incremental` path).
+
+Sequencing: B (+tests) → C backtest → D (dry-run → commit). Every DB-affecting step is dry-run + explicit approval. Frozen 170/173 never mutated.
 Plans: TBD (defined during /paul:plan)
 
 **v1.6 Forward-going mcap capture** (1.6.0)
@@ -163,6 +196,7 @@ Plans: TBD (defined during /paul:plan)
 - [ ] Per-fund delivery / outreach (was v1.1 Phase 6, dropped; revisit when cadence is defined)
 
 ### Correctness / Research
+- [ ] **Automated control-vehicle gate (deferred from Phase 21)** — exclude controlled permanent-capital vehicles / holdco shells from cluster formation. Revisit only at >=3-4 confirmed examples (currently n=1, LOGC). Sound design = 13D-control (`ActivistFiling`) + >=30% of shares outstanding (XBRL), fail-open on unconfirmed ownership. Optional companion: primary-issuance prefilter Rule 23 (rights offering/subscription/PIPE/backstop footnote scan).
 - [ ] Window size experiment (30d vs 40d) — needs non-destructive analysis approach
 - [ ] Industry enrichment beyond SEC SIC (24% SIC-null rate in Phase 4 export)
 
@@ -231,4 +265,4 @@ Milestone log: `.paul/MILESTONES.md`
 
 ---
 *ROADMAP.md — Updated when phases complete or scope changes*
-*Last updated: 2026-04-23 — v1.7 Signal Pipeline Reconciliation created (4 phases)*
+*Last updated: 2026-06-09 — Phase 21 complete (reduced scope): LOGC removed + CIK blocklisted. Automated control-vehicle gate (B/C) descoped to backlog — n=1, revisit at >=3-4 examples.*
