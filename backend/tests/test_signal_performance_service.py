@@ -256,7 +256,7 @@ class TestPctOfMcap:
 
 
 class TestMaturity:
-    """is_mature: signal age >= 97 days AND price_day90 exists."""
+    """is_mature: signal age >= 90 days AND price_day90 exists."""
 
     def test_mature_signal(self):
         from app.services.signal_performance_service import check_maturity
@@ -273,10 +273,10 @@ class TestMaturity:
         result = check_maturity(age_days=100, price_day90=None)
         assert result is False
 
-    def test_boundary_97_days(self):
+    def test_boundary_90_days(self):
         from app.services.signal_performance_service import check_maturity
-        assert check_maturity(age_days=97, price_day90=55.0) is True
-        assert check_maturity(age_days=96, price_day90=55.0) is False
+        assert check_maturity(age_days=90, price_day90=55.0) is True
+        assert check_maturity(age_days=89, price_day90=55.0) is False
 
 
 # === compute_all matured-preservation invariant (v1.2 Phase 7) ===
@@ -402,7 +402,7 @@ class TestComputeAllPreservesMatured:
         # Even if some OTHER signal is mature, this immature one must proceed
         mature_ids = {"CLUSTER-MATURE-X", "CLUSTER-MATURE-Y"}
 
-        # Build company_data so this signal would be immature (age < 97 from now)
+        # Build company_data so this signal would be immature (age < 90 from now)
         from datetime import datetime as dt, timedelta
         now = dt(2024, 7, 1)  # signal_date 2024-06-01 → age ~30 days, immature
         series = []

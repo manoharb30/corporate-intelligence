@@ -23,7 +23,11 @@ logger = logging.getLogger(__name__)
 
 DELAY_DAYS = [0, 1, 2, 3, 5, 7]
 HORIZON_DAYS = 90
-MIN_AGE_DAYS = HORIZON_DAYS + max(DELAY_DAYS)  # 97
+# Entry (day0) and exit (day90) both anchor on actionable_date, so the return
+# window is the full 90-day horizon — the 0-7d entry delay is NOT additive.
+# check_maturity also gates on price_day90 being present, which supplies the
+# trading-day cushion (find_price scans forward for weekends/holidays).
+MIN_AGE_DAYS = HORIZON_DAYS  # 90
 
 
 # === Pure computation functions (no DB, fully testable) ===
@@ -143,7 +147,7 @@ def compute_pct_of_mcap(
 
 
 def check_maturity(age_days: int, price_day90: Optional[float]) -> bool:
-    """Check if signal is mature (97+ days old with day-90 price available)."""
+    """Check if signal is mature (90+ days old with day-90 price available)."""
     return age_days >= MIN_AGE_DAYS and price_day90 is not None
 
 
