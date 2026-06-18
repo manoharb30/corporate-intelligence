@@ -28,7 +28,12 @@ logger = logging.getLogger(__name__)
 #     vehicle (post-US-Salt reverse-merger holdco, ~40% fund-controlled). Genuine
 #     open-market buys, but a controlled-vehicle false positive, not an operating
 #     midcap insider cluster. Removed 2026-06-09. See .paul/phases/21-control-vehicle-exclusion.
-EXCLUDED_CIKS: set[str] = {"0002064307"}
+#   0001384195 — Ring Energy (REI): sub-$2 conventional Permian E&P. Genuine CEO+CFO
+#     open-market cluster (2026-06-16), but true mcap ~$233-284M (253.9M sh × $1.12) is
+#     below the $300M midcap floor; it only passed on a stale 2026-04-22 yfinance mcap
+#     ($301.8M). Eligibility exclusion (mcap floor), not a transaction relabel. Removed
+#     2026-06-18. Same stale-mcap failure mode as SBMT (mcap_boundary_recheck).
+EXCLUDED_CIKS: set[str] = {"0002064307", "0001384195"}
 
 
 def classify_insider_role(title: str) -> str:
