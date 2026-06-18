@@ -386,7 +386,7 @@ def _fetch_price_series(ticker: str) -> Optional[list[dict]]:
         series = []
         for date, row in df.iterrows():
             close = row.get("Close")
-            if close is None or close <= 0:
+            if close is None or close != close or close <= 0:  # close != close catches NaN
                 continue
             series.append({
                 "d": date.strftime("%Y-%m-%d"),

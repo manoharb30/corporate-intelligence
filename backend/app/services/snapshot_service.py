@@ -41,7 +41,17 @@ def _find_close(series: list[dict], target_date: str, max_skip: int = 7) -> Opti
         target = datetime.strptime(target_date[:10], "%Y-%m-%d")
     except (ValueError, TypeError):
         return None
-    by_date = {e.get("d"): float(e.get("c", 0)) for e in series if e.get("d")}
+    by_date = {}
+    for e in series:
+        d = e.get("d")
+        if not d:
+            continue
+        try:
+            c = float(e.get("c", 0))
+        except (TypeError, ValueError):
+            continue
+        if c == c and c > 0:  # c == c is False for NaN
+            by_date[d] = c
     for skip in range(max_skip + 1):
         check = (target + timedelta(days=skip)).strftime("%Y-%m-%d")
         if check in by_date:

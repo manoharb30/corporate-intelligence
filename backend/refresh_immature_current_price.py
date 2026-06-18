@@ -30,8 +30,13 @@ def latest_close(ticker: str) -> tuple[float | None, str | None]:
         h = yf.Ticker(ticker).history(period="5d")
         if h.empty:
             return None, None
-        last_close = float(h.iloc[-1]["Close"])
-        last_date = h.index[-1].strftime("%Y-%m-%d")
+        closes = h["Close"].dropna()
+        if closes.empty:
+            return None, None
+        last_close = float(closes.iloc[-1])
+        if last_close != last_close or last_close <= 0:  # NaN guard (NaN != NaN)
+            return None, None
+        last_date = closes.index[-1].strftime("%Y-%m-%d")
         return last_close, last_date
     except Exception:
         return None, None

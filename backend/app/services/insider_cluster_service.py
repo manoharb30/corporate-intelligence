@@ -709,7 +709,8 @@ class InsiderClusterService:
             try:
                 pd = price_fetch(ticker, today)
                 if pd and pd.get("price_at_date"):
-                    price_day0 = float(pd["price_at_date"])
+                    _p0 = float(pd["price_at_date"])
+                    price_day0 = _p0 if (_p0 == _p0 and _p0 > 0) else None  # NaN guard
             except Exception as e:
                 logger.warning(
                     f"price_day0 fetch failed for {ticker} on {today}: "
@@ -718,7 +719,8 @@ class InsiderClusterService:
         try:
             spy_pd = price_fetch("SPY", today)
             if spy_pd and spy_pd.get("price_at_date"):
-                spy_price_day0 = float(spy_pd["price_at_date"])
+                _spy0 = float(spy_pd["price_at_date"])
+                spy_price_day0 = _spy0 if (_spy0 == _spy0 and _spy0 > 0) else None  # NaN guard
         except Exception as e:
             logger.warning(
                 f"spy_price_day0 fetch failed on {today}: "
