@@ -33,7 +33,13 @@ logger = logging.getLogger(__name__)
 #     below the $300M midcap floor; it only passed on a stale 2026-04-22 yfinance mcap
 #     ($301.8M). Eligibility exclusion (mcap floor), not a transaction relabel. Removed
 #     2026-06-18. Same stale-mcap failure mode as SBMT (mcap_boundary_recheck).
-EXCLUDED_CIKS: set[str] = {"0002064307", "0001384195"}
+#   0002039497 — Resolute Holdings Management (RHLD): externally-managed alternative-
+#     asset manager spun out of CompoSecure (Feb 2026), owns no equity in its managed
+#     businesses, collects a self-dealing 2.5%-of-EBITDA fee. Founder-controlled
+#     "controlled company" (~50.5% voting). The 2026-03-17 cluster includes controlling
+#     insider John D. Cote. Same control-vehicle false positive as LOGC, not an operating
+#     midcap. SIC "Finance Services". Removed 2026-06-18. See docs/signal-quality-review-2026-06-18.md.
+EXCLUDED_CIKS: set[str] = {"0002064307", "0001384195", "0002039497"}
 
 
 def classify_insider_role(title: str) -> str:
