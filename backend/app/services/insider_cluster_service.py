@@ -39,7 +39,18 @@ logger = logging.getLogger(__name__)
 #     "controlled company" (~50.5% voting). The 2026-03-17 cluster includes controlling
 #     insider John D. Cote. Same control-vehicle false positive as LOGC, not an operating
 #     midcap. SIC "Finance Services". Removed 2026-06-18. See docs/signal-quality-review-2026-06-18.md.
-EXCLUDED_CIKS: set[str] = {"0002064307", "0001384195", "0002039497"}
+#   0002052053 — Powerlaw Corp (PWRL): a closed-end fund registered under the Investment
+#     Company Act of 1940 (advised by Powerlaw Fund Adviser, backed by Akkadian Ventures),
+#     holding stakes in private tech cos (SpaceX 19.4% of NAV, OpenAI, Stripe, etc.).
+#     Direct-listed 2026-05-27. The 2026-06-22 cluster is fund managers (CEO Dinsdale,
+#     CIO Black) buying their own fund — a NAV/sponsor-confidence play, NOT operating-company
+#     insider edge. No operations/earnings; "mcap" ~NAV. Not an operating midcap. Removed
+#     2026-06-24.
+#   0001712184 — Liberty Latin America (LILA): 2026-06-29 cluster (2 insiders, $3.88M,
+#     mcap ~$1.67B). Mechanically eligible, but blocked on qualitative review — the
+#     risk/reward on the name is unfavorable. Judgment-call exclusion, not a transaction
+#     relabel or eligibility-threshold failure. Removed 2026-06-30.
+EXCLUDED_CIKS: set[str] = {"0002064307", "0001384195", "0002039497", "0002052053", "0001712184"}
 
 
 def classify_insider_role(title: str) -> str:
