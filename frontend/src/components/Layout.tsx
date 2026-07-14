@@ -8,6 +8,7 @@ interface LayoutProps {
 const navigation = [
   { name: 'Signals', href: '/' },
   { name: 'Performance', href: '/performance' },
+  { name: 'Portfolio', href: '/portfolio' },
 ]
 
 export default function Layout({ children }: LayoutProps) {

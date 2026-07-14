@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     # SEC EDGAR
     SEC_EDGAR_USER_AGENT: str = "CompanyName admin@company.com"
 
+    # Alpaca paper trading (portfolio)
+    ALPACA_API_KEY: str = ""
+    ALPACA_SECRET_KEY: str = ""
+    ALPACA_BASE_URL: str = "https://paper-api.alpaca.markets"
+
     # Server
     PORT: int = 8000
 

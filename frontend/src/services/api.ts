@@ -150,4 +150,65 @@ export const signalPerfApi = {
     `/api/signal-performance/download?mature_only=true&meaningful_only=${meaningfulOnly}${direction ? '&direction=' + direction : ''}`,
 }
 
+// ============ Portfolio (Alpaca paper account) ============
+
+export interface PortfolioPosition {
+  ticker: string
+  company_name: string | null
+  qty: number
+  avg_fill: number
+  last_price: number
+  market_value: number
+  cost_basis: number
+  unrealized_pl: number
+  unrealized_plpc: number
+  signal_date: string | null
+  day0_price: number | null
+  shortfall_pct: number | null
+  num_insiders: number | null
+  cluster_value: number | null
+  exit_date: string | null
+  days_left: number | null
+}
+
+export interface PortfolioSweep {
+  ticker: string
+  qty: number
+  market_value: number
+  unrealized_pl: number
+}
+
+export interface PortfolioActivity {
+  time: string
+  symbol: string
+  side: string
+  qty: number
+  price: number
+  type: 'sweep' | 'order'
+}
+
+export interface PortfolioSnapshot {
+  configured: boolean
+  as_of?: string
+  account?: {
+    value: number
+    cash: number
+    initial_capital: number
+    pnl: number
+    pnl_pct: number
+    position_slice: number
+  }
+  allocation?: { positions_pct: number; sweep_pct: number; cash_pct: number }
+  positions?: PortfolioPosition[]
+  positions_value?: number
+  avg_shortfall_pct?: number | null
+  sweep?: PortfolioSweep | null
+  equity_curve?: { date: string; equity: number }[]
+  activities?: PortfolioActivity[]
+}
+
+export const portfolioApi = {
+  getSnapshot: () => api.get<PortfolioSnapshot>('/portfolio'),
+}
+
 export default api
