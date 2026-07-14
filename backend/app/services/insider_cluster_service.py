@@ -50,7 +50,14 @@ logger = logging.getLogger(__name__)
 #     mcap ~$1.67B). Mechanically eligible, but blocked on qualitative review — the
 #     risk/reward on the name is unfavorable. Judgment-call exclusion, not a transaction
 #     relabel or eligibility-threshold failure. Removed 2026-06-30.
-EXCLUDED_CIKS: set[str] = {"0002064307", "0001384195", "0002039497", "0002052053", "0001712184"}
+#   0001614178 — Yext (YEXT): no cluster formed yet (director buys 2026-06-11 Waugh
+#     $499K + 2026-07-13 Englander $398K are 32 days apart — outside the 30-day window),
+#     blocked prophylactically on fundamental review 2026-07-14: revenue and ARR shrinking
+#     into AI-search disintermediation of the core listings business; guidance and earnings
+#     calls suspended; thesis rests on capital actions (tender retired ~20% of shares,
+#     $100M buyback) not operations; both buyers are brand-new directors (seated Jun 2026),
+#     so buys carry board-seat signaling weight. Judgment-call exclusion, LILA pattern.
+EXCLUDED_CIKS: set[str] = {"0002064307", "0001384195", "0002039497", "0002052053", "0001712184", "0001614178"}
 
 
 def classify_insider_role(title: str) -> str:
