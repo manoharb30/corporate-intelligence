@@ -53,7 +53,7 @@ function EquityCurve({ curve }: { curve: { date: string; equity: number }[] }) {
           <g key={i}>
             <line x1={L} y1={y(v)} x2={L + plotW} y2={y(v)} stroke="#e5e7eb" strokeWidth={1} />
             <text x={L - 8} y={y(v) + 4} textAnchor="end" fontSize={11} fill="#9ca3af">
-              {(v / 1000).toFixed(1)}K
+              {(v / 1000).toFixed(yMax - yMin < 2000 ? 2 : 1)}K
             </text>
           </g>
         )
@@ -188,11 +188,11 @@ export default function Portfolio() {
         <div className="px-5 py-3.5 border-b border-gray-200 flex flex-wrap items-center gap-3">
           <h2 className="text-sm font-bold text-gray-900">Open positions</h2>
           <span className="text-xs text-gray-400 tabular-nums">
-            {snap.avg_shortfall_pct != null && `avg implementation shortfall ${snap.avg_shortfall_pct >= 0 ? '+' : ''}${snap.avg_shortfall_pct}% · `}
-            exits auto-execute at signal day-90 in 3 same-day tranches
+            {snap.avg_shortfall_pct != null && `on average we bought ${Math.abs(snap.avg_shortfall_pct)}% ${snap.avg_shortfall_pct >= 0 ? 'above' : 'below'} the signal-day price · `}
+            each position is sold 90 days after its signal
           </span>
         </div>
-        {positions.length === 0 ? (
+        {positions.length === 0 && !snap.sweep ? (
           <div className="text-center text-gray-500 text-sm py-10">
             <div className="font-semibold text-gray-700 mb-1">No open positions yet</div>
             The next strong_buy signal opens the first $5K slice.
@@ -202,16 +202,17 @@ export default function Portfolio() {
             <table className="w-full text-sm tabular-nums">
               <thead>
                 <tr className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 border-b border-gray-200">
-                  <th className="text-left px-4 py-2.5">Ticker</th>
+                  <th className="text-left px-4 py-2.5">Company</th>
                   <th className="text-left px-4 py-2.5">Signal date</th>
-                  <th className="text-right px-4 py-2.5">Day-0 price</th>
-                  <th className="text-right px-4 py-2.5">Avg fill</th>
-                  <th className="text-right px-4 py-2.5">Shortfall</th>
-                  <th className="text-right px-4 py-2.5">Cost</th>
-                  <th className="text-right px-4 py-2.5">Last</th>
-                  <th className="text-right px-4 py-2.5">Mkt value</th>
-                  <th className="text-right px-4 py-2.5">P&amp;L</th>
-                  <th className="text-left px-4 py-2.5">Day-90 exit</th>
+                  <th className="text-right px-4 py-2.5">Price at signal</th>
+                  <th className="text-right px-4 py-2.5">Our buy price</th>
+                  <th className="text-right px-4 py-2.5">Buy vs signal</th>
+                  <th className="text-right px-4 py-2.5">Invested</th>
+                  <th className="text-right px-4 py-2.5">Price now</th>
+                  <th className="text-right px-4 py-2.5">Value now</th>
+                  <th className="text-right px-4 py-2.5">Today's P/L</th>
+                  <th className="text-right px-4 py-2.5">Total P/L</th>
+                  <th className="text-left px-4 py-2.5">Sell date (day 90)</th>
                 </tr>
               </thead>
               <tbody>
@@ -242,6 +243,12 @@ export default function Portfolio() {
                     <td className="px-4 py-3 text-right">{fmtUsd(p.last_price)}</td>
                     <td className="px-4 py-3 text-right">{fmtUsd(p.market_value)}</td>
                     <td className="px-4 py-3 text-right">
+                      <PnlText value={p.today_pl} className="font-semibold" />
+                      <div className={`text-xs ${p.today_pl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {p.today_plpc >= 0 ? '+' : ''}{p.today_plpc}%
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-right">
                       <PnlText value={p.unrealized_pl} className="font-semibold" />
                       <div className={`text-xs ${p.unrealized_pl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                         {p.unrealized_plpc >= 0 ? '+' : ''}{p.unrealized_plpc}%
@@ -253,6 +260,34 @@ export default function Portfolio() {
                     </td>
                   </tr>
                 ))}
+                {snap.sweep && (
+                  <tr className="border-b border-gray-100 bg-gray-50/60">
+                    <td className="px-4 py-3">
+                      <div className="font-bold text-gray-900">{snap.sweep.ticker}</div>
+                      <div className="text-xs text-gray-500">Cash reserve — US Treasury ETF</div>
+                    </td>
+                    <td className="px-4 py-3 text-gray-400">—</td>
+                    <td className="px-4 py-3 text-right text-gray-400">—</td>
+                    <td className="px-4 py-3 text-right">{fmtUsd(snap.sweep.avg_fill)}</td>
+                    <td className="px-4 py-3 text-right text-gray-400">—</td>
+                    <td className="px-4 py-3 text-right">{fmtUsd(snap.sweep.cost_basis)}</td>
+                    <td className="px-4 py-3 text-right">{fmtUsd(snap.sweep.last_price)}</td>
+                    <td className="px-4 py-3 text-right">{fmtUsd(snap.sweep.market_value)}</td>
+                    <td className="px-4 py-3 text-right">
+                      <PnlText value={snap.sweep.today_pl} className="font-semibold" />
+                      <div className={`text-xs ${snap.sweep.today_pl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {snap.sweep.today_plpc >= 0 ? '+' : ''}{snap.sweep.today_plpc}%
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <PnlText value={snap.sweep.unrealized_pl} className="font-semibold" />
+                      <div className={`text-xs ${snap.sweep.unrealized_pl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {snap.sweep.unrealized_plpc >= 0 ? '+' : ''}{snap.sweep.unrealized_plpc}%
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-gray-500">sold when a new<br />signal needs cash</td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -285,11 +320,12 @@ export default function Portfolio() {
       </div>
 
       <p className="text-xs text-gray-400 leading-relaxed">
-        <span className="font-semibold text-gray-500">How this works:</span> each strong_buy signal gets a fixed
-        $5,000 slice bought in 3 tranches across the signal day, funded by auto-liquidating SGOV. Every position
-        records its signal day-0 price next to the actual average fill — the gap (implementation shortfall) keeps
-        live results comparable to the published cohort stats. Positions exit at the signal's day-90 in 3 same-day
-        tranches mirroring the entry.
+        <span className="font-semibold text-gray-500">How this works:</span> every strong_buy signal gets a fixed
+        $5,000 investment, bought in 3 slices spread across the signal day (cash comes out of the SGOV reserve).
+        We show the stock's price on signal day next to the price we actually paid — "Buy vs signal" — so the
+        portfolio's results stay honestly comparable to the published signal statistics. Each position is sold
+        90 days after its signal, in 3 slices the same way it was bought. Idle cash sits in SGOV, a US Treasury
+        ETF, earning ~4–5% instead of sitting still.
       </p>
     </div>
   )

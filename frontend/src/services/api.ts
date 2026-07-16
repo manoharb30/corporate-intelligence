@@ -162,6 +162,8 @@ export interface PortfolioPosition {
   cost_basis: number
   unrealized_pl: number
   unrealized_plpc: number
+  today_pl: number
+  today_plpc: number
   signal_date: string | null
   day0_price: number | null
   shortfall_pct: number | null
@@ -174,8 +176,14 @@ export interface PortfolioPosition {
 export interface PortfolioSweep {
   ticker: string
   qty: number
+  avg_fill: number
+  last_price: number
   market_value: number
+  cost_basis: number
   unrealized_pl: number
+  unrealized_plpc: number
+  today_pl: number
+  today_plpc: number
 }
 
 export interface PortfolioActivity {

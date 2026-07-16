@@ -142,6 +142,8 @@ class AlpacaPortfolioService:
                 "cost_basis": float(p["cost_basis"] or 0),
                 "unrealized_pl": float(p["unrealized_pl"] or 0),
                 "unrealized_plpc": round(float(p["unrealized_plpc"] or 0) * 100, 2),
+                "today_pl": float(p.get("unrealized_intraday_pl") or 0),
+                "today_plpc": round(float(p.get("unrealized_intraday_plpc") or 0) * 100, 2),
             }
             if p["symbol"] == SWEEP_SYMBOL:
                 sweep = base
