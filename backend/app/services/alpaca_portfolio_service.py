@@ -10,8 +10,9 @@ Order execution (3-tranche entry/exit, SGOV sweep) lives in operator scripts,
 not here — this service never places orders.
 """
 
+import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 import httpx
@@ -24,6 +25,11 @@ logger = logging.getLogger(__name__)
 INITIAL_CAPITAL = 100_000.0
 SWEEP_SYMBOL = "SGOV"
 POSITION_SLICE = 5_000.0
+MAX_POSITIONS = 20
+INCEPTION_DATE = "2026-07-14"  # first trade; SPY benchmark is normalized here
+# Positions entered at system launch, before steady-state cadence applied.
+# Keyed by signal_id so the frontend stays data-driven.
+LAUNCH_TRADE_SIGNAL_IDS = {"CLUSTER-0001385849-2026-07-09"}  # UUUU: entered T+3 from signal
 
 
 def compute_shortfall(day0_price: Optional[float], avg_fill: Optional[float]) -> Optional[float]:
@@ -44,6 +50,23 @@ def compute_allocation(positions_value: float, sweep_value: float, cash: float) 
         "sweep_pct": round(sweep_value / total * 100, 1),
         "cash_pct": round(cash / total * 100, 1),
     }
+
+
+def normalize_spy_curve(spy_closes: list[dict], portfolio_dates: list[str],
+                        base: float = INITIAL_CAPITAL) -> list[dict]:
+    """SPY closes ({d, c}) → equity-equivalent series over portfolio_dates,
+    normalized so SPY = base on the first portfolio date. Dates missing from
+    SPY (holidays, staleness) are skipped rather than interpolated."""
+    if not spy_closes or not portfolio_dates:
+        return []
+    by_date = {p["d"]: p["c"] for p in spy_closes if p.get("c")}
+    anchor = by_date.get(portfolio_dates[0])
+    if not anchor:
+        return []
+    return [
+        {"date": d, "equity": round(base * by_date[d] / anchor, 2)}
+        for d in portfolio_dates if d in by_date
+    ]
 
 
 def day90_exit(actionable_date: Optional[str]) -> tuple[Optional[str], Optional[int]]:
@@ -90,7 +113,7 @@ class AlpacaPortfolioService:
             """
             MATCH (sp:SignalPerformance)
             WHERE sp.ticker IN $tickers AND sp.conviction_tier = 'strong_buy'
-            RETURN sp.ticker AS ticker, sp.signal_date AS signal_date,
+            RETURN sp.ticker AS ticker, sp.signal_id AS signal_id, sp.signal_date AS signal_date,
                    sp.actionable_date AS actionable_date, sp.price_day0 AS price_day0,
                    sp.num_insiders AS num_insiders, sp.total_value AS total_value,
                    sp.company_name AS company_name
@@ -154,6 +177,8 @@ class AlpacaPortfolioService:
             )
             base.update({
                 "company_name": sctx.get("company_name"),
+                "signal_id": sctx.get("signal_id"),
+                "is_launch_trade": sctx.get("signal_id") in LAUNCH_TRADE_SIGNAL_IDS,
                 "signal_date": (sctx.get("signal_date") or "")[:10] or None,
                 "day0_price": sctx.get("price_day0"),
                 "shortfall_pct": compute_shortfall(sctx.get("price_day0"), base["avg_fill"]),
@@ -172,13 +197,35 @@ class AlpacaPortfolioService:
 
         curve = []
         for ts, eq in zip(history.get("timestamp") or [], history.get("equity") or []):
-            # Alpaca pads pre-inception days with 0.0 equity — skip them
-            if not eq or float(eq) <= 0:
+            # Alpaca pads pre-inception days with 0.0 equity — skip them;
+            # also drop pre-first-trade days so both chart series share inception
+            d = datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+            if not eq or float(eq) <= 0 or d < INCEPTION_DATE:
                 continue
-            curve.append({
-                "date": datetime.fromtimestamp(ts).strftime("%Y-%m-%d"),
-                "equity": round(float(eq), 2),
-            })
+            curve.append({"date": d, "equity": round(float(eq), 2)})
+
+        spy_curve: list[dict] = []
+        try:
+            spy_rows = await Neo4jClient.execute_query(
+                "MATCH (c:Company {ticker: 'SPY'}) RETURN c.price_series AS s LIMIT 1", {}
+            )
+            if spy_rows and spy_rows[0]["s"]:
+                spy_curve = normalize_spy_curve(
+                    json.loads(spy_rows[0]["s"]), [c["date"] for c in curve]
+                )
+        except Exception as e:
+            logger.warning(f"SPY benchmark unavailable: {e}")
+
+        skips = await Neo4jClient.execute_query(
+            """
+            MATCH (s:PortfolioSkip)
+            RETURN s.signal_id AS signal_id, s.ticker AS ticker,
+                   s.signal_date AS signal_date, s.reason AS reason,
+                   s.logged_at AS logged_at
+            ORDER BY s.signal_date DESC
+            """,
+            {},
+        )
 
         activities = [
             {
@@ -194,7 +241,9 @@ class AlpacaPortfolioService:
 
         return {
             "configured": True,
-            "as_of": datetime.now().isoformat(),
+            "as_of": datetime.now(timezone.utc).isoformat(),
+            "inception_date": INCEPTION_DATE,
+            "max_positions": MAX_POSITIONS,
             "account": {
                 "value": equity,
                 "cash": cash,
@@ -209,5 +258,7 @@ class AlpacaPortfolioService:
             "avg_shortfall_pct": avg_shortfall,
             "sweep": sweep,
             "equity_curve": curve,
+            "spy_curve": spy_curve,
+            "skipped_signals": [dict(s) for s in skips],
             "activities": activities,
         }

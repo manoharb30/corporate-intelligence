@@ -164,6 +164,8 @@ export interface PortfolioPosition {
   unrealized_plpc: number
   today_pl: number
   today_plpc: number
+  signal_id: string | null
+  is_launch_trade: boolean
   signal_date: string | null
   day0_price: number | null
   shortfall_pct: number | null
@@ -195,9 +197,19 @@ export interface PortfolioActivity {
   type: 'sweep' | 'order'
 }
 
+export interface PortfolioSkip {
+  signal_id: string
+  ticker: string
+  signal_date: string
+  reason: string
+  logged_at: string
+}
+
 export interface PortfolioSnapshot {
   configured: boolean
   as_of?: string
+  inception_date?: string
+  max_positions?: number
   account?: {
     value: number
     cash: number
@@ -212,6 +224,8 @@ export interface PortfolioSnapshot {
   avg_shortfall_pct?: number | null
   sweep?: PortfolioSweep | null
   equity_curve?: { date: string; equity: number }[]
+  spy_curve?: { date: string; equity: number }[]
+  skipped_signals?: PortfolioSkip[]
   activities?: PortfolioActivity[]
 }
 

@@ -4,6 +4,7 @@ from app.services.alpaca_portfolio_service import (
     compute_allocation,
     compute_shortfall,
     day90_exit,
+    normalize_spy_curve,
 )
 
 
@@ -42,6 +43,32 @@ class TestComputeAllocation:
     def test_empty_account(self):
         alloc = compute_allocation(0, 0, 0)
         assert alloc == {"positions_pct": 0.0, "sweep_pct": 0.0, "cash_pct": 0.0}
+
+
+class TestNormalizeSpyCurve:
+    SPY = [
+        {"d": "2026-07-14", "c": 750.0},
+        {"d": "2026-07-15", "c": 757.5},
+        {"d": "2026-07-16", "c": 742.5},
+    ]
+
+    def test_anchored_to_base_on_first_date(self):
+        out = normalize_spy_curve(self.SPY, ["2026-07-14", "2026-07-15", "2026-07-16"], base=100_000)
+        assert out[0] == {"date": "2026-07-14", "equity": 100_000.0}
+        assert out[1]["equity"] == 101_000.0  # +1%
+        assert out[2]["equity"] == 99_000.0   # -1%
+
+    def test_missing_spy_date_skipped_not_interpolated(self):
+        out = normalize_spy_curve(self.SPY, ["2026-07-14", "2026-07-17"], base=100_000)
+        assert [p["date"] for p in out] == ["2026-07-14"]
+
+    def test_no_anchor_returns_empty(self):
+        out = normalize_spy_curve(self.SPY, ["2026-07-10"], base=100_000)
+        assert out == []
+
+    def test_empty_inputs(self):
+        assert normalize_spy_curve([], ["2026-07-14"]) == []
+        assert normalize_spy_curve(self.SPY, []) == []
 
 
 class TestDay90Exit:
