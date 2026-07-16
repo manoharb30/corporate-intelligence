@@ -57,7 +57,15 @@ logger = logging.getLogger(__name__)
 #     calls suspended; thesis rests on capital actions (tender retired ~20% of shares,
 #     $100M buyback) not operations; both buyers are brand-new directors (seated Jun 2026),
 #     so buys carry board-seat signaling weight. Judgment-call exclusion, LILA pattern.
-EXCLUDED_CIKS: set[str] = {"0002064307", "0001384195", "0002039497", "0002052053", "0001712184", "0001614178"}
+#   0001680581 — Fulcrum Therapeutics (FULC): cash shell, not an operating midcap.
+#     Pipeline dead (pociredir discontinued 2026-06-01 on FDA PRC2 malignancy finding),
+#     85% workforce cut, strategic review via Leerink. $333M cash vs ~$237M true mcap
+#     (0.71x cash — DB mcap $679M was stale; true mcap is BELOW the $300M floor anyway).
+#     The 2026-07-13/15 buyer is Kevin Tang (Tang Capital, crossed 10% on 07-15) running
+#     the Concentra below-cash tender playbook — control-seeking arbitrage, not insider
+#     information edge. Blocked prophylactically 2026-07-16 before any cluster formed;
+#     same not-an-operating-midcap rationale as LOGC/PWRL.
+EXCLUDED_CIKS: set[str] = {"0002064307", "0001384195", "0002039497", "0002052053", "0001712184", "0001614178", "0001680581"}
 
 
 def classify_insider_role(title: str) -> str:
