@@ -935,7 +935,8 @@ class InsiderClusterService:
                    t.accession_number as accession_number,
                    t.insider_cik as insider_cik,
                    t.is_10b5_1 as is_10b5_1,
-                   t.primary_document as primary_document
+                   t.primary_document as primary_document,
+                   t.classification as classification
             ORDER BY t.transaction_date DESC
             LIMIT 100
         """
@@ -965,6 +966,11 @@ class InsiderClusterService:
                 continue
             # Exclude pre-planned 10b5-1 sales from sell cluster aggregation
             if is_sell and t.get("is_10b5_1", False):
+                continue
+            # Buy clusters are built from GENUINE transactions only — FILTERED
+            # (earnings-proximity) and AMBIGUOUS rows are stored for the record
+            # but must not count as cluster buyers (matches ingest-time rules).
+            if not is_sell and t.get("classification") != "GENUINE":
                 continue
 
             name = t["insider_name"] or "Unknown"

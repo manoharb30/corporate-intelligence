@@ -652,3 +652,69 @@ class TestDetectSellClusters:
         assert d["signal_type"] == "insider_cluster"
         assert d["insider_context"]["net_direction"] == "buying"
         assert "bought" in d["insider_context"]["notable_trades"][0]
+
+
+class TestClusterDetailClassificationFilter:
+    """get_cluster_detail must count ONLY GENUINE transactions as cluster buyers.
+
+    Bug (found 2026-07-23 on GSHD): FILTERED (earnings-proximity-rejected)
+    trades were included in Who Bought, inflating 2 buyers/$273K into
+    5 buyers/$765K and flipping signal_level medium -> high.
+    """
+
+    def _fake_db(self, trades):
+        async def fake_query(query, params=None):
+            if "MATCH (c:Company {cik" in query and "INSIDER_TRADE_OF" not in query:
+                return [{"name": "Test Corp", "tickers": ["TEST"],
+                         "sic_description": None, "state_of_incorporation": None}]
+            if ":Alert" in query:
+                return []
+            if "has_hostile_activist" in query:
+                return [{"cnt": 0}]
+            if "INSIDER_TRADE_OF" in query:
+                return trades
+            if "conviction_tier" in query:
+                return [{"conviction_tier": "strong_buy"}]
+            return []
+        return fake_query
+
+    @pytest.mark.asyncio
+    async def test_filtered_trades_excluded_from_buyers(self):
+        window_end = "2026-06-01"
+        def trade(name, value, date, cls):
+            t = _make_trade(name, "P", value, date)
+            t["classification"] = cls
+            t["price_per_share"] = 40.0
+            t["transaction_type"] = "Purchase"
+            t["security_title"] = "Common Stock"
+            t["accession_number"] = "0001-24-000001"
+            t["insider_cik"] = "0009999999"
+            t["is_10b5_1"] = False
+            t["primary_document"] = "form4.xml"
+            return t
+
+        trades = [
+            trade("Martin John Arthur", 173650, "2026-05-28", "GENUINE"),
+            trade("Langston Patrick Ryan", 99568, "2026-05-29", "GENUINE"),
+            trade("Miller Mark", 184450, "2026-05-14", "FILTERED"),
+            trade("Jones Mark E. Jr.", 99375, "2026-05-15", "FILTERED"),
+            trade("Thornthwaite Martin Ellis", 207500, "2026-05-18", "FILTERED"),
+        ]
+
+        with patch("app.services.insider_cluster_service.Neo4jClient") as mock_db, \
+             patch("app.services.insider_cluster_service.resolve_ticker",
+                   AsyncMock(return_value="TEST")):
+            mock_db.execute_query = AsyncMock(side_effect=self._fake_db(trades))
+            result = await InsiderClusterService.get_cluster_detail(
+                f"CLUSTER-0001234567-{window_end}"
+            )
+
+        assert result is not None
+        detail = result["cluster_detail"]
+        assert detail["num_buyers"] == 2
+        buyer_names = {b["name"] for b in detail["buyers"]}
+        assert buyer_names == {"Martin John Arthur", "Langston Patrick Ryan"}
+        total = sum(b["total_value"] for b in detail["buyers"])
+        assert abs(total - (173650 + 99568)) < 1
+        # 2 buyers = medium, not high
+        assert result["event"]["signal_level"] == "medium"
