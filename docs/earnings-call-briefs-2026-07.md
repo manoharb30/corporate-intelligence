@@ -29,6 +29,20 @@ Insiders bought **affirmed-guidance stories into forced/sentiment selling**: XRA
 **Insider buys explained:** directors Ackermann ($126K Jun 4) + Barrett ($131K Jun 10) buying the publicly-staked ~23% EPS-ramp plan after a clean beat. One de-minimis CCO sale Jun 12.
 **JUL 21 WATCHLIST:** (1) EPS ≥~$0.85 + four-by-four reaffirmed — walk-back breaks thesis. (2) NIM vs "flat then up" guide; deposit cost delta vs "few bps". (3) Loan growth vs 10% guide; L/D ratio drift to 90%+. (4) NPAs ~0.25%, ACL 97–98bp band.
 
+**✅ SCORED 2026-07-21 (Q2 release Jul 20 AH; call 10am ET Jul 21 — reaffirm item still pending transcript):**
+| # | Item | Target | Actual | Verdict |
+|---|------|--------|--------|---------|
+| 1 | EPS | ≥~$0.85 | Op EPS **$0.96** (street $0.90, Q1 $0.81; +$0.15 QoQ) | ✅ ahead of $1/qtr-by-Q4 pace |
+| 1b | Four-by-four reaffirm | no walk-back | Reaffirmed on Jul 21 call: "targeting a $4 EPS run rate by Q4 2026 (~$1/sh in Q4)". Caveat: Q3 NIM guided ~3.45% on deposit-cost pressure (+1.5–2bp/mo), improvement late 2026 | ✅ **8/8 — thesis fully intact** |
+| 2 | NIM | "flat Q2" guided | **3.52%** vs 3.48% (+4bp) | ✅ beat guide |
+| 2b | Deposit costs | "few bps" | IB deposits 2.62% (+2bp), total 2.15% (+3bp) | ✅ in band |
+| 3 | Loan growth | ~10% guide | **15% annualized** ($165M organic) | ✅ |
+| 3b | L/D drift | <90% | **86.9%** (flat vs 87.0% Q1) | ✅ no drift |
+| 4 | NPAs | ~0.25% | NPLs **0.25%** (from 0.27%); NPAs/assets 0.23% | ✅ |
+| 4b | ACL | 97–98bp | **0.97%** flat; NCOs $553K; provision down | ✅ |
+
+Extras: TBV $28.22 (+13% ann.), crossed $6B assets, dividend declared (rec Jul 31 / pay Aug 17). 7 of 8 checkable items pass; thesis intact on numbers. Source: [8-K Ex-99.1](https://www.sec.gov/Archives/edgar/data/1038773/000110465926085102/smbk-20260720xex99d1.htm). Position +7.6% at Jul 20 close.
+
 ## NEWT — NewtekOne (call ~Jul 29, exit ~Sep 13)
 **Last call (Apr 30):** $0.43 beat; Q1 is seasonally weakest. Reaffirmed 2026 $2.35 mid + NEW 2027 $2.60 mid (above Street $2.43). SBA 7(a) originations +40% YoY in Q1, April +10%. ALP securitization 10× oversubscribed. Credit improving 3-4 consecutive quarters. Deposits ~$2B, CET1 >15.5%, TBV guided to ~$13.50 by YE. Stock ~6.5× the guide.
 **Risks:** new SBA rules (citizenship, MCA-refi) cut industry volume 10–20%; NIM compression from asset mix; unguaranteed SBA book is the credit center of gravity.

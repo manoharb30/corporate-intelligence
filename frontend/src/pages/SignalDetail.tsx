@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { eventDetailApi, signalPerfApi, EventDetailResponse, ClusterBuyerDetail, SignalPerf } from '../services/api'
+import SignalWatch from '../components/SignalWatch'
 
 function formatValue(value: number): string {
   if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`
@@ -328,6 +329,11 @@ export default function SignalDetail() {
             "SEC →" links open the original Form 4 filing on sec.gov for verification.
           </div>
         </div>
+      )}
+
+      {/* Signal Watch — promise-vs-delivery record */}
+      {company.ticker && perf?.signal_date && (
+        <SignalWatch ticker={company.ticker} signalDate={perf.signal_date} />
       )}
 
       {/* Timeline */}

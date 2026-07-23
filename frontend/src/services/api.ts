@@ -91,6 +91,52 @@ export const eventDetailApi = {
     api.get<EventDetailResponse>(`/event-detail/${accessionNumber}`),
 }
 
+// ============ Signal Watch (promise-vs-delivery) ============
+
+export interface WatchPromise {
+  metric: string
+  target: string | null
+  quote: string | null
+  source_call_date: string | null
+  source_url: string | null
+  break_condition: string | null
+  verdict: 'pass' | 'fail' | 'pending'
+  actual: string | null
+}
+
+export interface WatchEvent {
+  event_date: string
+  day_index: number
+  event_type: string
+  direction: 'confirming' | 'breaking' | 'neutral'
+  headline: string
+  detail: string | null
+  source_url: string | null
+}
+
+export interface WatchSummary {
+  total: number
+  passed: number
+  failed: number
+  pending: number
+  on_track: boolean
+}
+
+export interface SignalWatchResponse {
+  ticker: string
+  signal_date: string
+  promises: WatchPromise[]
+  events: WatchEvent[]
+  summary: WatchSummary
+}
+
+export const signalWatchApi = {
+  getWatch: (ticker: string, signalDate: string) =>
+    api.get<SignalWatchResponse>(`/signal-watch/${ticker}`, {
+      params: { signal_date: signalDate },
+    }),
+}
+
 // ============ Signal Performance (Performance Tracker) ============
 
 export interface SignalPerf {
