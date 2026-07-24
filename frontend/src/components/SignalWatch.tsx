@@ -4,7 +4,7 @@ import { signalWatchApi, SignalWatchResponse, WatchPromise, WatchEvent } from '.
 // Plain-language labels — never expose node/DB terminology in the UI.
 const VERDICT_LABEL: Record<WatchPromise['verdict'], string> = {
   pass: 'Delivered',
-  fail: 'Walked back',
+  fail: 'Not delivered',
   pending: 'Awaiting next report',
 }
 
@@ -35,7 +35,7 @@ function summaryLine(w: SignalWatchResponse): { text: string; cls: string } {
   const s = w.summary
   if (s.failed > 0) {
     return {
-      text: `${s.failed} of ${s.total} promises walked back — thesis under pressure`,
+      text: `${s.passed} of ${s.total} promises delivered · ${s.failed} not delivered`,
       cls: 'text-red-800',
     }
   }

@@ -55,11 +55,17 @@ Extras: TBV $28.22 (+13% ann.), crossed $6B assets, dividend declared (rec Jul 3
 **Insider buys explained:** President/COO Jones Jr. bought May 15 after beat-and-reiterate into a stock −58% from peak — insiders bought the same dislocation the company bought. Our Jun 1 entry caught the bottom.
 **JUL 23 WATCHLIST:** (1) AI rebuttal WITH numbers (renewal-book defensibility, Lilly/DA economics) — vague answer keeps the overhang through our exit. (2) Retention progress toward 86%. (3) Digital Agent rollout delivery (next state + 2 auto carriers promised by ~late June). (4) Guidance trim = thesis break; hurricane-season contingent commentary.
 
+**✅ SCORED 2026-07-24 (Q2 call Jul 23): 2 delivered / 2 not delivered — thesis items both PASSED.**
+Guide **RAISED** (organic rev 12–19%, floor up from 10%; the break condition triggered in reverse); EPS $0.64 vs $0.52 est, rev $113.4M +21%; retention **86% — target hit early**; contingents +180% to $16.3M; stock +4.1% AH. Misses (secondary): Digital Agent still Texas-only (late-June next-state + 2-auto-carrier commitment not delivered); AI defense still unquantified on renewal-book economics (Lily ~20% of inbound calls is ops color, not the asked-for number) — overhang persists through our Aug 30 exit. Source: [Benzinga transcript](https://www.benzinga.com/news/26/07/60627002/goosehead-insurance-q2-2026-earnings-call-complete-transcript). Position +46.7% at scoring.
+
 ## RLI — RLI Corp (call Jul 23, exit ~Aug 30)
 **Last call (Apr 23):** CR 86, op EPS $0.83. Casualty engine: umbrella +23%, transportation +27%. Property deliberately shrinking (E&S −16%). Favorable prior-year development $35.5M. AM Best upgrade to A++. No formal guidance (qualitative).
 **Risks:** E&S property soft with no stabilization timeline; commercial-auto severity; MGA competition.
 **Insider buys explained:** May 14 package — $2.00 special dividend + 12.5% hike (51st consecutive) + NEW $250M buyback. Directors Duclos ($130K May 28) and Kellogg (3,000 @ $50.90) bought right after. Our Jun 1 signal sits on those prints.
 **JUL 23 WATCHLIST:** (1) CR <90 + continued favorable development — adverse casualty development breaks it. (2) Umbrella/transportation growth ≥~15%. (3) Property drag + early hurricane commentary; mid-year reinsurance renewals as guided. (4) First buyback execution under the $250M.
+
+**✅ SCORED 2026-07-24 (Q2 release/call Jul 22–23): 4/4 delivered — thesis fully intact.**
+Op EPS $1.82 (vs $0.72 street per preview), CR **85.6** (<90 ✓); favorable PYD **$39.8M** vs $27.6M yr-ago — no adverse development anywhere; umbrella **+26%** / transportation **+19%** (≥15% ✓); property shrink stays deliberate (GPW −6%, segment CR 56.8%, light cats); buyback executing — 234,973 sh / **$12.0M** in Q2 under the $250M + $184M returned via $2.00 special + hiked regular. ROE 25%. Source: [Q2 release](https://www.stocktitan.net/news/RLI/rli-reports-second-quarter-2026-to3z2qvcbo44.html), [call highlights](https://www.themarketsdaily.com/2026/07/24/rli-q2-earnings-call-highlights.html). Position +18.9% at scoring.
 
 ## XRAY — Dentsply Sirona (call ~early Aug, exit ~Sep 13)
 **Last call (May 5-6):** Rev $880M (−6.7% cc), adj EPS $0.27. FY guide AFFIRMED ($3.5–3.6B, $1.40–1.50 EPS); CEO: "I like to see at least two [quarters]" before moving it. $120M cost program on track (dividend eliminated Feb to fund deleveraging). 4th new US distributor signed (Atlanta Dental, Aug 1). Implants weak (−13.5% cc) — called execution, not product. Net debt/EBITDA 3.3×, interim CFO.
