@@ -1,0 +1,644 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<title>LookInsight Architecture</title>
+<style>
+  :root {
+    --paper:   #f4f6f7;
+    --surface: #ffffff;
+    --sunk:    #eef1f3;
+    --ink:     #10161c;
+    --muted:   #5a6773;
+    --faint:   #8996a3;
+    --line:    #dde3e8;
+    --accent:  #10635f;
+    --signal:  #9c6114;
+    --reject:  #94402f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:   #0c1115;
+      --surface: #131a20;
+      --sunk:    #0f161b;
+      --ink:     #e3e9ee;
+      --muted:   #8c99a5;
+      --faint:   #6b7883;
+      --line:    #242f38;
+      --accent:  #57bab2;
+      --signal:  #dda54c;
+      --reject:  #d9765f;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:   #0c1115;
+    --surface: #131a20;
+    --sunk:    #0f161b;
+    --ink:     #e3e9ee;
+    --muted:   #8c99a5;
+    --faint:   #6b7883;
+    --line:    #242f38;
+    --accent:  #57bab2;
+    --signal:  #dda54c;
+    --reject:  #d9765f;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1140px;
+    margin: 0 auto;
+    padding: 72px 32px 120px;
+    display: flex;
+    flex-direction: column;
+    gap: 72px;
+  }
+
+  .prose { max-width: 72ch; }
+
+  .eyebrow {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--faint);
+    margin: 0 0 14px;
+  }
+
+  h1 {
+    font-size: clamp(34px, 5vw, 52px);
+    line-height: 1.05;
+    letter-spacing: -0.028em;
+    font-weight: 640;
+    margin: 0 0 20px;
+    text-wrap: balance;
+  }
+
+  h2 {
+    font-size: clamp(22px, 2.6vw, 28px);
+    line-height: 1.2;
+    letter-spacing: -0.018em;
+    font-weight: 620;
+    margin: 0 0 14px;
+    text-wrap: balance;
+  }
+
+  p { margin: 0 0 16px; color: var(--ink); }
+  p.sub { color: var(--muted); font-size: 17px; }
+  header p.sub { font-size: 19px; }
+
+  .rule { height: 1px; background: var(--line); border: 0; margin: 0; }
+
+  .stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0;
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    background: var(--surface);
+    overflow: hidden;
+    margin-top: 32px;
+  }
+  .stat {
+    flex: 1 1 150px;
+    padding: 18px 22px;
+    border-right: 1px solid var(--line);
+  }
+  .stat:last-child { border-right: 0; }
+  .stat .k {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--faint);
+    display: block;
+    margin-bottom: 6px;
+  }
+  .stat .v {
+    font-size: 26px;
+    font-weight: 620;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat .v.pos { color: var(--accent); }
+
+  figure {
+    margin: 0;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 28px 28px 20px;
+  }
+  .figscroll { overflow-x: auto; }
+  figure svg { display: block; width: 100%; min-width: 660px; height: auto; }
+  figcaption {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11.5px;
+    line-height: 1.6;
+    color: var(--muted);
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+  }
+
+  section { display: flex; flex-direction: column; gap: 26px; }
+
+  /* diagram primitives */
+  .box  { fill: var(--sunk); stroke: var(--line); stroke-width: 1; }
+  .box-a { fill: none; stroke: var(--accent); stroke-width: 1.4; }
+  .box-s { fill: none; stroke: var(--signal); stroke-width: 1.6; }
+  .box-o { fill: none; stroke: var(--line); stroke-width: 1; stroke-dasharray: 3 3; }
+  .ln   { stroke: var(--muted); stroke-width: 1.2; fill: none; }
+  .ln-a { stroke: var(--accent); stroke-width: 1.5; fill: none; }
+  .ln-s { stroke: var(--signal); stroke-width: 1.5; fill: none; }
+  .ln-r { stroke: var(--reject); stroke-width: 1.1; fill: none; stroke-dasharray: 4 3; }
+  .ln-d { stroke: var(--faint); stroke-width: 1; fill: none; stroke-dasharray: 4 4; }
+  .t    { fill: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 12.5px; }
+  .t-b  { fill: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 12.5px; font-weight: 620; }
+  .m    { fill: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px; }
+  .m-a  { fill: var(--accent); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px; }
+  .m-s  { fill: var(--signal); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px; }
+  .m-r  { fill: var(--reject); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px; }
+  .hd   { fill: var(--faint); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; letter-spacing: 0.12em; }
+  .ah   { fill: var(--muted); }
+  .ah-a { fill: var(--accent); }
+  .ah-s { fill: var(--signal); }
+  .ah-r { fill: var(--reject); }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  caption { text-align: left; }
+  th, td {
+    text-align: left;
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  th {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--faint);
+    font-weight: 500;
+  }
+  td code, p code, li code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12.5px;
+    color: var(--accent);
+  }
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 3px; background: var(--surface); }
+  .tablewrap table { min-width: 560px; }
+  .tablewrap tr:last-child td { border-bottom: 0; }
+
+  ul { margin: 0 0 16px; padding-left: 20px; }
+  li { margin-bottom: 8px; }
+
+  footer {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11.5px;
+    color: var(--faint);
+    line-height: 1.7;
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="prose">
+    <p class="eyebrow">System architecture · verified against production</p>
+    <h1>How a Form 4 becomes a signal</h1>
+    <p class="sub">LookInsight reads every SEC Form 4 filed each trading day, keeps only genuine open-market purchases, and emits a signal when two or more insiders at the same midcap company buy inside a thirty-day window. Everything below is drawn from the running system, not from a design document.</p>
+    <div class="stats">
+      <div class="stat"><span class="k">Matured signals</span><span class="v">193</span></div>
+      <div class="stat"><span class="k">Hit rate</span><span class="v">65.3%</span></div>
+      <div class="stat"><span class="k">Avg return</span><span class="v">+13.52%</span></div>
+      <div class="stat"><span class="k">vs SPY</span><span class="v">+6.20%</span></div>
+      <div class="stat"><span class="k">Alpha</span><span class="v pos">+7.32pp</span></div>
+    </div>
+  </header>
+
+  <hr class="rule" />
+
+  <section>
+    <div class="prose">
+      <p class="eyebrow">01 · Ingestion</p>
+      <h2>The daily pipeline</h2>
+      <p>One command per trading day walks seven steps. The expensive step — asking a language model whether a purchase is genuine — runs last and only on filings that the cheap rules could not decide, which is what keeps a day's classification cost in the cents rather than the dollars.</p>
+    </div>
+    <figure>
+      <div class="figscroll">
+        <svg viewBox="0 0 1080 300" role="img" aria-label="Seven-step daily pipeline from the SEC EDGAR daily index through fetch, P-transaction filter, parse, prefilter, LLM classification, merge and ingest into Neo4j, with the prefilter splitting traffic between cheap rules and the language model">
+          <defs>
+            <marker id="arrow-1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 9 5 L 0 9 z" class="ah" />
+            </marker>
+            <marker id="arrow-1a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 9 5 L 0 9 z" class="ah-a" />
+            </marker>
+          </defs>
+
+          <text x="20" y="24" class="hd">EXTERNAL</text>
+          <text x="316" y="24" class="hd">RULES — CHEAP</text>
+          <text x="624" y="24" class="hd">MODEL — METERED</text>
+          <text x="900" y="24" class="hd">STORE</text>
+
+          <rect x="20" y="112" width="128" height="60" rx="2" class="box-a" />
+          <text x="84" y="136" class="t-b" text-anchor="middle">EDGAR</text>
+          <text x="84" y="154" class="m" text-anchor="middle">daily index</text>
+
+          <line x1="152" y1="142" x2="176" y2="142" class="ln-a" marker-end="url(#arrow-1a)" />
+
+          <rect x="180" y="112" width="128" height="60" rx="2" class="box" />
+          <text x="244" y="136" class="t-b" text-anchor="middle">fetch</text>
+          <text x="244" y="154" class="m" text-anchor="middle">Form 4 accessions</text>
+
+          <line x1="312" y1="142" x2="336" y2="142" class="ln" marker-end="url(#arrow-1)" />
+
+          <rect x="340" y="112" width="128" height="60" rx="2" class="box" />
+          <text x="404" y="136" class="t-b" text-anchor="middle">filter + parse</text>
+          <text x="404" y="154" class="m" text-anchor="middle">has a P txn?</text>
+
+          <line x1="472" y1="142" x2="496" y2="142" class="ln" marker-end="url(#arrow-1)" />
+          <text x="484" y="186" class="m" text-anchor="middle">229</text>
+
+          <rect x="500" y="112" width="128" height="60" rx="2" class="box" />
+          <text x="564" y="136" class="t-b" text-anchor="middle">prefilter</text>
+          <text x="564" y="154" class="m" text-anchor="middle">split by certainty</text>
+
+          <path d="M 632 132 L 656 132 L 656 78 L 676 78" class="ln" marker-end="url(#arrow-1)" />
+          <path d="M 632 152 L 656 152 L 656 216 L 676 216" class="ln" marker-end="url(#arrow-1)" />
+
+          <rect x="680" y="50" width="150" height="56" rx="2" class="box" />
+          <text x="755" y="72" class="t" text-anchor="middle">decided by rule</text>
+          <text x="755" y="90" class="m" text-anchor="middle">92 filings</text>
+
+          <rect x="680" y="188" width="150" height="56" rx="2" class="box" />
+          <text x="755" y="210" class="t" text-anchor="middle">Haiku 4.5 · 10 workers</text>
+          <text x="755" y="228" class="m" text-anchor="middle">137 filings</text>
+
+          <path d="M 834 78 L 856 78 L 856 132 L 878 132" class="ln" marker-end="url(#arrow-1)" />
+          <path d="M 834 216 L 856 216 L 856 152 L 878 152" class="ln" marker-end="url(#arrow-1)" />
+
+          <rect x="882" y="112" width="176" height="60" rx="2" class="box-a" />
+          <text x="970" y="136" class="t-b" text-anchor="middle">merge + ingest</text>
+          <text x="970" y="154" class="m-a" text-anchor="middle">Neo4j · delete-then-insert</text>
+
+          <text x="882" y="200" class="m-a">12 GENUINE written</text>
+          <text x="882" y="218" class="m">126 NOT_GENUINE dropped</text>
+          <text x="882" y="236" class="m">1 AMBIGUOUS held back</text>
+        </svg>
+      </div>
+      <figcaption>Counts are the real Aug 12–13 2026 run: 229 filings carrying a purchase code reached the prefilter, 92 were settled by rule and 137 went to the model, and 12 transactions survived as genuine open-market buys. Roughly 95% of what EDGAR publishes is discarded before it can ever become a signal.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <div class="prose">
+      <p class="eyebrow">02 · Signal formation</p>
+      <h2>Five gates, and what each one throws away</h2>
+      <p>A genuine purchase is not a signal. Five conditions have to hold at once, and the interesting part of the design is the reject path — most clusters die at the second or third gate. The thirty-day window is frozen at the moment the cluster forms: a sixth insider buying on day 40 does not retroactively join it, because at decision time you would not have known.</p>
+    </div>
+    <figure>
+      <div class="figscroll">
+        <svg viewBox="0 0 1080 470" role="img" aria-label="Five sequential gates converting genuine purchases into a strong buy signal: two or more distinct insiders, one hundred thousand dollars of cluster value, three hundred million to five billion market cap, within sixty days of earnings, and not on the CIK blocklist; each gate has a reject path">
+          <defs>
+            <marker id="arrow-2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 9 5 L 0 9 z" class="ah" />
+            </marker>
+            <marker id="arrow-2r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 9 5 L 0 9 z" class="ah-r" />
+            </marker>
+            <marker id="arrow-2s" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 9 5 L 0 9 z" class="ah-s" />
+            </marker>
+          </defs>
+
+          <text x="150" y="22" class="hd">CANDIDATE</text>
+          <text x="700" y="22" class="hd">DISCARDED</text>
+
+          <rect x="60" y="38" width="300" height="52" rx="2" class="box-a" />
+          <text x="210" y="60" class="t-b" text-anchor="middle">GENUINE purchases, one company</text>
+          <text x="210" y="78" class="m-a" text-anchor="middle">rolling 30-day window</text>
+
+          <line x1="210" y1="94" x2="210" y2="116" class="ln" marker-end="url(#arrow-2)" />
+          <rect x="60" y="120" width="300" height="46" rx="2" class="box" />
+          <text x="210" y="148" class="t" text-anchor="middle">2 or more distinct insiders</text>
+          <path d="M 364 143 L 640 143" class="ln-r" marker-end="url(#arrow-2r)" />
+          <text x="652" y="147" class="m-r">lone buyer — the single strongest filter</text>
+
+          <line x1="210" y1="170" x2="210" y2="192" class="ln" marker-end="url(#arrow-2)" />
+          <rect x="60" y="196" width="300" height="46" rx="2" class="box" />
+          <text x="210" y="224" class="t" text-anchor="middle">$100K+ combined value</text>
+          <path d="M 364 219 L 640 219" class="ln-r" marker-end="url(#arrow-2r)" />
+          <text x="652" y="223" class="m-r">token buys, optics purchases</text>
+
+          <line x1="210" y1="246" x2="210" y2="268" class="ln" marker-end="url(#arrow-2)" />
+          <rect x="60" y="272" width="300" height="46" rx="2" class="box" />
+          <text x="210" y="300" class="t" text-anchor="middle">$300M – $5B market cap</text>
+          <path d="M 364 295 L 640 295" class="ln-r" marker-end="url(#arrow-2r)" />
+          <text x="652" y="299" class="m-r">microcaps and megacaps — no edge either end</text>
+
+          <line x1="210" y1="322" x2="210" y2="344" class="ln" marker-end="url(#arrow-2)" />
+          <rect x="60" y="348" width="300" height="46" rx="2" class="box" />
+          <text x="210" y="376" class="t" text-anchor="middle">within 60 days of next earnings</text>
+          <path d="M 364 371 L 640 371" class="ln-r" marker-end="url(#arrow-2r)" />
+          <text x="652" y="375" class="m-r">no catalyst in the window (p = 0.003)</text>
+
+          <line x1="210" y1="398" x2="210" y2="420" class="ln" marker-end="url(#arrow-2)" />
+          <rect x="60" y="424" width="300" height="42" rx="2" class="box" />
+          <text x="210" y="450" class="t" text-anchor="middle">CIK not blocklisted</text>
+          <path d="M 364 445 L 640 445" class="ln-r" marker-end="url(#arrow-2r)" />
+          <text x="652" y="449" class="m-r">judgment calls, recorded with a reason</text>
+
+          <path d="M 364 62 L 900 62" class="ln-s" marker-end="url(#arrow-2s)" />
+          <rect x="912" y="38" width="150" height="52" rx="2" class="box-s" />
+          <text x="987" y="60" class="t-b" text-anchor="middle">strong_buy</text>
+          <text x="987" y="78" class="m-s" text-anchor="middle">all five gates held</text>
+          <text x="640" y="52" class="m-s" text-anchor="middle">survivors only</text>
+        </svg>
+      </div>
+      <figcaption>The gates run in this order because each is cheaper than the next. Two names cleared all five in the last month; on Aug 12–13 nothing did, which is the normal state — the system is designed to emit rarely.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <div class="prose">
+      <p class="eyebrow">03 · Measurement</p>
+      <h2>Where the returns are measured from</h2>
+      <p>This is the part worth being pedantic about. Returns run from the <em>filing</em> date, not the transaction date, because the transaction is invisible to the public until the Form 4 lands — measuring from the trade date would credit the strategy with days no one could have acted on. Six entry delays are stored so slippage can be examined rather than assumed, and at day 90 the row is marked against SPY over the identical window and then frozen.</p>
+    </div>
+    <figure>
+      <div class="figscroll">
+        <svg viewBox="0 0 1080 300" role="img" aria-label="Timeline showing the insider transaction date excluded from measurement, the filing date as day zero, entry delay prices at days one two three five and seven, and the day ninety mark measured against SPY over the same window before the row is frozen">
+          <defs>
+            <marker id="arrow-3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 9 5 L 0 9 z" class="ah" />
+            </marker>
+            <marker id="arrow-3s" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 9 5 L 0 9 z" class="ah-s" />
+            </marker>
+          </defs>
+
+          <rect x="24" y="76" width="150" height="52" rx="2" class="box-o" />
+          <text x="99" y="98" class="t" text-anchor="middle">transaction date</text>
+          <text x="99" y="116" class="m" text-anchor="middle">not measurable</text>
+          <text x="99" y="150" class="m">up to 2 days dark</text>
+
+          <path d="M 178 102 L 218 102" class="ln-d" marker-end="url(#arrow-3)" />
+
+          <line x1="230" y1="102" x2="1000" y2="102" class="ln-a" />
+
+          <line x1="230" y1="90" x2="230" y2="114" class="ln-a" />
+          <text x="230" y="76" class="t-b" text-anchor="middle">day 0</text>
+          <text x="230" y="140" class="m-a" text-anchor="middle">filing date</text>
+          <text x="230" y="158" class="m" text-anchor="middle">price_day0</text>
+
+          <line x1="300" y1="94" x2="300" y2="110" class="ln" />
+          <text x="300" y="128" class="m" text-anchor="middle">+1</text>
+          <line x1="352" y1="94" x2="352" y2="110" class="ln" />
+          <text x="352" y="128" class="m" text-anchor="middle">+2</text>
+          <line x1="404" y1="94" x2="404" y2="110" class="ln" />
+          <text x="404" y="128" class="m" text-anchor="middle">+3</text>
+          <line x1="456" y1="94" x2="456" y2="110" class="ln" />
+          <text x="456" y="128" class="m" text-anchor="middle">+5</text>
+          <line x1="508" y1="94" x2="508" y2="110" class="ln" />
+          <text x="508" y="128" class="m" text-anchor="middle">+7</text>
+          <text x="404" y="176" class="m" text-anchor="middle">entry-delay ladder — measures slippage instead of assuming it</text>
+
+          <line x1="700" y1="94" x2="700" y2="110" class="ln" />
+          <text x="700" y="128" class="m" text-anchor="middle">refreshed daily while open</text>
+
+          <line x1="900" y1="86" x2="900" y2="118" class="ln-s" />
+          <text x="900" y="76" class="t-b" text-anchor="middle">day 90</text>
+          <path d="M 906 102 L 992 102" class="ln-s" marker-end="url(#arrow-3s)" />
+          <rect x="880" y="196" width="180" height="66" rx="2" class="box-s" />
+          <text x="970" y="220" class="t" text-anchor="middle">is_mature = true</text>
+          <text x="970" y="238" class="m-s" text-anchor="middle">row frozen, never</text>
+          <text x="970" y="252" class="m-s" text-anchor="middle">recomputed</text>
+          <path d="M 900 122 L 900 192" class="ln-s" marker-end="url(#arrow-3s)" />
+
+          <line x1="230" y1="232" x2="900" y2="232" class="ln-d" />
+          <text x="240" y="224" class="m">SPY over the identical window → alpha = signal return − SPY return</text>
+          <line x1="230" y1="224" x2="230" y2="240" class="ln-d" />
+          <line x1="900" y1="224" x2="900" y2="240" class="ln-d" />
+        </svg>
+      </div>
+      <figcaption>Maturation happens only after day 90 has fully passed, never on day 90 itself, and a matured row is immutable — new rules apply forward only. That freeze is what stops the published track record from drifting every time the methodology improves.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <div class="prose">
+      <p class="eyebrow">04 · Storage</p>
+      <h2>Why a graph, and what hangs off what</h2>
+      <p>The questions this product answers are traversals — which people bought at which companies, which of those clusters became signals, what each signal's management promised and whether they delivered. In a relational schema those are joins; here they are edges.</p>
+    </div>
+    <figure>
+      <div class="figscroll">
+        <svg viewBox="0 0 1080 400" role="img" aria-label="Graph data model with Person and Company nodes connected to InsiderTransaction, Company connected to SignalPerformance which carries Promise and SignalEvent nodes, plus ResearchNote and Event">
+          <defs>
+            <marker id="arrow-4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 9 5 L 0 9 z" class="ah" />
+            </marker>
+            <marker id="arrow-4s" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 9 5 L 0 9 z" class="ah-s" />
+            </marker>
+          </defs>
+
+          <rect x="24" y="150" width="140" height="56" rx="2" class="box" />
+          <text x="94" y="174" class="t-b" text-anchor="middle">Person</text>
+          <text x="94" y="192" class="m" text-anchor="middle">normalized_name</text>
+
+          <rect x="248" y="150" width="160" height="56" rx="2" class="box-a" />
+          <text x="328" y="174" class="t-b" text-anchor="middle">InsiderTransaction</text>
+          <text x="328" y="192" class="m-a" text-anchor="middle">classification · dates</text>
+
+          <path d="M 168 178 L 240 178" class="ln" marker-end="url(#arrow-4)" />
+          <text x="204" y="168" class="m" text-anchor="middle">TRADED_BY</text>
+
+          <rect x="248" y="42" width="160" height="56" rx="2" class="box-a" />
+          <text x="328" y="66" class="t-b" text-anchor="middle">Company</text>
+          <text x="328" y="84" class="m-a" text-anchor="middle">cik, ticker, market_cap</text>
+
+          <path d="M 328 102 L 328 146" class="ln" marker-end="url(#arrow-4)" />
+          <text x="338" y="128" class="m">INSIDER_TRADE_OF</text>
+
+          <rect x="248" y="286" width="160" height="56" rx="2" class="box" />
+          <text x="328" y="310" class="t-b" text-anchor="middle">ResearchNote</text>
+          <text x="328" y="328" class="m" text-anchor="middle">looked, did not signal</text>
+          <path d="M 300 102 L 268 102 L 268 282" class="ln" marker-end="url(#arrow-4)" />
+          <text x="258" y="252" class="m" text-anchor="end">HAS_RESEARCH_NOTE</text>
+
+          <rect x="560" y="42" width="180" height="56" rx="2" class="box-s" />
+          <text x="650" y="66" class="t-b" text-anchor="middle">SignalPerformance</text>
+          <text x="650" y="84" class="m-s" text-anchor="middle">the 90-day track record</text>
+          <path d="M 412 70 L 552 70" class="ln-s" marker-end="url(#arrow-4s)" />
+          <text x="482" y="60" class="m-s" text-anchor="middle">HAS_SIGNAL_PERF</text>
+
+          <rect x="856" y="130" width="180" height="56" rx="2" class="box" />
+          <text x="946" y="154" class="t-b" text-anchor="middle">Promise</text>
+          <text x="946" y="172" class="m" text-anchor="middle">metric, target, verdict</text>
+          <path d="M 744 78 L 800 78 L 800 158 L 848 158" class="ln" marker-end="url(#arrow-4)" />
+          <text x="812" y="120" class="m">HAS_PROMISE</text>
+
+          <rect x="856" y="222" width="180" height="56" rx="2" class="box" />
+          <text x="946" y="246" class="t-b" text-anchor="middle">SignalEvent</text>
+          <text x="946" y="264" class="m" text-anchor="middle">day_index, direction</text>
+          <path d="M 800 158 L 800 250 L 848 250" class="ln" marker-end="url(#arrow-4)" />
+          <text x="812" y="300" class="m">HAS_EVENT</text>
+
+          <rect x="560" y="286" width="180" height="56" rx="2" class="box" />
+          <text x="650" y="310" class="t-b" text-anchor="middle">ActivistFiling</text>
+          <text x="650" y="328" class="m" text-anchor="middle">Schedule 13D</text>
+          <text x="650" y="362" class="m" text-anchor="middle">separate lane — informational, not a gate</text>
+        </svg>
+      </div>
+      <figcaption>18,174 InsiderTransaction nodes as of Aug 13 2026, 204 SignalPerformance rows, and 52 Promise nodes across the ten open signals. Promise and SignalEvent are the newest layer: they record what management committed to on the call that preceded the insider buying, and whether the next call delivered it.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <div class="prose">
+      <p class="eyebrow">05 · Runtime</p>
+      <h2>What runs where</h2>
+      <p>The whole backend is three containers on one Hetzner box in Ashburn. The database moved off managed hosting in May 2026 and the monthly bill went with it; the frontend is a static bundle on Vercel that talks to the box over TLS terminated by Caddy.</p>
+    </div>
+    <figure>
+      <div class="figscroll">
+        <svg viewBox="0 0 1080 380" role="img" aria-label="Runtime topology: SEC EDGAR, yfinance and the Anthropic API feed a single Hetzner server running Caddy, the FastAPI backend and Neo4j in Docker, with a Vercel-hosted React frontend calling the API over HTTPS">
+          <defs>
+            <marker id="arrow-5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 9 5 L 0 9 z" class="ah" />
+            </marker>
+            <marker id="arrow-5a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 9 5 L 0 9 z" class="ah-a" />
+            </marker>
+          </defs>
+
+          <text x="24" y="26" class="hd">THIRD PARTY</text>
+          <text x="404" y="26" class="hd">HETZNER CPX21 · ASHBURN</text>
+          <text x="880" y="26" class="hd">EDGE</text>
+
+          <rect x="24" y="52" width="164" height="48" rx="2" class="box" />
+          <text x="106" y="74" class="t" text-anchor="middle">SEC EDGAR</text>
+          <text x="106" y="90" class="m" text-anchor="middle">daily index, Archives</text>
+
+          <rect x="24" y="120" width="164" height="48" rx="2" class="box" />
+          <text x="106" y="142" class="t" text-anchor="middle">yfinance</text>
+          <text x="106" y="158" class="m" text-anchor="middle">prices, market cap</text>
+
+          <rect x="24" y="188" width="164" height="48" rx="2" class="box" />
+          <text x="106" y="210" class="t" text-anchor="middle">Anthropic API</text>
+          <text x="106" y="226" class="m" text-anchor="middle">Haiku 4.5</text>
+
+          <path d="M 192 76 L 240 76 L 240 168 L 400 168" class="ln" marker-end="url(#arrow-5)" />
+          <path d="M 192 144 L 240 144" class="ln" />
+          <path d="M 192 212 L 240 212 L 240 168" class="ln" />
+          <text x="24" y="292" class="m">pull only — nothing external reaches in</text>
+
+          <rect x="380" y="44" width="380" height="268" rx="3" class="box-o" />
+
+          <rect x="404" y="72" width="150" height="56" rx="2" class="box" />
+          <text x="479" y="96" class="t-b" text-anchor="middle">Caddy</text>
+          <text x="479" y="114" class="m" text-anchor="middle">TLS, Let's Encrypt</text>
+
+          <rect x="404" y="140" width="150" height="56" rx="2" class="box-a" />
+          <text x="479" y="164" class="t-b" text-anchor="middle">FastAPI</text>
+          <text x="479" y="182" class="m-a" text-anchor="middle">routes + services</text>
+
+          <rect x="404" y="220" width="150" height="56" rx="2" class="box-a" />
+          <text x="479" y="244" class="t-b" text-anchor="middle">Neo4j 5</text>
+          <text x="479" y="262" class="m-a" text-anchor="middle">community, bolt</text>
+
+          <path d="M 479 132 L 479 136" class="ln" marker-end="url(#arrow-5)" />
+          <path d="M 479 200 L 479 216" class="ln-a" marker-end="url(#arrow-5a)" />
+          <text x="468" y="214" class="m" text-anchor="end">bolt://neo4j:7687</text>
+
+          <rect x="584" y="140" width="152" height="56" rx="2" class="box" />
+          <text x="660" y="164" class="t" text-anchor="middle">pipeline scripts</text>
+          <text x="660" y="182" class="m" text-anchor="middle">run_week, backfills</text>
+          <path d="M 580 168 L 558 168" class="ln" marker-end="url(#arrow-5)" />
+          <text x="660" y="216" class="m" text-anchor="middle">same image, run on demand</text>
+
+          <rect x="856" y="72" width="180" height="56" rx="2" class="box-a" />
+          <text x="946" y="96" class="t-b" text-anchor="middle">Vercel</text>
+          <text x="946" y="114" class="m-a" text-anchor="middle">React + Vite bundle</text>
+
+          <rect x="856" y="188" width="180" height="56" rx="2" class="box" />
+          <text x="946" y="212" class="t" text-anchor="middle">browser</text>
+          <text x="946" y="230" class="m" text-anchor="middle">ci.lookinsight.ai</text>
+
+          <path d="M 946 132 L 946 184" class="ln" marker-end="url(#arrow-5)" />
+          <path d="M 852 212 L 800 212 L 800 58 L 574 58 L 574 94 L 558 94" class="ln-a" marker-end="url(#arrow-5a)" />
+          <text x="690" y="50" class="m-a" text-anchor="middle">HTTPS /api/*</text>
+        </svg>
+      </div>
+      <figcaption>The pipeline scripts run inside the same backend image rather than as a separate service, so an ingest run shares the application's code and database credentials exactly. Nothing external can reach in; every third-party dependency is pulled on a schedule the operator triggers.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <div class="prose">
+      <p class="eyebrow">06 · Structure</p>
+      <h2>The dependency rule</h2>
+      <p>Four layers, enforced rather than documented. The rule that matters is the one about scanners: a scanner may not import from the API layer, and ingestion may not import from services. Break either and detection logic starts depending on how a route happens to be shaped, which is how a data pipeline quietly becomes untestable.</p>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>Layer</th><th>Holds</th><th>May depend on</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>data</code></td><td>Neo4j client, models</td><td>shared — reachable from everywhere</td></tr>
+          <tr><td><code>ingestion</code></td><td>EDGAR fetchers, Form 4 parsers</td><td>data only — never services or API</td></tr>
+          <tr><td><code>domain</code></td><td>services, scanners, signal logic</td><td>data + ingestion</td></tr>
+          <tr><td><code>api</code></td><td>FastAPI routes</td><td>domain + data</td></tr>
+          <tr><td><code>delivery</code></td><td>frontend, CSV exports</td><td>api</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="prose">
+      <p>Two structural budgets sit alongside it: zero dependency cycles, and no file over 500 lines. Both are checked on every pass rather than trusted.</p>
+    </div>
+  </section>
+
+  <hr class="rule" />
+
+  <footer class="prose">
+    <p>Drawn from the running system on 2026-08-14. Cohort statistics queried live: 193 matured strong_buy signals, 65.3% hit rate, +13.52% average 90-day return against +6.20% for SPY over matched windows. Graph current through filing date 2026-08-13.</p>
+  </footer>
+
+</div>
+
+<style>
+@page { size: A4 landscape; margin: 12mm; }
+@media print {
+  body { background: #fff; }
+  .wrap { padding: 0; gap: 26px; max-width: none; }
+  figure, header, .tablewrap { break-inside: avoid; page-break-inside: avoid; }
+  .figscroll { overflow: visible; }
+  figure { padding: 20px 22px 14px; }
+  figure svg { min-width: 0; width: auto; max-width: 100%; max-height: 104mm; margin: 0 auto; }
+  h2 { break-after: avoid; page-break-after: avoid; }
+  p { orphans: 3; widows: 3; }
+  .stat { flex: 1 1 110px; }
+}
+</style>
+</body>
+</html>
