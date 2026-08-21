@@ -67,6 +67,15 @@ logger = logging.getLogger(__name__)
 #     same not-an-operating-midcap rationale as LOGC/PWRL.
 EXCLUDED_CIKS: set[str] = {"0002064307", "0001384195", "0002039497", "0002052053", "0001712184", "0001614178", "0001680581"}
 
+# === Cluster gates (single source of truth) ===
+# The strong_buy definition. Imported by other services (near_miss_service) so a
+# gate is never redeclared in two places and allowed to drift.
+MIN_CLUSTER_INSIDERS: int = 2            # distinct insiders in the window
+MIN_CLUSTER_VALUE_USD: int = 100_000     # combined buy value
+MIN_MARKET_CAP_USD: int = 300_000_000    # midcap floor
+MAX_MARKET_CAP_USD: int = 5_000_000_000  # midcap ceiling
+CLUSTER_WINDOW_DAYS: int = 30            # frozen at formation; 90d is returns only
+
 
 def classify_insider_role(title: str) -> str:
     """Classify insider title into role category for signal weighting.
@@ -228,7 +237,7 @@ class InsiderClusterService:
     @staticmethod
     async def detect_clusters(
         days: int = 90,
-        window_days: int = 30,
+        window_days: int = CLUSTER_WINDOW_DAYS,
         min_level: str = "medium",
         direction: str = "buy",
     ) -> list[InsiderClusterSignal]:
@@ -428,7 +437,7 @@ class InsiderClusterService:
             if direction == "sell":
                 # Sell: higher thresholds since selling is noisier
                 # Minimum $100K total to filter out trivial sells
-                if total_buy_value < 100_000:
+                if total_buy_value < MIN_CLUSTER_VALUE_USD:
                     continue
                 if num_buyers >= 4:
                     level = "high"
@@ -450,7 +459,7 @@ class InsiderClusterService:
                     # Two officers buying is highly informational — promote to HIGH
                     level = "high"
                     summary = f"{num_buyers} officers buying between {date_range}"
-                elif num_buyers >= 2:
+                elif num_buyers >= MIN_CLUSTER_INSIDERS:
                     level = "medium"
                     summary = f"{num_buyers} insiders buying between {date_range}"
                 else:
@@ -470,8 +479,8 @@ class InsiderClusterService:
                 try:
                     mcap = StockPriceService.get_market_cap(ticker)
                     if mcap and mcap > 0:
-                        in_sweet_spot = 300_000_000 <= mcap <= 5_000_000_000
-                        high_value = total_buy_value >= 100_000
+                        in_sweet_spot = MIN_MARKET_CAP_USD <= mcap <= MAX_MARKET_CAP_USD
+                        high_value = total_buy_value >= MIN_CLUSTER_VALUE_USD
 
                         if in_sweet_spot and high_value:
                             conviction_tier = "strong_buy"  # 75% hit rate
@@ -481,7 +490,7 @@ class InsiderClusterService:
                             conviction_tier = "watch"  # <60% hit rate
                     else:
                         # No market cap data — fall back to value only
-                        if total_buy_value >= 100_000:
+                        if total_buy_value >= MIN_CLUSTER_VALUE_USD:
                             conviction_tier = "buy"
                         else:
                             conviction_tier = "watch"
@@ -490,7 +499,7 @@ class InsiderClusterService:
                         f"StockPriceService.get_market_cap failed for {ticker}: "
                         f"{type(e).__name__}: {str(e)[:120]}"
                     )
-                    if total_buy_value >= 100_000:
+                    if total_buy_value >= MIN_CLUSTER_VALUE_USD:
                         conviction_tier = "buy"
                     else:
                         conviction_tier = "watch"
@@ -526,7 +535,7 @@ class InsiderClusterService:
     async def detect_clusters_for_company(
         cik: str,
         days: int = 90,
-        window_days: int = 30,
+        window_days: int = CLUSTER_WINDOW_DAYS,
     ) -> list[InsiderClusterSignal]:
         """Detect buy and sell clusters for a single company.
 
@@ -546,7 +555,7 @@ class InsiderClusterService:
     @staticmethod
     async def detect_clusters_excluding_8k(
         days: int = 90,
-        window_days: int = 30,
+        window_days: int = CLUSTER_WINDOW_DAYS,
         min_level: str = "medium",
         direction: str = "buy",
     ) -> list[InsiderClusterSignal]:
@@ -575,7 +584,7 @@ class InsiderClusterService:
     @staticmethod
     async def detect_sell_clusters(
         days: int = 90,
-        window_days: int = 30,
+        window_days: int = CLUSTER_WINDOW_DAYS,
         min_level: str = "medium",
     ) -> list[InsiderClusterSignal]:
         """Detect insider selling clusters (S-code open market sales)."""
@@ -584,7 +593,7 @@ class InsiderClusterService:
     @staticmethod
     async def detect_sell_clusters_excluding_8k(
         days: int = 90,
-        window_days: int = 30,
+        window_days: int = CLUSTER_WINDOW_DAYS,
         min_level: str = "medium",
     ) -> list[InsiderClusterSignal]:
         """Detect sell clusters, excluding companies with recent 8-K signals."""
@@ -719,8 +728,8 @@ class InsiderClusterService:
 
         if mcap and float(mcap) > 0:
             mcap_f = float(mcap)
-            in_sweet_spot = 300_000_000 <= mcap_f <= 5_000_000_000
-            high_value = total_value >= 100_000
+            in_sweet_spot = MIN_MARKET_CAP_USD <= mcap_f <= MAX_MARKET_CAP_USD
+            high_value = total_value >= MIN_CLUSTER_VALUE_USD
             if in_sweet_spot and high_value:
                 conviction = "strong_buy"
             elif in_sweet_spot or high_value:
@@ -728,7 +737,7 @@ class InsiderClusterService:
             else:
                 conviction = "watch"
         else:
-            conviction = "buy" if total_value >= 100_000 else "watch"
+            conviction = "buy" if total_value >= MIN_CLUSTER_VALUE_USD else "watch"
 
         # v1.3: SignalPerformance holds strong_buy only. Skip buy/watch tier clusters.
         # Mirrors the guard in signal_performance_service._compute_one. Without this,
@@ -880,7 +889,7 @@ class InsiderClusterService:
         except ValueError:
             return None
 
-        window_start_dt = window_end_dt - timedelta(days=30)
+        window_start_dt = window_end_dt - timedelta(days=CLUSTER_WINDOW_DAYS)
         window_start = window_start_dt.strftime("%Y-%m-%d")
 
         # Get company info
@@ -1030,7 +1039,7 @@ class InsiderClusterService:
             elif num_traders >= 2 and officer_count >= 2 and total_trade_value >= 200_000:
                 signal_level = "high"
                 signal_summary = f"Officer Cluster: {num_traders} insiders buying (inc. {officer_count} officers)"
-            elif num_traders >= 2:
+            elif num_traders >= MIN_CLUSTER_INSIDERS:
                 signal_level = "medium"
                 signal_summary = f"Open Market Cluster: {num_traders} insiders buying"
             else:

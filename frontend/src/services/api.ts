@@ -279,4 +279,57 @@ export const portfolioApi = {
   getSnapshot: () => api.get<PortfolioSnapshot>('/portfolio'),
 }
 
+// ============ Research Queue (near misses — earnings-filtered clusters) ============
+// NOT signals. Genuine insider clusters dropped solely on earnings proximity;
+// the caveat ships with the payload and must be rendered with the data.
+
+export interface NearMissBuyer {
+  insider_name: string
+  insider_title: string
+  role: string
+  transaction_date: string
+  value: number
+  form4_url: string | null
+}
+
+export interface NearMissResearchNote {
+  note_date: string
+  ticker: string | null
+  thesis: string
+  verdict: 'watch' | 'pass' | 'blocklist_candidate'
+  risk_flags: string[]
+  catalysts: string[]
+  sources: string[]
+  mcap_at_note: number | null
+}
+
+export interface NearMiss {
+  cik: string
+  ticker: string
+  company_name: string
+  window_start: string
+  window_end: string
+  insider_count: number
+  total_value: number
+  market_cap: number
+  pct_of_mcap: number
+  buyers: NearMissBuyer[]
+  research_notes: NearMissResearchNote[]
+  verdict: 'watch' | 'pass' | 'blocklist_candidate' | null
+  filter_reason: string | null
+}
+
+export interface NearMissResponse {
+  caveat: string
+  days: number
+  since_date: string
+  count: number
+  near_misses: NearMiss[]
+}
+
+export const nearMissApi = {
+  getQueue: (days = 60) =>
+    api.get<NearMissResponse>('/near-miss', { params: { days } }),
+}
+
 export default api

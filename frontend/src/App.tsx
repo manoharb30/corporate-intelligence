@@ -4,6 +4,7 @@ import SignalList from './pages/SignalList'
 import SignalDetail from './pages/SignalDetail'
 import PerformanceTracker from './pages/PerformanceTracker'
 import Portfolio from './pages/Portfolio'
+import NearMiss from './pages/NearMiss'
 import Privacy from './pages/Privacy'
 import McpDocs from './pages/McpDocs'
 import Terms from './pages/Terms'
@@ -16,6 +17,8 @@ function App() {
         <Route path="/signal/:accessionNumber" element={<SignalDetail />} />
         <Route path="/performance" element={<PerformanceTracker />} />
         <Route path="/portfolio" element={<Portfolio />} />
+        {/* Internal: research queue — deliberately not in Layout nav */}
+        <Route path="/research-queue" element={<NearMiss />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/mcp" element={<McpDocs />} />
         <Route path="/terms" element={<Terms />} />
