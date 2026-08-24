@@ -9,8 +9,8 @@ Writes:
   form4_index_YYYYMMDD_p_classified.json   (legacy format + optional extra fields)
 
 After merging, runs a cross-filing structured deal detector:
-  - Groups GENUINE transactions by (issuer, transaction_date, price_per_share)
-  - If 3+ distinct insiders bought at the same exact price same day → SUSPECTED_STRUCTURED
+  - Groups GENUINE transactions by (issuer, transaction_date)
+  - If 3+ distinct insiders bought at effectively one price that day → SUSPECTED_STRUCTURED
   - Flag is preserved in Neo4j (ingest writes it), cluster queries still filter
     WHERE classification='GENUINE' so these don't pollute signals.
 
@@ -66,13 +66,79 @@ def enrich_from_parsed(merged_results: list, parsed_path: str) -> None:
                 r.setdefault("ticker", ticker)
 
 
+# Relative width of the price band that counts as "one price". Deliberately
+# tight — this is a fraud tell, not a price filter. Form 4 reports a per-filing
+# weighted average, so insiders filled out of one allocation land a few hundredths
+# of a percent apart rather than exactly equal (CODI 2023-01-03 spread 0.043%,
+# CODI 2024-01-18 spread 0.042%). Measured against every ≥3-insider day in the
+# graph, 0.1% flags exactly the same days as exact-price matching plus those two.
+STRUCTURED_PRICE_TOLERANCE = 0.001
+
+
+def _tight_price_bands(group: list) -> list:
+    """Return sub-groups of ≥3 insiders whose whole day sits in one price band.
+
+    The tell for an allocation is not merely that several insiders traded at a
+    similar price — it is that each of them reports a single weighted-average
+    price off one block. So an insider only qualifies if their *entire* day fits
+    inside the band. That keeps out the common shape where one buyer works a
+    large order across a wide range and small buyers happen to print inside it.
+
+    Bands are anchored rather than chained: five buyers each 0.09% above the
+    last span 0.36% overall and must not collapse into one group.
+    """
+    bands, seen = [], set()
+
+    def add(rows):
+        key = tuple(sorted(id(r) for r in rows))
+        if key not in seen:
+            seen.add(key)
+            bands.append(sorted(rows, key=lambda r: r["price_per_share"]))
+
+    # Arm 1 — exact price agreement between ≥3 insiders. A tell on its own, and
+    # robust to a participant also holding an unrelated odd lot that day.
+    by_price = defaultdict(list)
+    for r in group:
+        by_price[r["price_per_share"]].append(r)
+    for rows in by_price.values():
+        if len({r.get("insider", "") for r in rows}) >= 3:
+            add(rows)
+
+    # Arm 2 — near-agreement, for weighted-average reporting.
+    by_insider = defaultdict(list)
+    for r in group:
+        by_insider[r.get("insider", "")].append(r)
+
+    # An insider whose own day spans more than the band was working an order,
+    # not reporting an allocation.
+    days = []
+    for insider, rows in by_insider.items():
+        prices = [r["price_per_share"] for r in rows]
+        lo, hi = min(prices), max(prices)
+        if hi <= lo * (1 + STRUCTURED_PRICE_TOLERANCE):
+            days.append((lo, hi, rows))
+    days.sort(key=lambda d: d[0])
+
+    for i, (anchor_lo, _, _) in enumerate(days):
+        ceiling = anchor_lo * (1 + STRUCTURED_PRICE_TOLERANCE)
+        members = [d for d in days[i:] if d[1] <= ceiling]
+        if len(members) >= 3:
+            add([r for _, _, rows in members for r in rows])
+    return bands
+
+
 def detect_structured_clusters(merged_results: list) -> int:
     """Post-classification detector for suspected structured deals.
 
-    Groups GENUINE transactions by (issuer, transaction_date, price_per_share).
-    If group has ≥3 distinct insiders, reclassify all as AMBIGUOUS with
-    rule_triggered=POST_CLUSTER_CHECK so they can be isolated from LLM-AMBIGUOUS
-    cases when reviewed.
+    Groups GENUINE transactions by (issuer, transaction_date), then looks for
+    ≥3 distinct insiders whose prices sit inside one tolerance band. Those are
+    reclassified AMBIGUOUS with rule_triggered=POST_CLUSTER_CHECK so they can be
+    isolated from LLM-AMBIGUOUS cases when reviewed.
+
+    Keyed on a band rather than an exact price because Form 4 reports weighted
+    averages: CODI's director allocations twice evaded exact-price matching on
+    fourth-decimal differences, and the 2023 block reached a live strong_buy
+    signal that had to be invalidated by hand.
 
     Returns count of transactions reclassified.
     """
@@ -84,24 +150,28 @@ def detect_structured_clusters(merged_results: list) -> int:
         price = r.get("price_per_share", 0)
         if not txn_date or not price:
             continue  # Can't group without these
-        key = (r.get("issuer", ""), txn_date, price)
+        key = (r.get("issuer", ""), txn_date)
         groups[key].append(r)
 
     flagged = 0
-    for key, group in groups.items():
-        insiders = {r.get("insider", "") for r in group}
-        if len(insiders) >= 3:
-            issuer, txn_date, price = key
+    for (issuer, txn_date), group in groups.items():
+        for band in _tight_price_bands(group):
+            insiders = {r.get("insider", "") for r in band}
+            lo = band[0]["price_per_share"]
+            hi = band[-1]["price_per_share"]
+            span = f"${lo}" if lo == hi else f"${lo}-${hi}"
             reason = (
                 f"Suspected structured allocation: {len(insiders)} insiders "
-                f"bought {issuer} at exactly ${price} on {txn_date}"
+                f"bought {issuer} at {span} on {txn_date}"
             )
-            for r in group:
+            for r in band:
+                if r["rule_triggered"] == "POST_CLUSTER_CHECK":
+                    continue  # already caught by an overlapping band
                 r["classification"] = "AMBIGUOUS"
                 r["reason"] = reason
                 r["rule_triggered"] = "POST_CLUSTER_CHECK"
-            flagged += len(group)
-            print(f"  🚩 {issuer[:40]:40} — {len(insiders)} insiders @ ${price} on {txn_date}")
+                flagged += 1
+            print(f"  🚩 {issuer[:40]:40} — {len(insiders)} insiders @ {span} on {txn_date}")
     return flagged
 
 
