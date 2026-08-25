@@ -65,7 +65,18 @@ logger = logging.getLogger(__name__)
 #     the Concentra below-cash tender playbook — control-seeking arbitrage, not insider
 #     information edge. Blocked prophylactically 2026-07-16 before any cluster formed;
 #     same not-an-operating-midcap rationale as LOGC/PWRL.
-EXCLUDED_CIKS: set[str] = {"0002064307", "0001384195", "0002039497", "0002052053", "0001712184", "0001614178", "0001680581"}
+#   0002096362 — AIAI Holdings (AIAI): Dallas AI-branded roll-up, direct listing
+#     2026-05-06. The 2026-08-19/21 cluster is mechanically eligible but insiders were
+#     net SELLERS into it — CFO Liebman, CAO Weiszhaar and director Glajch sold ~$2.03M
+#     at $12.00-$15.62 (May-Jul), then the same cohort bought only ~$140K at $5.25-$7.13;
+#     CEO Furniss bought 1,000 sh against 1,247,620 held (0.08%). Balance sheet is 91%
+#     goodwill/intangibles, $468M mcap vs $996M book (0.47x), cash $11.2M against -$11.8M
+#     eight-week operating cash flow, 12% gross margin; director Schaap resigned Jul 31.
+#     The signal also only cleared the 60d earnings gate because a May-2026 direct listing
+#     has no earnings history and SignalFilter fails open — see known_issue_earnings_filter
+#     _fails_open. Judgment-call exclusion, LILA/YEXT pattern. Signal row removed and CIK
+#     blocked 2026-08-25 (remove_aiai_2026-08-25.py).
+EXCLUDED_CIKS: set[str] = {"0002064307", "0001384195", "0002039497", "0002052053", "0001712184", "0001614178", "0001680581", "0002096362"}
 
 # === Cluster gates (single source of truth) ===
 # The strong_buy definition. Imported by other services (near_miss_service) so a
