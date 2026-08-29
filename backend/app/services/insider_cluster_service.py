@@ -76,7 +76,16 @@ logger = logging.getLogger(__name__)
 #     has no earnings history and SignalFilter fails open — see known_issue_earnings_filter
 #     _fails_open. Judgment-call exclusion, LILA/YEXT pattern. Signal row removed and CIK
 #     blocked 2026-08-25 (remove_aiai_2026-08-25.py).
-EXCLUDED_CIKS: set[str] = {"0002064307", "0001384195", "0002039497", "0002052053", "0001712184", "0001614178", "0001680581", "0002096362"}
+#   0001439124 — AXIA Energia S.A. (AXIA3): Brazilian utility listed on B3 São Paulo,
+#     not a US listing. Out of universe on the US-only design decision, and out of band
+#     regardless — R$120.9B ≈ $22B USD vs the $5B ceiling. Its Form 4 values are stored
+#     in BRL but treated as USD downstream, so the "$1.8M" cluster of 2026-08-10 is
+#     really ~$330K; the $100K gate was being applied to reais. Until now it was excluded
+#     only by accident: yfinance cannot resolve "AXIA3" (needs "AXIA3.SA"), so market_cap
+#     stayed NULL and it silently failed the $300M floor rather than being judged.
+#     Blocked 2026-08-29 to make the exclusion deliberate. Foreign-listing exclusion —
+#     first of its kind in this list.
+EXCLUDED_CIKS: set[str] = {"0002064307", "0001384195", "0002039497", "0002052053", "0001712184", "0001614178", "0001680581", "0002096362", "0001439124"}
 
 # === Cluster gates (single source of truth) ===
 # The strong_buy definition. Imported by other services (near_miss_service) so a
