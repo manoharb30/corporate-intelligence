@@ -321,6 +321,11 @@ def main():
             skipped_no_ticker += 1
             continue
         result = SignalFilter.apply_filter(ticker, signal_date)
+        # Record the gate's decision on EVERY row — pass or fail. Previously only
+        # rejections left a trace, which made the gate un-auditable after the fact.
+        r["earnings_outcome"] = result.outcome
+        r["earnings_distance_days"] = result.earnings_distance
+        r["earnings_no_history"] = result.no_history_before_signal
         if not result.passed:
             r["classification"] = "FILTERED"
             r["reason"] = result.reason
@@ -330,6 +335,22 @@ def main():
         print(f"  Filtered {filtered_count} signals (earnings >60d)")
     else:
         print(f"  No signals filtered")
+
+    # Outcome breakdown — how many PASSED on the real rule vs by fail-open.
+    from app.services.signal_filter import FAIL_OPEN_OUTCOMES
+    oc = {}
+    for r in merged_results:
+        o = r.get("earnings_outcome")
+        if o:
+            oc[o] = oc.get(o, 0) + 1
+    if oc:
+        print("  Earnings-gate outcomes:")
+        for k in sorted(oc):
+            flag = "  <- FAIL-OPEN" if k in FAIL_OPEN_OUTCOMES else ""
+            print(f"    {k:<22} {oc[k]:>5}{flag}")
+        fo = sum(v for k, v in oc.items() if k in FAIL_OPEN_OUTCOMES)
+        tot = sum(oc.values())
+        print(f"    fail-open share: {fo}/{tot} = {fo/tot*100:.1f}%")
     if skipped_no_ticker > 0:
         print(f"  Skipped {skipped_no_ticker} signals (no ticker resolved)")
 

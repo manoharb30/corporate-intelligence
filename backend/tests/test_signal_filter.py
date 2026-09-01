@@ -6,7 +6,12 @@ Hostile flag: Informational tag when activist filing has hostile keywords (not a
 
 import pytest
 from unittest.mock import patch
-from app.services.signal_filter import SignalFilter, FilterResult, HostileCheckResult
+from app.services.signal_filter import (
+    SignalFilter, FilterResult, HostileCheckResult,
+    FAIL_OPEN_OUTCOMES,
+    OUTCOME_PASS_WITHIN, OUTCOME_REJECT_BEYOND, OUTCOME_PASS_NO_DATA,
+    OUTCOME_PASS_NO_FUTURE, OUTCOME_PASS_FETCH_ERROR,
+)
 
 
 class TestSignalFilter:
@@ -206,3 +211,90 @@ class TestHostileActivistFlag:
             assert hasattr(result, 'keywords')
             assert isinstance(result.has_hostile, bool)
             assert isinstance(result.keywords, list)
+
+
+class TestEarningsOutcomeRecording:
+    """Every decision records WHY — pass or fail.
+
+    Before this, only rejections left a trace (classification_rule=EARNINGS_FILTER),
+    so a pass could not be distinguished from a fail-open after the fact. Since
+    yfinance's earnings coverage changes over time, the decision cannot be
+    reconstructed retrospectively — it has to be recorded when it is made.
+    """
+
+    def test_real_pass_is_tagged(self):
+        with patch.object(SignalFilter, '_get_earnings_dates', return_value=[
+            "2025-01-15", "2025-04-15", "2025-07-15"
+        ]):
+            r = SignalFilter.apply_filter("AAPL", "2025-03-01")
+            assert r.passed is True
+            assert r.outcome == OUTCOME_PASS_WITHIN
+            assert r.outcome not in FAIL_OPEN_OUTCOMES
+
+    def test_real_reject_is_tagged(self):
+        with patch.object(SignalFilter, '_get_earnings_dates', return_value=[
+            "2025-01-15", "2025-07-15"
+        ]):
+            r = SignalFilter.apply_filter("AAPL", "2025-02-01")
+            assert r.passed is False
+            assert r.outcome == OUTCOME_REJECT_BEYOND
+
+    def test_no_data_tagged_as_fail_open(self):
+        """No earnings dates at all -> passes by default, tagged as fail-open."""
+        with patch.object(SignalFilter, '_get_earnings_dates', return_value=[]):
+            r = SignalFilter.apply_filter("NEWCO", "2025-03-01")
+            assert r.passed is True
+            assert r.outcome == OUTCOME_PASS_NO_DATA
+            assert r.outcome in FAIL_OPEN_OUTCOMES
+            assert r.no_history_before_signal is True
+
+    def test_no_future_date_tagged_as_fail_open(self):
+        """Dates exist but none on/after signal date -> fail-open."""
+        with patch.object(SignalFilter, '_get_earnings_dates', return_value=[
+            "2024-01-15", "2024-04-15"
+        ]):
+            r = SignalFilter.apply_filter("AAPL", "2025-03-01")
+            assert r.passed is True
+            assert r.outcome == OUTCOME_PASS_NO_FUTURE
+            assert r.outcome in FAIL_OPEN_OUTCOMES
+
+    def test_fetch_error_tagged_as_fail_open(self):
+        with patch.object(SignalFilter, '_get_earnings_dates',
+                          side_effect=RuntimeError("yfinance down")):
+            r = SignalFilter.apply_filter("AAPL", "2025-03-01")
+            assert r.passed is True
+            assert r.outcome == OUTCOME_PASS_FETCH_ERROR
+            assert r.outcome in FAIL_OPEN_OUTCOMES
+
+
+class TestNoHistoryBeforeSignal:
+    """`no_history_before_signal` = the company had never reported at the time of
+    the buy. This is the new-listing detector (AIAI pattern) that the future
+    fail-closed rule will key on. Recorded now, not yet acted on.
+    """
+
+    def test_new_listing_has_no_prior_history(self):
+        """All known earnings dates are AFTER the signal -> never reported yet."""
+        with patch.object(SignalFilter, '_get_earnings_dates', return_value=[
+            "2025-08-15", "2025-11-15"
+        ]):
+            r = SignalFilter.apply_filter("AIAI", "2025-07-01")
+            assert r.no_history_before_signal is True
+            assert r.passed is True  # still passes — fail-closed not built yet
+
+    def test_established_company_has_prior_history(self):
+        with patch.object(SignalFilter, '_get_earnings_dates', return_value=[
+            "2024-11-15", "2025-02-15", "2025-05-15"
+        ]):
+            r = SignalFilter.apply_filter("AAPL", "2025-04-01")
+            assert r.no_history_before_signal is False
+
+    def test_no_history_flag_does_not_change_pass_fail(self):
+        """Recording only — a new listing beyond 60d still fails on the real rule."""
+        with patch.object(SignalFilter, '_get_earnings_dates', return_value=[
+            "2025-12-15"
+        ]):
+            r = SignalFilter.apply_filter("AIAI", "2025-07-01")
+            assert r.no_history_before_signal is True
+            assert r.passed is False
+            assert r.outcome == OUTCOME_REJECT_BEYOND

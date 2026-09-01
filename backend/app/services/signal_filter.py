@@ -30,12 +30,33 @@ HOSTILE_KEYWORDS = [
 ]
 
 
+# Earnings-gate outcome vocabulary. Recorded on EVERY transaction, pass or fail,
+# so "why did this pass?" is answerable later. Before this existed only rejections
+# were recorded (classification_rule=EARNINGS_FILTER), which made the gate
+# un-auditable after the fact — yfinance's earnings coverage changes over time, so
+# the decision cannot be reconstructed retrospectively.
+OUTCOME_PASS_WITHIN = "pass_within_60d"        # real pass: next earnings <= 60d
+OUTCOME_REJECT_BEYOND = "reject_beyond_60d"    # real reject: next earnings > 60d
+OUTCOME_PASS_NO_DATA = "pass_no_data"          # FAIL-OPEN: no earnings dates at all
+OUTCOME_PASS_NO_FUTURE = "pass_no_future"      # FAIL-OPEN: none on/after signal date
+OUTCOME_PASS_FETCH_ERROR = "pass_fetch_error"  # FAIL-OPEN: fetch raised
+
+FAIL_OPEN_OUTCOMES = frozenset({
+    OUTCOME_PASS_NO_DATA, OUTCOME_PASS_NO_FUTURE, OUTCOME_PASS_FETCH_ERROR,
+})
+
+
 @dataclass
 class FilterResult:
     """Result of applying the signal filter."""
     passed: bool
     earnings_distance: Optional[int]
     reason: str
+    outcome: str = ""
+    # True when the company has no earnings date BEFORE signal_date — i.e. it had
+    # never reported at the time of the buy (new listing / IPO / de-SPAC). Recorded
+    # now for measurement; the fail-closed rule that will use it is not yet built.
+    no_history_before_signal: bool = False
 
 
 @dataclass
@@ -117,17 +138,23 @@ class SignalFilter:
             return FilterResult(
                 passed=True,
                 earnings_distance=None,
-                reason="Warning: error fetching earnings data — signal passed by default"
+                reason="Warning: error fetching earnings data — signal passed by default",
+                outcome=OUTCOME_PASS_FETCH_ERROR,
             )
 
         if not earnings_dates:
             return FilterResult(
                 passed=True,
                 earnings_distance=None,
-                reason="Warning: no earnings data available — signal passed by default"
+                reason="Warning: no earnings data available — signal passed by default",
+                outcome=OUTCOME_PASS_NO_DATA,
+                no_history_before_signal=True,
             )
 
         sig_dt = datetime.strptime(signal_date[:10], "%Y-%m-%d")
+        # Had this company reported at all before the buy? Distinguishes a genuine
+        # new listing from merely thin coverage.
+        no_history = not any(d < signal_date[:10] for d in earnings_dates)
         next_earnings_dist = None
 
         for d in earnings_dates:
@@ -143,20 +170,26 @@ class SignalFilter:
             return FilterResult(
                 passed=True,
                 earnings_distance=None,
-                reason="Warning: no future earnings date found from signal date — signal passed by default"
+                reason="Warning: no future earnings date found from signal date — signal passed by default",
+                outcome=OUTCOME_PASS_NO_FUTURE,
+                no_history_before_signal=no_history,
             )
 
         if next_earnings_dist <= EARNINGS_THRESHOLD_DAYS:
             return FilterResult(
                 passed=True,
                 earnings_distance=next_earnings_dist,
-                reason=f"Earnings in {next_earnings_dist}d — within {EARNINGS_THRESHOLD_DAYS}d window (mid-quarter conviction)"
+                reason=f"Earnings in {next_earnings_dist}d — within {EARNINGS_THRESHOLD_DAYS}d window (mid-quarter conviction)",
+                outcome=OUTCOME_PASS_WITHIN,
+                no_history_before_signal=no_history,
             )
         else:
             return FilterResult(
                 passed=False,
                 earnings_distance=next_earnings_dist,
-                reason=f"Earnings in {next_earnings_dist}d — beyond {EARNINGS_THRESHOLD_DAYS}d threshold (post-earnings, no informational edge)"
+                reason=f"Earnings in {next_earnings_dist}d — beyond {EARNINGS_THRESHOLD_DAYS}d threshold (post-earnings, no informational edge)",
+                outcome=OUTCOME_REJECT_BEYOND,
+                no_history_before_signal=no_history,
             )
 
     @staticmethod

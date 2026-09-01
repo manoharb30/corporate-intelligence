@@ -100,6 +100,9 @@ async def ingest_transaction(filing: dict, txn: dict, cls: dict, log) -> str:
         "classification": cls.get("classification", "GENUINE"),
         "cls_reason": cls.get("reason", "")[:500],
         "cls_rule": cls.get("rule_triggered", ""),
+        "earnings_outcome": cls.get("earnings_outcome", ""),
+        "earnings_distance_days": cls.get("earnings_distance_days"),
+        "earnings_no_history": cls.get("earnings_no_history", False),
         "has_hostile_activist": cls.get("has_hostile_activist", False),
         "now": now,
     }
@@ -148,6 +151,9 @@ async def ingest_transaction(filing: dict, txn: dict, cls: dict, log) -> str:
                 t.classification = $classification,
                 t.classification_reason = $cls_reason,
                 t.classification_rule = $cls_rule,
+                t.earnings_outcome = $earnings_outcome,
+                t.earnings_distance_days = $earnings_distance_days,
+                t.earnings_no_history = $earnings_no_history,
                 t.classified_at = $now,
                 t.has_hostile_activist = $has_hostile_activist
 
