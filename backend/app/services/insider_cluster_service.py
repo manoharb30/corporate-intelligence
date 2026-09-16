@@ -97,6 +97,21 @@ MAX_MARKET_CAP_USD: int = 5_000_000_000  # midcap ceiling
 CLUSTER_WINDOW_DAYS: int = 30            # frozen at formation; 90d is returns only
 
 
+def build_form4_url(cik: str, accession: str, primary_document: str) -> str:
+    """EDGAR document URL for a Form 4.
+
+    `primary_document` alone is only a filename ('ownership.xml') — it is not a
+    URL and must never be handed to the frontend as one. Falls back to the
+    filing index page when the document name is missing.
+    """
+    if not accession:
+        return ""
+    acc_nd = accession.replace("-", "")
+    if primary_document:
+        return f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc_nd}/{primary_document}"
+    return f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc_nd}/{accession}-index.htm"
+
+
 def classify_insider_role(title: str) -> str:
     """Classify insider title into role category for signal weighting.
 

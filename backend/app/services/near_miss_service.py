@@ -26,6 +26,7 @@ from app.services.insider_cluster_service import (
     MIN_MARKET_CAP_USD,
     MAX_MARKET_CAP_USD,
     CLUSTER_WINDOW_DAYS,
+    build_form4_url,
     classify_insider_role,
 )
 from app.services.research_note_service import ResearchNoteService
@@ -154,7 +155,11 @@ class NearMissService:
                     role=classify_insider_role(row.get("insider_title") or ""),
                     transaction_date=_date_only(row.get("transaction_date")),
                     value=value,
-                    form4_url=row.get("form4_url"),
+                    form4_url=build_form4_url(
+                        row.get("cik") or "",
+                        row.get("accession_number") or "",
+                        row.get("primary_document") or "",
+                    ),
                 )
             else:
                 existing.value += value
@@ -210,7 +215,8 @@ class NearMissService:
                    t.classification_rule as classification_rule,
                    t.classification_reason as classification_reason,
                    t.filing_date as filing_date,
-                   t.primary_document as form4_url
+                   t.accession_number as accession_number,
+                   t.primary_document as primary_document
             ORDER BY t.transaction_date DESC
         """
         rows = await Neo4jClient.execute_query(
