@@ -85,7 +85,18 @@ logger = logging.getLogger(__name__)
 #     stayed NULL and it silently failed the $300M floor rather than being judged.
 #     Blocked 2026-08-29 to make the exclusion deliberate. Foreign-listing exclusion —
 #     first of its kind in this list.
-EXCLUDED_CIKS: set[str] = {"0002064307", "0001384195", "0002039497", "0002052053", "0001712184", "0001614178", "0001680581", "0002096362", "0001439124"}
+#   0001840572 — Lucky Strike Entertainment (LUCK): blocked 2026-09-16 on per-arrival
+#     fundamental review of its 2026-09-11 strong_buy, which was removed with it
+#     (remove_luck_2026-09-16.py). Two problems. First, the cluster was a two-insider
+#     signal in name only: Shannon (founder/CEO) bought $175,800 and Bass bought
+#     $3,268 — 1.8% of Shannon's size — so the 2-insider gate cleared on a token buy.
+#     Second, the balance sheet: EV $4.11B against a $749M market cap, total debt
+#     $3.27B on $274M EBITDA (~11.9x), book equity NEGATIVE (P/B -1.88), revenue flat
+#     at +0.9%, TTM net margin -2.9%, FCF ~-$1.1M, cash $39M with a 0.50 current
+#     ratio. Not a dilution left tail (share count is shrinking) — a leverage one.
+#     Judgment call under the per-arrival review practice, not a new gate: no
+#     fundamental filter is being introduced and the matured cohort is untouched.
+EXCLUDED_CIKS: set[str] = {"0002064307", "0001384195", "0002039497", "0002052053", "0001712184", "0001614178", "0001680581", "0002096362", "0001439124", "0001840572"}
 
 # === Cluster gates (single source of truth) ===
 # The strong_buy definition. Imported by other services (near_miss_service) so a
