@@ -331,6 +331,84 @@ export default function SignalDetail() {
         </div>
       )}
 
+      {/* Research note — our own written review of this name. Anchored on the
+          company, so a note written before it ever signalled shows up here too.
+          Rendered above Signal Watch: the thesis is the claim, the promise
+          ledger is the scoreboard against it. */}
+      {data.research_notes && data.research_notes.length > 0 && (
+        <div>
+          <h3 className="font-bold text-base mb-3">Research Note</h3>
+          <div className="space-y-4">
+            {data.research_notes.map((note) => (
+              <div key={note.note_date} className="border border-gray-200 rounded-lg p-4">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-3">
+                  <span className="text-xs text-gray-600 uppercase tracking-wider">
+                    {note.note_date}
+                  </span>
+                  <span
+                    className={`px-2 py-0.5 rounded text-xs font-semibold ${
+                      note.verdict === 'watch'
+                        ? 'bg-amber-50 text-amber-900'
+                        : note.verdict === 'pass'
+                        ? 'bg-gray-100 text-gray-700'
+                        : 'bg-red-50 text-red-800'
+                    }`}
+                  >
+                    {note.verdict.split('_').join(' ')}
+                  </span>
+                  {note.mcap_at_note != null && (
+                    <span className="text-xs text-gray-500 tabular-nums">
+                      mcap at note ${(note.mcap_at_note / 1e6).toLocaleString(undefined, {
+                        maximumFractionDigits: 0,
+                      })}M
+                    </span>
+                  )}
+                </div>
+
+                {/* Theses carry paragraph breaks — preserve them. */}
+                <div className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                  {note.thesis}
+                </div>
+
+                {note.risk_flags.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-3">
+                    {note.risk_flags.map((f) => (
+                      <span key={f} className="px-2 py-0.5 rounded bg-red-50 text-red-800 text-xs">
+                        {f.split('_').join(' ')}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {note.catalysts.length > 0 && (
+                  <div className="mt-3">
+                    <div className="text-xs text-gray-600 uppercase tracking-wider mb-1">
+                      Catalysts
+                    </div>
+                    <ul className="list-disc list-inside text-sm text-gray-700 space-y-0.5">
+                      {note.catalysts.map((c, i) => (
+                        <li key={i}>{c}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {note.sources.length > 0 && (
+                  <div className="mt-3 text-xs text-gray-500">
+                    <span className="uppercase tracking-wider">Sources</span>
+                    <ul className="list-disc list-inside mt-1 space-y-0.5">
+                      {note.sources.map((s, i) => (
+                        <li key={i}>{s}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Signal Watch — promise-vs-delivery record */}
       {company.ticker && perf?.signal_date && (
         <SignalWatch ticker={company.ticker} signalDate={perf.signal_date} />

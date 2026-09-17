@@ -1325,6 +1325,14 @@ class InsiderClusterService:
                     if kw in text_lower and kw not in hostile_keywords:
                         hostile_keywords.append(kw)
 
+        # Research notes for this company. Notes are anchored on Company, so a
+        # name we reviewed BEFORE it ever signalled carries its note forward to
+        # here. Until now these only rendered on /research-queue, which lists
+        # earnings-filtered near-misses — so a note written about an actual
+        # signal was invisible. Additive key; newest first.
+        from app.services.research_note_service import ResearchNoteService
+        research_notes = await ResearchNoteService.get_notes(cik)
+
         signal_type = "insider_sell_cluster" if is_sell else "insider_cluster"
         agreement_type = "Insider Sell Cluster" if is_sell else "Insider Cluster"
         trade_verb = "sales" if is_sell else "purchases"
@@ -1384,4 +1392,5 @@ class InsiderClusterService:
             },
             "has_hostile_activist": has_hostile,
             "hostile_keywords": hostile_keywords,
+            "research_notes": research_notes,
         }

@@ -84,6 +84,7 @@ export interface EventDetailResponse {
   cluster_detail?: ClusterDetail
   has_hostile_activist?: boolean
   hostile_keywords?: string[]
+  research_notes?: ResearchNote[]
 }
 
 export const eventDetailApi = {
@@ -292,7 +293,7 @@ export interface NearMissBuyer {
   form4_url: string | null
 }
 
-export interface NearMissResearchNote {
+export interface ResearchNote {
   note_date: string
   ticker: string | null
   thesis: string
@@ -302,6 +303,9 @@ export interface NearMissResearchNote {
   sources: string[]
   mcap_at_note: number | null
 }
+
+/** Historical alias — the same shape, kept so existing imports keep working. */
+export type NearMissResearchNote = ResearchNote
 
 export interface NearMiss {
   cik: string
