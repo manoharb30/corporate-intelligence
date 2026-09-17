@@ -16,7 +16,13 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from app.db.neo4j_client import Neo4jClient
-from app.services.insider_cluster_service import InsiderClusterService
+from app.services.insider_cluster_service import (
+    InsiderClusterService,
+    MIN_CLUSTER_INSIDERS,
+    MIN_CLUSTER_VALUE_USD,
+    MIN_MARKET_CAP_USD,
+    MAX_MARKET_CAP_USD,
+)
 from ingestion.sec_edgar.xbrl_client import SharesOutstandingEntry, XBRLClient
 
 logger = logging.getLogger(__name__)
@@ -105,21 +111,24 @@ def compute_conviction_tier(
 ) -> str:
     """Compute conviction tier from historical market cap and cluster criteria.
 
-    strong_buy: midcap ($300M-$5B) + $100K+ value + 2+ buyers
-    buy: midcap OR $100K+ (one condition met, 2+ buyers)
-    watch: below both thresholds or single buyer
+    strong_buy: midcap + value + enough buyers — all three gates met
+    buy: midcap OR value (one condition met, enough buyers)
+    watch: below both thresholds or too few buyers
 
-    Upper cap tightened from $10B to $5B based on analysis:
-    $5B-$10B bucket had 38.1% HR vs 67.4% for <$5B (p=0.018, CIs don't overlap).
+    Thresholds are IMPORTED from insider_cluster_service, never redeclared here.
+    This function decides the tier that gets STORED on every signal, so a literal
+    copy would silently outlive a gate change made in the one authoritative place.
+    (Upper cap was tightened $10B -> $5B on 2026-04-17: the $5B-$10B bucket had
+    38.1% HR vs 67.4% for <$5B, p=0.018, CIs don't overlap.)
     """
-    if num_buyers < 2:
+    if num_buyers < MIN_CLUSTER_INSIDERS:
         return "watch"
 
     is_midcap = (
         historical_mcap is not None
-        and 300_000_000 <= historical_mcap <= 5_000_000_000
+        and MIN_MARKET_CAP_USD <= historical_mcap <= MAX_MARKET_CAP_USD
     )
-    has_value = total_value >= 100_000
+    has_value = total_value >= MIN_CLUSTER_VALUE_USD
 
     if is_midcap and has_value:
         return "strong_buy"

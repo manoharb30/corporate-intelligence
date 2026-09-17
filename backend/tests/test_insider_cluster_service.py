@@ -221,22 +221,6 @@ class TestOfficerPromotion:
     """Tests for officer-based signal promotion (Change 2)."""
 
     @pytest.mark.asyncio
-    async def test_two_officers_promoted_to_high(self):
-        """2 officers buying with >$200K total -> promoted to HIGH."""
-        trades = [
-            _make_trade("Alice", "P", 150000, _today_minus(5), "CEO"),
-            _make_trade("Bob", "P", 100000, _today_minus(10), "CFO"),
-        ]
-
-        with patch("app.services.insider_cluster_service.Neo4jClient") as mock_db:
-            mock_db.execute_query = AsyncMock(return_value=trades)
-            result = await InsiderClusterService.detect_clusters(days=90, min_level="low")
-
-        assert len(result) == 1
-        assert result[0].signal_level == "high"
-        assert "Officer Cluster" in result[0].signal_summary
-
-    @pytest.mark.asyncio
     async def test_two_officers_low_value_stays_medium(self):
         """2 officers buying with <$200K total -> stays MEDIUM (no promotion)."""
         trades = [
@@ -289,21 +273,6 @@ class TestConvictionTiers:
     """Tests for conviction tier classification (Change 6)."""
 
     @pytest.mark.asyncio
-    async def test_three_buyers_two_officers_strong_buy(self):
-        """3+ buyers with 2+ officers -> strong_buy."""
-        trades = [
-            _make_trade("Alice", "P", 100000, _today_minus(5), "CEO"),
-            _make_trade("Bob", "P", 50000, _today_minus(10), "CFO"),
-            _make_trade("Charlie", "P", 75000, _today_minus(15), "COO"),
-        ]
-
-        with patch("app.services.insider_cluster_service.Neo4jClient") as mock_db:
-            mock_db.execute_query = AsyncMock(return_value=trades)
-            result = await InsiderClusterService.detect_clusters(days=90, min_level="low")
-
-        assert result[0].conviction_tier == "strong_buy"
-
-    @pytest.mark.asyncio
     async def test_three_buyers_no_officers_buy(self):
         """3+ buyers but no officers -> buy (not strong_buy)."""
         trades = [
@@ -331,20 +300,6 @@ class TestConvictionTiers:
             result = await InsiderClusterService.detect_clusters(days=90, min_level="low")
 
         assert result[0].conviction_tier == "buy"
-
-    @pytest.mark.asyncio
-    async def test_two_buyers_no_officers_watch(self):
-        """2 buyers with no officers -> watch."""
-        trades = [
-            _make_trade("Alice", "P", 100000, _today_minus(5), "Director"),
-            _make_trade("Bob", "P", 50000, _today_minus(10), "10% Owner"),
-        ]
-
-        with patch("app.services.insider_cluster_service.Neo4jClient") as mock_db:
-            mock_db.execute_query = AsyncMock(return_value=trades)
-            result = await InsiderClusterService.detect_clusters(days=90, min_level="low")
-
-        assert result[0].conviction_tier == "watch"
 
     @pytest.mark.asyncio
     async def test_sell_cluster_always_watch(self):

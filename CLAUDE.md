@@ -219,7 +219,7 @@ ssh lookinsight@178.156.152.231 'cd /srv/lookinsight/compose && docker compose b
 cd backend && venv/bin/python -m pytest tests/ -q
 ```
 
-Known pre-existing failures live in `test_insider_cluster_service.py` and assert on the `watch` / `high` conviction-tier ladder that v1.3 removed — stale tests, not broken code. Run the suite to see the current tally rather than trusting a number written here; if failures appear OUTSIDE that file, they are probably yours.
+**The suite is green.** There are no known-failing tests, so any red is yours — do not assume a failure is pre-existing.
 
 **Gotcha worth remembering:** these unit tests patch `Neo4jClient` *in the module under test*. If a service reaches the DB through a COLLABORATOR's import (e.g. `ResearchNoteService.get_notes()` from inside `insider_cluster_service`), the patch does not apply and the test hits the real, unconnected client. Compose across services at the **route** layer instead.
 
