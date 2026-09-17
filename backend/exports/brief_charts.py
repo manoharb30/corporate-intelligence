@@ -186,14 +186,14 @@ def main() -> int:
     parser.add_argument(
         "--stats-json",
         type=Path,
-        default=Path("../.paul/phases/05-research-brief-pdf/stats.json"),
+        default=Path("out/stats.json"),
     )
     parser.add_argument("--csv", type=Path, default=None)
     parser.add_argument("--export-dir", type=Path, default=Path("exports/out"))
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("../.paul/phases/05-research-brief-pdf/charts"),
+        default=Path("out/charts"),
     )
     args = parser.parse_args()
 

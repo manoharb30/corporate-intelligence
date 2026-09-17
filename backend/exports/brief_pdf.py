@@ -27,9 +27,9 @@ from weasyprint import HTML, CSS
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-DEFAULT_MD = Path("../.paul/phases/05-research-brief-pdf/brief_v1_1.md")
+DEFAULT_MD = Path("out/brief_v1_1.md")
 DEFAULT_CSS = Path("exports/brief.css")
-DEFAULT_OUT = Path("../.paul/phases/05-research-brief-pdf/LookInsight_Insider_Conviction_Signals.pdf")
+DEFAULT_OUT = Path("out/LookInsight_Insider_Conviction_Signals.pdf")
 
 
 def slugify(text: str) -> str:

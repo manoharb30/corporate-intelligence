@@ -8,7 +8,7 @@ Run from the backend/ directory:
     venv/bin/python -m exports.brief_stats --csv <path> --output <path>
 
 Outputs:
-    ../.paul/phases/05-research-brief-pdf/stats.json
+    backend/exports/out/stats.json
 """
 
 import argparse
@@ -189,7 +189,7 @@ async def main() -> int:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("../.paul/phases/05-research-brief-pdf/stats.json"),
+        default=Path("out/stats.json"),
         help="Output JSON path",
     )
     parser.add_argument(

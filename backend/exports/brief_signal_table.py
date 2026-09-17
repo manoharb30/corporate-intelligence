@@ -63,12 +63,12 @@ def main() -> int:
     parser.add_argument(
         "--stats-json",
         type=Path,
-        default=Path("../.paul/phases/05-research-brief-pdf/stats.json"),
+        default=Path("out/stats.json"),
     )
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("../.paul/phases/05-research-brief-pdf/per_signal_table.md"),
+        default=Path("out/per_signal_table.md"),
     )
     args = parser.parse_args()
 

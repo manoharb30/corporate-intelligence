@@ -216,13 +216,8 @@ ssh lookinsight@178.156.152.231 'cd /srv/lookinsight/compose && docker compose b
 ## Testing
 
 ```bash
-cd backend && venv/bin/python -m pytest tests/ -q \
-  --ignore=tests/test_accuracy_service.py --ignore=tests/test_company_search.py
+cd backend && venv/bin/python -m pytest tests/ -q
 ```
-
-**Two test files are orphaned** — they import services that no longer exist, so they must be ignored (or deleted):
-- `test_accuracy_service.py` → `app.services.accuracy_service` — this one breaks **collection**, so the bare `pytest tests/` aborts and runs nothing.
-- `test_company_search.py` → `app.services.company_service`.
 
 Known pre-existing failures live in `test_insider_cluster_service.py` and assert on the `watch` / `high` conviction-tier ladder that v1.3 removed — stale tests, not broken code. Run the suite to see the current tally rather than trusting a number written here; if failures appear OUTSIDE that file, they are probably yours.
 
@@ -256,4 +251,3 @@ $100K Alpaca **paper** account trading LookInsight's own signals, so the publish
 - Ingest cadence is **occasional operator catchup**, not daily automation. A catchup run carries maturation + price refresh + dashboard.
 - Institutional sales cycle has been active since early 2026; the Neudata engagement concluded 2026-04-23.
 - Next milestone: marketing + operational (daily auto-ingest, alerts, S3 delivery, paid clients).
-- `.paul/` still exists on disk but the PAUL framework is no longer used (STATE.md last touched 2026-06-09) — ignore it.

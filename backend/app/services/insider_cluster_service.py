@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 #   0002064307 — ContextLogic Holdings (LOGC): Abrams-controlled permanent-capital
 #     vehicle (post-US-Salt reverse-merger holdco, ~40% fund-controlled). Genuine
 #     open-market buys, but a controlled-vehicle false positive, not an operating
-#     midcap insider cluster. Removed 2026-06-09. See .paul/phases/21-control-vehicle-exclusion.
+#     midcap insider cluster. Removed 2026-06-09.
 #   0001384195 — Ring Energy (REI): sub-$2 conventional Permian E&P. Genuine CEO+CFO
 #     open-market cluster (2026-06-16), but true mcap ~$233-284M (253.9M sh × $1.12) is
 #     below the $300M midcap floor; it only passed on a stale 2026-04-22 yfinance mcap
