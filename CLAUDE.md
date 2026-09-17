@@ -56,16 +56,20 @@ A **strong_buy** signal is emitted when all of the following hold on a given dat
 - Within 60 days of next earnings (`earn<=60d`, p=0.003)
 - Returns measured from **filing date** (actionable), not transaction date
 
-Gates live in ONE place — `insider_cluster_service.py` (`MIN_CLUSTER_INSIDERS`, `MIN_CLUSTER_VALUE_USD`, `MIN_MARKET_CAP_USD`, `MAX_MARKET_CAP_USD`, `CLUSTER_WINDOW_DAYS`, `EXCLUDED_CIKS`). Other services import them; never redeclare a gate.
+Gates live in ONE place — `insider_cluster_service.py` (`MIN_CLUSTER_INSIDERS`, `MIN_CLUSTER_VALUE_USD`, `MIN_MARKET_CAP_USD`, `MAX_MARKET_CAP_USD`, `CLUSTER_WINDOW_DAYS`, `EXCLUDED_CIKS`). Other services import them; never redeclare a gate. **The thresholds above are mirrored here for readability — the constants in that file are authoritative.** If they ever disagree, the code is right and this file is stale.
 
-### ⚠️ Headline numbers are MOVING — never hardcode them
-Metrics change every time signals mature. Always quote them "as of [date]" and **query them live** before any external use:
+### ⚠️ NEVER write headline numbers into this file, or any doc
+Cohort size, hit rate, alpha, avg return and beat-SPY all change every time a signal
+matures. A number written down here is wrong within weeks and will be quoted to a client.
+**Discover them when they are actually needed:**
 
 ```
 GET https://ci.lookinsight.ai/api/signal-performance/dashboard-stats
 ```
 
-As of **2026-09-17**: 201 mature signals, 65.7% hit rate, +7.6pp alpha vs SPY, 59.2% beat SPY, 13.7% avg return. (Memory: `feedback_moving_numbers.md`.)
+Always quote results as "as of [date]". Same applies to open-signal counts, blocklist
+size, promise-ledger tallies and research-queue depth — query, don't remember.
+(Memory: `feedback_moving_numbers.md`.)
 
 Deprecated signal frameworks (DO NOT reintroduce):
 - 8-K M&A material-agreement combinations (Items 1.01/5.02/5.03/2.01) — replaced by insider clusters
@@ -207,7 +211,7 @@ ssh lookinsight@178.156.152.231 'cd /srv/lookinsight/compose && docker compose b
 - `signal_date` is the cluster **window end**, not the first buy date.
 - `detect_clusters(days=N)` filters TRANSACTIONS, not signal_date — pass `days=N+30` when scoping to the last N days.
 - `compute_all` is DEPRECATED; the live path is `process_incremental`.
-- `Company.market_cap` is frequently **stale** (observed −20% to −43%). Recompute shares × price before trusting it near a gate boundary.
+- `Company.market_cap` is frequently **stale**, sometimes by tens of percent. Recompute shares × price before trusting it near a gate boundary, and never quote it as the company's market cap.
 
 ## Testing
 
@@ -220,11 +224,11 @@ cd backend && venv/bin/python -m pytest tests/ -q \
 - `test_accuracy_service.py` → `app.services.accuracy_service` — this one breaks **collection**, so the bare `pytest tests/` aborts and runs nothing.
 - `test_company_search.py` → `app.services.company_service`.
 
-With both ignored: **350 pass, 3 fail.** The 3 known pre-existing failures are all in `test_insider_cluster_service.py`, asserting on the `watch` / `high` conviction-tier ladder that v1.3 removed — stale tests, not broken code.
+Known pre-existing failures live in `test_insider_cluster_service.py` and assert on the `watch` / `high` conviction-tier ladder that v1.3 removed — stale tests, not broken code. Run the suite to see the current tally rather than trusting a number written here; if failures appear OUTSIDE that file, they are probably yours.
 
 **Gotcha worth remembering:** these unit tests patch `Neo4jClient` *in the module under test*. If a service reaches the DB through a COLLABORATOR's import (e.g. `ResearchNoteService.get_notes()` from inside `insider_cluster_service`), the patch does not apply and the test hits the real, unconnected client. Compose across services at the **route** layer instead.
 
-Core suites: `test_signal_filter.py` (27), `test_signal_performance_service.py` (44), `test_near_miss_service.py`, `test_near_miss_route.py`, `test_signal_watch_service.py`, `test_research_note_service.py`.
+Core suites: `test_signal_filter.py`, `test_signal_performance_service.py`, `test_near_miss_service.py`, `test_near_miss_route.py`, `test_signal_watch_service.py`, `test_research_note_service.py`.
 
 ## Architecture Governance (sentrux)
 
