@@ -96,7 +96,27 @@ logger = logging.getLogger(__name__)
 #     ratio. Not a dilution left tail (share count is shrinking) — a leverage one.
 #     Judgment call under the per-arrival review practice, not a new gate: no
 #     fundamental filter is being introduced and the matured cohort is untouched.
-EXCLUDED_CIKS: set[str] = {"0002064307", "0001384195", "0002039497", "0002052053", "0001712184", "0001614178", "0001680581", "0002096362", "0001439124", "0001840572"}
+#   0001788257 — Betterware de Mexico (BWMX): blocked 2026-09-17 on per-arrival review
+#     of its 2026-09-17 strong_buy, removed with it (remove_bwmx_2026-09-17.py).
+#     FIRST exclusion for control-block buyer concentration — see the
+#     control_block_buyers flag in research_note_service. The "3 insiders" are one
+#     family buying on the same two days: Luis Campos (director AND 10% owner, voting
+#     and investment power over Campalier S.A. de C.V. per his Form 4 footnote) plus
+#     sons Andres Campos Chevallier (CEO) and Santiago Campos Chevallier (MD Betterware
+#     Mexico), with insiders already holding 63.2%. The 2+ insider gate counts heads,
+#     not independent decisions. Compounding it: $2.29M sits in the journal-L1 $1-5M
+#     dead zone, D/E is 339% (6x the worst direct-selling peer), FCF is ~-$89M on
+#     positive operating cash flow, and the entry is only -19% off the 52w high when
+#     62% of our signals form in the bottom quintile.
+#     NOT a data-quality exclusion: unlike AXIA3 the Form 4 values are genuinely USD
+#     ($16.2588/$16.4416 weighted averages, footnote ranges $15.7689-$16.4694, verified
+#     against the EDGAR XML) and the earnings gate recorded a real pass_within_60d, not
+#     a fail-open. The business is the best in its peer group on growth and margin.
+#     This is a buyer-independence judgment call, not a fundamental screen.
+#     NOTE: BWMX reports in MXN (275 XBRL facts in MXN vs 22 in USD) while price and
+#     market cap are USD, so any ratio mixing the two is unreliable — the "P/E 6.2" on
+#     screens is really ~11x. Mexican FPI: 20-F and 6-K only, no 10-Q.
+EXCLUDED_CIKS: set[str] = {"0002064307", "0001384195", "0002039497", "0002052053", "0001712184", "0001614178", "0001680581", "0002096362", "0001439124", "0001840572", "0001788257"}
 
 # === Cluster gates (single source of truth) ===
 # The strong_buy definition. Imported by other services (near_miss_service) so a

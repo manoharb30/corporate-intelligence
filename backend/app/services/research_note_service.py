@@ -32,7 +32,32 @@ RISK_FLAGS = {
     "going_concern",        # auditor/liquidity doubt
     "reverse_split",        # split artifact in price history
     "shell_profile",        # minimal operations / shell-like structure
+    "control_block_buyers",  # see below — added 2026-09-17 (BWMX)
 }
+
+# control_block_buyers — the cluster's "independent" insiders are not independent.
+#
+# The 2+ insider gate counts HEADS, not decisions. It exists to capture several
+# insiders independently concluding the stock is cheap. It cannot see that the
+# buyers are one family, one fund, or one control block acting together, so a
+# single decision can present as a multi-insider cluster and clear the gate.
+#
+# Flag it when the buyers share ANY of:
+#   - a surname / disclosed family relationship (BWMX 2026-09-17: Luis Campos,
+#     director + 10% owner, plus sons Andres (CEO) and Santiago (MD), buying on
+#     the same two days while insiders already held 63.2%)
+#   - a common holding vehicle in the Form 4 footnotes ("voting and investment
+#     power over shares held directly by <entity>")
+#   - the same fund/sponsor, or seats appointed by one holder
+#
+# Distinct from the LOGC/RHLD/PWRL control-VEHICLE exclusions in
+# insider_cluster_service.EXCLUDED_CIKS: those were entities that are not
+# operating midcaps at all. This flag is about WHO BOUGHT in a company that is
+# otherwise perfectly in universe.
+#
+# Informational, never automatic: it is a prompt to check independence during
+# per-arrival review, not a gate. Concentrated family buying can still be a
+# genuine signal.
 
 
 def _pad(cik: str) -> str:

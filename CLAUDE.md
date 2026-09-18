@@ -87,6 +87,28 @@ This is settled and should not be re-litigated. The 2026-06-15 pressure tests co
 - This does NOT conflict with the frozen-cohort rule, which protects **matured** rows. Live signals are reviewable.
 - Findings are written to a `ResearchNote` on the Company so the reasoning survives.
 
+### Check buyer INDEPENDENCE, not just buyer count
+`MIN_CLUSTER_INSIDERS` counts **heads, not decisions**. It assumes several insiders
+independently concluded the stock is cheap. It cannot see that the buyers are one family,
+one fund, or one control block — so a single decision can present as a multi-insider
+cluster and clear the gate cleanly. Two ways this has actually happened:
+
+- **Token buy** — the cluster is one real buyer plus a rounding error. LUCK (2026-09-16):
+  founder/CEO $175,800 alongside a director's $3,268, 1.8% of his size.
+- **Control block** — the buyers are one decision unit. BWMX (2026-09-17): a director who
+  is also a 10% owner plus his two sons, buying on the same two days, with insiders
+  already holding 63.2%.
+
+On every arriving cluster, look at the buyer list before anything else and ask: are these
+independent? Signals worth checking for: a shared surname or disclosed family
+relationship; a common holding vehicle named in the Form 4 footnotes ("voting and
+investment power over shares held directly by <entity>"); the same fund or sponsor;
+holder-appointed board seats; already-high insider ownership; or one buy dwarfing the
+others. Tag it `control_block_buyers` on the ResearchNote.
+
+Neither is an automatic reject — concentrated family buying can be a real signal, and the
+flag is informational. It is a prompt to judge independence during review, never a gate.
+
 ## Architecture
 
 - **Backend:** FastAPI (Python 3.13), port 8000
