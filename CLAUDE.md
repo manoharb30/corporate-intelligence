@@ -93,11 +93,19 @@ independently concluded the stock is cheap. It cannot see that the buyers are on
 one fund, or one control block — so a single decision can present as a multi-insider
 cluster and clear the gate cleanly. Two ways this has actually happened:
 
-- **Token buy** — the cluster is one real buyer plus a rounding error. LUCK (2026-09-16):
-  founder/CEO $175,800 alongside a director's $3,268, 1.8% of his size.
-- **Control block** — the buyers are one decision unit. BWMX (2026-09-17): a director who
-  is also a 10% owner plus his two sons, buying on the same two days, with insiders
-  already holding 63.2%.
+- **Token buy** (`token_buy_cluster`) — one buyer barely participated. LUCK (2026-09-16):
+  founder/CEO $175,800 alongside a director's $3,268, 1.8% of his size. KRMN (2026-09-18):
+  $1,007,648 — 97.2% of the cluster — alongside $18,720 and $10,117. In both, removing the
+  token leaves a single buyer that would not have qualified at all.
+  Rules of thumb: largest buy ≥ ~90% of cluster value, or any buyer ≤ ~2% of the lead.
+- **Control block** (`control_block_buyers`) — the buyers are the same people. BWMX
+  (2026-09-17): a director who is also a 10% owner plus his two sons, buying on the same
+  two days, with insiders already holding 63.2%. Look for a shared surname, a common
+  holding vehicle in the Form 4 footnotes, one fund or sponsor, or already-high insider
+  ownership.
+
+For contrast, clusters that are genuinely two decisions: DFH $120,700 / $20,205 (17%),
+TH $250,166 / $124,992 (50%), MCFT $75,016 / $48,745 (65%).
 
 On every arriving cluster, look at the buyer list before anything else and ask: are these
 independent? Signals worth checking for: a shared surname or disclosed family

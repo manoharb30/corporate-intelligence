@@ -33,7 +33,37 @@ RISK_FLAGS = {
     "reverse_split",        # split artifact in price history
     "shell_profile",        # minimal operations / shell-like structure
     "control_block_buyers",  # see below — added 2026-09-17 (BWMX)
+    "token_buy_cluster",     # see below — added 2026-09-19 (KRMN, LUCK)
 }
+
+# token_buy_cluster — the insider COUNT overstates how many people decided.
+#
+# Sibling of control_block_buyers. Both mean the cluster has fewer independent
+# decisions than it has heads; they differ in why:
+#   control_block_buyers — the buyers are the SAME PEOPLE (family, shared
+#     holding vehicle, one fund or sponsor)
+#   token_buy_cluster    — one buyer barely PARTICIPATED
+#
+# MIN_CLUSTER_INSIDERS checks that 2+ insiders bought. It does not check that
+# both buys were serious. So one real buy plus a gesture clears the gate as a
+# two-insider cluster, and removing the gesture often leaves a single buyer that
+# would not have qualified at all.
+#
+# Rules of thumb (guidance for review, not thresholds the code enforces):
+#   - the largest buy is >= ~90% of total cluster value, or
+#   - any buyer's value is <= ~2% of the largest buy
+#
+# Observed:
+#   LUCK 2026-09-16 — Shannon (founder/CEO) $175,800 vs Bass $3,268 (1.8%)
+#   KRMN 2026-09-18 — Stinnett $1,007,648 (97.2% of cluster) vs $18,720 (1.8%)
+#                     and $10,117 (1.0%); both tokens removed leaves ONE buyer
+# For contrast, clusters that are genuinely two decisions:
+#   DFH $120,700 / $20,205 (17%) · TH $250,166 / $124,992 (50%)
+#   MCFT $75,016 / $48,745 (65%)
+#
+# Informational, never automatic. A small buy can be legitimate — a director may
+# have limited liquidity, or be topping up an existing stake. The point is that
+# it should be VISIBLE rather than disappearing into "2 insiders".
 
 # control_block_buyers — the cluster's "independent" insiders are not independent.
 #
