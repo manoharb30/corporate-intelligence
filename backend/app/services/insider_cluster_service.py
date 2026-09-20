@@ -116,7 +116,38 @@ logger = logging.getLogger(__name__)
 #     NOTE: BWMX reports in MXN (275 XBRL facts in MXN vs 22 in USD) while price and
 #     market cap are USD, so any ratio mixing the two is unreliable — the "P/E 6.2" on
 #     screens is really ~11x. Mexican FPI: 20-F and 6-K only, no 10-Q.
-EXCLUDED_CIKS: set[str] = {"0002064307", "0001384195", "0002039497", "0002052053", "0001712184", "0001614178", "0001680581", "0002096362", "0001439124", "0001840572", "0001788257"}
+#   0002040127 — Karman Holdings (KRMN): blocked 2026-09-19 on per-arrival review of its
+#     2026-09-18 strong_buy, removed with it (remove_krmn_th_2026-09-20.py). TWO
+#     objections; the second is the bigger one. (1) token_buy_cluster — Stinnett
+#     $1,007,648 is 97.2% of the cluster next to $18,720 (1.8%) and $10,117 (1.0%), so
+#     removing the tokens leaves ONE buyer and the cluster fails MIN_CLUSTER_INSIDERS
+#     outright; all three directors bought the same day the company furnished an investor
+#     presentation (8-K item 7.01), one information event rather than three judgments.
+#     (2) The -70% drawdown is a PE SPONSOR EXITING INTO A LIVE SHELF: three distributions
+#     in 18 months, a 14,000,000-share selling-stockholder secondary on 2026-05-28 priced
+#     off $63.52 from which the company received nothing, Trive Capital described in that
+#     prospectus as "our former controlling stockholder", only ~11% under a MODIFIED
+#     lock-up, and an S-3ASR automatic shelf filed the same day so further supply needs no
+#     new registration. It fell another 44% AFTER that deal. Growth is half bought (+58.2%
+#     headline vs +24.4% organic) on debt up 81% in four quarters to $875M under a SIXTH
+#     amendment to a 2025 credit agreement, while operating cash flow is $5.9M against
+#     $153.9M EBITDA and FCF is -$57.2M.
+#     NOT a data or eligibility failure: mcap rechecked at $4.738B (132.5M x $35.75), in
+#     band with ~5% headroom; earnings gate a real pass_within_60d; buys genuinely
+#     open-market (weighted-average footnote $36.99-$37.52). The business is excellent —
+#     record Q2, backlog $1.3B up 65%, guidance raised, ~25x forward EV/EBITDA in line
+#     with peers. Closest call so far; see the 2026-09-19 ResearchNote.
+#   0001712189 — Target Hospitality (TH): blocked 2026-09-19 on per-arrival review of its
+#     2026-09-18 strong_buy, removed with it (remove_krmn_th_2026-09-20.py). Buyers are
+#     CLEAN — CEO Archer $250,166 and CCO Schrenk $124,992, both meaningful, no
+#     independence problem. Dropped on ENTRY PRICE: the stock rose 13.2% in the three days
+#     BETWEEN those two buys ($18.69 -> $21.16), and sits -1% off its 52-week high after
+#     +255% in a year. Textbook lesson_post_run_clusters, tagged post_run. Valuation is
+#     extreme on a loss-making business: EV/EBITDA 48.3 vs peers 6.4-15.0, EV/Rev 6.2 vs
+#     0.81-4.71, operating margin NEGATIVE -8.8%, Q2 net loss $9.0M, cash $6.1M on a 0.646
+#     current ratio. Q2 was genuinely strong ($1.4B of awards since January, guidance
+#     raised 11%/13%) — which is why it ran. The insider signal is real; the price is not.
+EXCLUDED_CIKS: set[str] = {"0002064307", "0001384195", "0002039497", "0002052053", "0001712184", "0001614178", "0001680581", "0002096362", "0001439124", "0001840572", "0001788257", "0002040127", "0001712189"}
 
 # === Cluster gates (single source of truth) ===
 # The strong_buy definition. Imported by other services (near_miss_service) so a
