@@ -52,6 +52,13 @@ SLICE = 5000.00
 TRANCHE_NOTIONALS = [1666.67, 1666.67, 1666.66]
 LAST_TRANCHE_ET = (15, 30)
 CASH_BUFFER = 1000.00
+# Never fund to the exact cent. CASH_BUFFER is a STANDING buffer, not a tranche
+# cushion — once it is set aside, exact funding leaves nothing for a fill that
+# slips above its notional, a fee, or a concurrent entry drawing the same cash.
+# 2026-09-21: LMB and MCFT ran the same day; the second read the first's reserved
+# cash as spare, under-funded by a full slice, and the later tranches would have
+# filled on MARGIN rather than failing loudly. Manohar: keep at least 5% spare.
+FUNDING_CUSHION = 1.05
 
 SIGNAL_ID = "CLUSTER-0001825088-2026-09-14"
 SIGNAL_DATE = "2026-09-14"
@@ -199,8 +206,8 @@ def main(commit: bool):
             return
 
         # --- 1. fund the slice out of SGOV -------------------------------
-        if cash < need + CASH_BUFFER:
-            raise_amt = round(need + CASH_BUFFER - cash, 2)
+        if cash < need * FUNDING_CUSHION + CASH_BUFFER:
+            raise_amt = round(need * FUNDING_CUSHION + CASH_BUFFER - cash, 2)
             sgov = get(client, f"/v2/assets/{SWEEP_SYMBOL}")
             log(f"Funding: selling ${raise_amt:,.2f} of {SWEEP_SYMBOL} "
                 f"(cash ${cash:,.2f} < need ${need:,.2f} + buffer ${CASH_BUFFER:,.0f})")
