@@ -186,6 +186,13 @@ export interface DashboardStats {
   computed_at: string
 }
 
+/** Live coverage counts for the hero strip. Never hardcode these — they grow. */
+export interface CoverageStats {
+  transactions_analysed: number
+  genuine_purchases: number
+  companies_covered: number
+}
+
 export const signalPerfApi = {
   getAll: (direction?: string, matureOnly = false, meaningfulOnly = false, limit = 500) =>
     api.get<SignalPerf[]>('/signal-performance', {
@@ -193,6 +200,8 @@ export const signalPerfApi = {
     }),
   getDashboardStats: () =>
     api.get<DashboardStats>('/signal-performance/dashboard-stats'),
+  getCoverageStats: () =>
+    api.get<CoverageStats>('/signal-performance/coverage-stats'),
   getDownloadUrl: (direction?: string, meaningfulOnly = true) =>
     `/api/signal-performance/download?mature_only=true&meaningful_only=${meaningfulOnly}${direction ? '&direction=' + direction : ''}`,
 }

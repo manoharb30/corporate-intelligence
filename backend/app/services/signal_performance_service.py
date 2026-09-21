@@ -167,6 +167,43 @@ class SignalPerformanceService:
     """Computes and stores signal performance data in Neo4j."""
 
     @staticmethod
+    async def get_coverage_stats() -> dict:
+        """Live coverage counts for the public hero strip.
+
+        Computed on request, never hardcoded: these only grow, so a literal in the
+        UI is wrong the day after it is written. Three cheap COUNTs.
+
+        transactions_analysed — every InsiderTransaction we hold a classification
+            for. NOT pipeline throughput: the pipeline reads far more Form 4 rows
+            than it stores, and that figure is not recoverable from the graph, so
+            it is not claimed.
+        genuine_purchases — classification GENUINE. The ratio against
+            transactions_analysed is the product: roughly half are rejected as RSU
+            vesting, DRIP, placements or structured deals.
+        companies_covered — companies with at least one transaction. Deliberately
+            NOT count(Company): market scans create metadata-only Company shells
+            (known_issue_feed_service_shells) which would overstate coverage.
+        """
+        rows = await Neo4jClient.execute_query(
+            """
+            MATCH (t:InsiderTransaction)
+            WITH count(t) AS transactions_analysed,
+                 sum(CASE WHEN t.classification = 'GENUINE' THEN 1 ELSE 0 END) AS genuine_purchases
+            MATCH (c:Company)-[:INSIDER_TRADE_OF]->(:InsiderTransaction)
+            RETURN transactions_analysed, genuine_purchases,
+                   count(DISTINCT c) AS companies_covered
+            """
+        )
+        if not rows:
+            return {"transactions_analysed": 0, "genuine_purchases": 0, "companies_covered": 0}
+        r = rows[0]
+        return {
+            "transactions_analysed": r["transactions_analysed"] or 0,
+            "genuine_purchases": r["genuine_purchases"] or 0,
+            "companies_covered": r["companies_covered"] or 0,
+        }
+
+    @staticmethod
     async def compute_all(days: int = 730) -> dict:
         """Detect clusters and refresh performance data, preserving matured signals.
 

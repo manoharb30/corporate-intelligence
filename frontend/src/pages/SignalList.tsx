@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { snapshotApi, signalPerfApi, SnapshotSignal, DashboardStats } from '../services/api'
+import { snapshotApi, signalPerfApi, SnapshotSignal, DashboardStats, CoverageStats } from '../services/api'
 
 function formatValue(value: number): string {
   if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`
@@ -26,6 +26,7 @@ type ViewMode = '30d' | '60d' | '90d'
 export default function SignalList() {
   const [viewMode, setViewMode] = useState<ViewMode>('30d')
   const [signals, setSignals] = useState<SnapshotSignal[]>([])
+  const [coverage, setCoverage] = useState<CoverageStats | null>(null)
   const [heroStats, setHeroStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
   const navigate = useNavigate()
@@ -53,6 +54,11 @@ export default function SignalList() {
     signalPerfApi.getDashboardStats()
       .then((res) => { if (res.data && !('error' in res.data)) setHeroStats(res.data) })
       .catch(() => {})
+
+    signalPerfApi
+      .getCoverageStats()
+      .then((r) => setCoverage(r.data))
+      .catch(() => {})
   }, [])
 
   return (
@@ -62,16 +68,22 @@ export default function SignalList() {
         {/* Layer 1: Funnel stats */}
         <div className="grid grid-cols-2 gap-x-6 gap-y-5 md:flex md:gap-12 mb-6">
           <div>
-            <div className="text-gray-600 text-xs font-semibold uppercase tracking-wider">Transactions Processed</div>
-            <div className="text-2xl sm:text-3xl font-extrabold tracking-tight">51,054</div>
+            <div className="text-gray-600 text-xs font-semibold uppercase tracking-wider">Transactions Analysed</div>
+            <div className="text-2xl sm:text-3xl font-extrabold tracking-tight">
+              {coverage ? coverage.transactions_analysed.toLocaleString() : '—'}
+            </div>
           </div>
           <div>
             <div className="text-gray-600 text-xs font-semibold uppercase tracking-wider">Genuine Purchases</div>
-            <div className="text-2xl sm:text-3xl font-extrabold tracking-tight">8,357</div>
+            <div className="text-2xl sm:text-3xl font-extrabold tracking-tight">
+              {coverage ? coverage.genuine_purchases.toLocaleString() : '—'}
+            </div>
           </div>
           <div>
-            <div className="text-gray-600 text-xs font-semibold uppercase tracking-wider">Companies Monitored</div>
-            <div className="text-2xl sm:text-3xl font-extrabold tracking-tight">2,287</div>
+            <div className="text-gray-600 text-xs font-semibold uppercase tracking-wider">Companies Covered</div>
+            <div className="text-2xl sm:text-3xl font-extrabold tracking-tight">
+              {coverage ? coverage.companies_covered.toLocaleString() : '—'}
+            </div>
           </div>
           <div>
             <div className="text-gray-600 text-xs font-semibold uppercase tracking-wider">Strong Buy Signals</div>

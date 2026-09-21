@@ -47,6 +47,17 @@ async def get_dashboard_stats():
     return stats
 
 
+@router.get("/coverage-stats")
+async def get_coverage_stats():
+    """Live coverage counts for the public hero strip.
+
+    Returns: transactions_analysed, genuine_purchases, companies_covered.
+    Computed per request — these counts only grow, so the UI must never
+    hardcode them.
+    """
+    return await SignalPerformanceService.get_coverage_stats()
+
+
 @router.get("/download")
 async def download_csv(
     direction: str = Query(default=None, regex="^(buy)$"),  # v1.3: sell removed; all signals are buy
