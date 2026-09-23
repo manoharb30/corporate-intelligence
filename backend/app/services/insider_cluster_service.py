@@ -147,7 +147,22 @@ logger = logging.getLogger(__name__)
 #     0.81-4.71, operating margin NEGATIVE -8.8%, Q2 net loss $9.0M, cash $6.1M on a 0.646
 #     current ratio. Q2 was genuinely strong ($1.4B of awards since January, guidance
 #     raised 11%/13%) — which is why it ran. The insider signal is real; the price is not.
-EXCLUDED_CIKS: set[str] = {"0002064307", "0001384195", "0002039497", "0002052053", "0001712184", "0001614178", "0001680581", "0002096362", "0001439124", "0001840572", "0001788257", "0002040127", "0001712189"}
+#   0001500881 — enCore Energy (EU): blocked 2026-09-22. ELIGIBILITY failure, not a
+#     judgment call — this one should never have formed a signal. Company.market_cap was
+#     stale at $380.6M; true mcap is $235.1M (194.3M shares x $1.21), 22% BELOW the $300M
+#     floor, and at the actual buy prices it was $157M-$206M. Identical failure to REI
+#     (0001384195) above: passed the midcap gate only on a stale yfinance figure. Same
+#     remedy — remove the row, block the CIK. See feedback_mcap_boundary_recheck.
+#     Everything else pointed the same way had it been eligible: sub-$1 stock through the
+#     cluster, ~71% off a $4.18 52-week high, EBITDA -$78.9M and FCF -$89.4M on $55.2M
+#     revenue (-112.8% net margin), debt $113.7M vs $74.0M cash so a raise looks
+#     inevitable, insiders holding 1.91%, and a 47.2M-share day on 2026-09-14 (vs a ~2-3M
+#     norm) with nothing in EDGAR explaining it. Also a uranium name while UUUU is already
+#     in the book — a correlated second bet on one commodity.
+#     Buyer note: Sheriff (Exec Chairman) was $101,250 of the $111,850 cluster — 90.5%,
+#     which trips the token_buy_cluster >=90% guideline — against Little (CEO) at $10,600.
+#     Moot given eligibility, but recorded.
+EXCLUDED_CIKS: set[str] = {"0002064307", "0001384195", "0002039497", "0002052053", "0001712184", "0001614178", "0001680581", "0002096362", "0001439124", "0001840572", "0001788257", "0002040127", "0001712189", "0001500881"}
 
 # === Cluster gates (single source of truth) ===
 # The strong_buy definition. Imported by other services (near_miss_service) so a
