@@ -253,6 +253,26 @@ export interface PortfolioActivity {
   type: 'sweep' | 'order'
 }
 
+/** A position that has been sold. /v2/positions only reports OPEN holdings, so
+ *  without this a closed round trip leaves no trace on the page. */
+export interface PortfolioClosed {
+  signal_id: string
+  ticker: string
+  signal_date: string | null
+  entry_date: string | null
+  exit_date: string
+  held_days: number | null
+  day0_price: number | null
+  entry_avg: number | null
+  entry_qty: number | null
+  exit_avg: number | null
+  exit_qty: number | null
+  proceeds: number | null
+  realised_return_pct: number | null
+  entry_shortfall_pct: number | null
+  tranche_prices: number[] | null
+}
+
 export interface PortfolioSkip {
   signal_id: string
   ticker: string
@@ -281,6 +301,7 @@ export interface PortfolioSnapshot {
   sweep?: PortfolioSweep | null
   equity_curve?: { date: string; equity: number }[]
   spy_curve?: { date: string; equity: number }[]
+  closed_positions?: PortfolioClosed[]
   skipped_signals?: PortfolioSkip[]
   activities?: PortfolioActivity[]
 }

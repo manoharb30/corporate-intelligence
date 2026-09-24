@@ -62,6 +62,8 @@ SWEEP_TIME_ET = (15, 40)
 SIGNAL_ID = "CLUSTER-0001385849-2026-07-09"
 DAY0_PRICE = 13.49
 DAY90_DATE = "2026-10-07"
+SIGNAL_DATE = "2026-07-09"   # day 0 — when the signal fired
+ENTRY_DATE = "2026-07-14"    # when we actually bought (detection + review lag)
 ENTRY_AVG = 13.296115
 ENTRY_QTY = 376.047447
 
@@ -150,6 +152,8 @@ async def record_exit(fills: list[tuple[float, float]], closed_qty: float, proce
         """
         MERGE (pe:PortfolioExit {signal_id: $signal_id})
         SET pe.ticker = $ticker,
+            pe.signal_date = $signal_date,
+            pe.entry_date = $entry_date,
             pe.exit_date = $exit_date,
             pe.day0_price = $day0_price,
             pe.entry_avg = $entry_avg,
@@ -164,6 +168,7 @@ async def record_exit(fills: list[tuple[float, float]], closed_qty: float, proce
         """,
         {
             "signal_id": SIGNAL_ID, "ticker": SYMBOL, "exit_date": DAY90_DATE,
+            "signal_date": SIGNAL_DATE, "entry_date": ENTRY_DATE,
             "day0_price": DAY0_PRICE, "entry_avg": ENTRY_AVG, "entry_qty": ENTRY_QTY,
             "exit_avg": round(blended, 6), "exit_qty": round(closed_qty, 6),
             "proceeds": round(proceeds, 2), "realised": round(realised, 2),

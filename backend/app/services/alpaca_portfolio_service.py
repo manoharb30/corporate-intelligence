@@ -12,7 +12,7 @@ not here — this service never places orders.
 
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
 
 import httpx
@@ -227,6 +227,47 @@ class AlpacaPortfolioService:
             {},
         )
 
+        # Closed positions. /v2/positions only reports OPEN holdings, so a sold
+        # position vanishes from this payload entirely — the first completed round
+        # trip would otherwise leave no trace of entry, exit or realised return.
+        # exit_* scripts write a (:PortfolioExit) node; this surfaces it so the
+        # record accumulates instead of disappearing.
+        exits = await Neo4jClient.execute_query(
+            """
+            MATCH (pe:PortfolioExit)
+            RETURN pe.signal_id AS signal_id, pe.ticker AS ticker,
+                   pe.signal_date AS signal_date, pe.entry_date AS entry_date,
+                   pe.exit_date AS exit_date, pe.day0_price AS day0_price,
+                   pe.entry_avg AS entry_avg, pe.entry_qty AS entry_qty,
+                   pe.exit_avg AS exit_avg, pe.exit_qty AS exit_qty,
+                   pe.proceeds AS proceeds,
+                   pe.realised_return_pct AS realised_return_pct,
+                   pe.tranche_prices AS tranche_prices
+            ORDER BY pe.exit_date DESC
+            """,
+            {},
+        )
+        closed_positions = []
+        for e in exits:
+            d = dict(e)
+            day0 = d.get("day0_price") or 0
+            entry = d.get("entry_avg") or 0
+            # Entry shortfall: what the fills cost against the signal's day-0 price.
+            # Negative is good — filled below the basis.
+            d["entry_shortfall_pct"] = (
+                round((entry - day0) / day0 * 100, 2) if day0 else None
+            )
+            # Holding period is entry->exit, NOT signal->exit. The gap between
+            # signal_date and entry_date is detection + review lag and is worth
+            # seeing separately — it is execution, not strategy.
+            try:
+                d["held_days"] = (
+                    date.fromisoformat(d["exit_date"]) - date.fromisoformat(d["entry_date"])
+                ).days if d.get("exit_date") and d.get("entry_date") else None
+            except (ValueError, TypeError):
+                d["held_days"] = None
+            closed_positions.append(d)
+
         activities = [
             {
                 "time": f.get("transaction_time"),
@@ -259,6 +300,7 @@ class AlpacaPortfolioService:
             "sweep": sweep,
             "equity_curve": curve,
             "spy_curve": spy_curve,
+            "closed_positions": closed_positions,
             "skipped_signals": [dict(s) for s in skips],
             "activities": activities,
         }

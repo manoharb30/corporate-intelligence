@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { portfolioApi, PortfolioSnapshot } from '../services/api'
+import { portfolioApi, PortfolioSnapshot, PortfolioClosed } from '../services/api'
 
 function fmtUsd(v: number | null | undefined, decimals = 2) {
   if (v == null) return '—'
@@ -145,6 +145,7 @@ export default function Portfolio() {
   const alloc = snap.allocation!
   const positions = snap.positions ?? []
   const skips = snap.skipped_signals ?? []
+  const closed = snap.closed_positions ?? []
   const maxPositions = snap.max_positions ?? 20
 
   return (
@@ -364,6 +365,78 @@ export default function Portfolio() {
                 )}
               </tbody>
             </table>
+          </div>
+        )}
+      </div>
+
+      {/* Closed positions — the completed round trips. Kept deliberately: a sold
+          position disappears from /v2/positions, and this is the only place the
+          full entry->exit record stays visible for later analysis. */}
+      <div className="bg-white rounded-lg border border-gray-200 shadow-sm mb-4">
+        <div className="px-5 py-3.5 border-b border-gray-200">
+          <h2 className="text-sm font-bold text-gray-900">
+            Closed positions{' '}
+            <span className="font-normal text-xs text-gray-400 ml-2">completed round trips</span>
+          </h2>
+        </div>
+        {closed.length === 0 ? (
+          <div className="px-5 py-4 text-sm text-gray-600">
+            No positions closed yet — the first reaches day 90 on 7 October 2026.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm tabular-nums">
+              <thead>
+                <tr className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 border-b border-gray-200">
+                  <th className="text-left px-4 py-2.5">Signal</th>
+                  <th className="text-right px-4 py-2.5">Day 0 <span className="font-normal normal-case">(signal)</span></th>
+                  <th className="text-right px-4 py-2.5">Entry <span className="font-normal normal-case">(bought)</span></th>
+                  <th className="text-right px-4 py-2.5">Exit <span className="font-normal normal-case">(sold)</span></th>
+                  <th className="text-right px-4 py-2.5">Held</th>
+                  <th className="text-right px-4 py-2.5">Entry vs day 0</th>
+                  <th className="text-right px-4 py-2.5">Realised</th>
+                </tr>
+              </thead>
+              <tbody>
+                {closed.map((c: PortfolioClosed) => (
+                  <tr key={c.signal_id} className="border-b border-gray-100 last:border-0">
+                    <td className="px-4 py-2.5 font-bold">{c.ticker}</td>
+                    {/* Each price sits with its OWN date — "Day 0" is the signal date,
+                        not the exit date, and the signal->entry gap is detection lag. */}
+                    <td className="px-4 py-2.5 text-right text-gray-600">
+                      <div>{c.day0_price != null ? `$${c.day0_price.toFixed(2)}` : '—'}</div>
+                      <div className="text-[11px] text-gray-400">{c.signal_date ?? '—'}</div>
+                    </td>
+                    <td className="px-4 py-2.5 text-right">
+                      <div>{c.entry_avg != null ? `$${c.entry_avg.toFixed(2)}` : '—'}</div>
+                      <div className="text-[11px] text-gray-400">{c.entry_date ?? '—'}</div>
+                    </td>
+                    <td className="px-4 py-2.5 text-right">
+                      <div>{c.exit_avg != null ? `$${c.exit_avg.toFixed(2)}` : '—'}</div>
+                      <div className="text-[11px] text-gray-400">{c.exit_date}</div>
+                    </td>
+                    <td className="px-4 py-2.5 text-right text-gray-600">
+                      {c.held_days != null ? `${c.held_days}d` : '—'}
+                    </td>
+                    <td className={`px-4 py-2.5 text-right ${
+                      (c.entry_shortfall_pct ?? 0) <= 0 ? 'text-green-700' : 'text-gray-600'
+                    }`}>
+                      {c.entry_shortfall_pct != null ? `${c.entry_shortfall_pct > 0 ? '+' : ''}${c.entry_shortfall_pct.toFixed(2)}%` : '—'}
+                    </td>
+                    <td className={`px-4 py-2.5 text-right font-semibold ${
+                      (c.realised_return_pct ?? 0) >= 0 ? 'text-green-700' : 'text-red-700'
+                    }`}>
+                      {c.realised_return_pct != null ? `${c.realised_return_pct > 0 ? '+' : ''}${c.realised_return_pct.toFixed(2)}%` : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="px-5 py-3 text-xs text-gray-500 border-t border-gray-100">
+              Realised return is measured against our actual entry fills. The cohort books
+              each signal at its day-90 close instead, so the two differ by execution —
+              which is the point of recording both.
+            </div>
           </div>
         )}
       </div>
