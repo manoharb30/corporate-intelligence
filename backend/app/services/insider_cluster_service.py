@@ -162,7 +162,31 @@ logger = logging.getLogger(__name__)
 #     Buyer note: Sheriff (Exec Chairman) was $101,250 of the $111,850 cluster — 90.5%,
 #     which trips the token_buy_cluster >=90% guideline — against Little (CEO) at $10,600.
 #     Moot given eligibility, but recorded.
-EXCLUDED_CIKS: set[str] = {"0002064307", "0001384195", "0002039497", "0002052053", "0001712184", "0001614178", "0001680581", "0002096362", "0001439124", "0001840572", "0001788257", "0002040127", "0001712189", "0001500881"}
+#   0001901279 — Nayax Ltd (NYAX): blocked 2026-09-26 on per-arrival review of its
+#     2026-09-24 strong_buy, removed with it (remove_nyax_2026-09-26.py). The largest
+#     cluster the book has produced — $4,709,187 — and 97.8% of it is one man: Nechmad
+#     (CEO, Co-Founder AND Chairman) $4,607,723 in a single day, against Ben-Avi (CTO,
+#     Co-Founder) at $101,465. Tagged token_buy_cluster, though Ben-Avi bought across
+#     FOUR days (09-17/22/23/24), which reads as accumulation rather than a one-off
+#     gesture — so the buyer structure is a flag here, not the disqualifier.
+#     The disqualifier is the P&L. Operating income by quarter: +$10M, +$8M, +$12M,
+#     +$4M, -$7M; net income +$12M -> -$10M YoY, on revenue GROWING 28%. It is the only
+#     negative-operating-margin name in its peer set (-5.4% vs PAY 9.0, EVTC 19.4, TOST
+#     7.4, WEX 26.9, GPN 16.1) and simultaneously the most expensive on EV/EBITDA by a
+#     wide margin (51.0 vs 32.9, 32.6, 10.3, 9.3, 6.1). FCF -$37.0M, D/E 146%.
+#     Insiders already hold 58.9%, so this is a founder adding to majority control — the
+#     BWMX shape. $4.71M also sits in the journal-L1 $1-5M dead zone, and the earnings
+#     gate split the buying again (09-17 reject_beyond_60d, 09-22 onward pass_within_60d).
+#     NOT a data-quality exclusion: mcap rechecked at $1.673B (37.4M sh x $44.75), in
+#     band; earnings gate a real pass; and although Nayax is an Israeli 20-F filer, its
+#     XBRL is 150 USD facts vs 1 EUR — it reports in USD, so no BWMX/AXIA3 currency trap.
+#     A founder committing $4.6M after a 42% drawdown is real; a negative-margin business
+#     at 51x EV/EBITDA with a deteriorating quarterly trend is not what the cohort is
+#     built on.
+#     NOTE: HHH (Howard Hughes, 2026-09-24) was reviewed the same day and KEPT — see its
+#     ResearchNote. Its objection was comparability during an Ackman-led restructuring,
+#     not a disqualifier, and it is deliberately NOT blocklisted.
+EXCLUDED_CIKS: set[str] = {"0002064307", "0001384195", "0002039497", "0002052053", "0001712184", "0001614178", "0001680581", "0002096362", "0001439124", "0001840572", "0001788257", "0002040127", "0001712189", "0001500881", "0001901279"}
 
 # === Cluster gates (single source of truth) ===
 # The strong_buy definition. Imported by other services (near_miss_service) so a
